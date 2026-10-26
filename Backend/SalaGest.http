@@ -1,0 +1,114 @@
+@base = http://localhost:5108
+@token = COLE_O_ACCESS_TOKEN
+
+### Saúde
+GET {{base}}/api/health
+
+### Login (copie accessToken da resposta)
+POST {{base}}/api/auth/login
+Content-Type: application/json
+
+{"email":"admin@instituicao.local","password":"SUA_SENHA"}
+
+### Turnos
+GET {{base}}/api/shifts
+Authorization: Bearer {{token}}
+
+### Reservar segunda e quarta de manhã até 21/out/2026 (14? não: 2 + 8 = 10)
+POST {{base}}/api/bookings
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "classGroupId": null,
+  "startsAt": "2026-10-12T08:00:00",
+  "endsAt": "2026-10-12T12:00:00",
+  "students": 25,
+  "needsProjector": true,
+  "needsTeacherComputer": true,
+  "needsStudentComputers": true,
+  "minTier": "Intermediario",
+  "softwareIds": [],
+  "reason": "Aula de programação",
+  "lessonPlanLink": null,
+  "recurrence": "Semanal",
+  "repeatUntil": "2026-10-21",
+  "weekdaysMask": 10,
+  "studentsPerComputer": 2,
+  "recurringEadWeekday": null
+}
+
+### Sugestões ordenadas (troque ID)
+GET {{base}}/api/bookings/1/suggestions
+Authorization: Bearer {{token}}
+
+### Ver disponibilidade por data
+GET {{base}}/api/bookings/1/availability?roomId=1
+Authorization: Bearer {{token}}
+
+### Confirmar (se 409 conflito, leia o retorno antes de confirmar parcial)
+POST {{base}}/api/bookings/1/confirm
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{"roomId":1,"confirmPartial":false,"replaceOwnClassBooking":false}
+
+### Agenda ativa
+GET {{base}}/api/agenda?from=2026-10-12T00:00:00&to=2026-10-19T00:00:00
+Authorization: Bearer {{token}}
+
+### Mudar dia para EAD (não libera sala automaticamente)
+PUT {{base}}/api/occupations/1/day-status
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{"status":"Ead"}
+
+### Liberar alguns dias (IDs da agenda)
+POST {{base}}/api/occupations/release-many
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{"occupationIds":[1,2],"confirm":true}
+
+### Recomendações para transferir sala
+GET {{base}}/api/occupations/1/room-options
+Authorization: Bearer {{token}}
+
+### Transferir a sala de uma ocorrência
+PUT {{base}}/api/occupations/1/room
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{"roomId":3,"notifyTeachers":true}
+
+### Oferecer emprestimo (titular)
+POST {{base}}/api/loans/offer
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{"roomOccupationIds":[1],"borrowerId":"ID_DO_PROFESSOR_B","reason":"Laboratório de robótica"}
+
+### Aceitar o emprestimo (destinatário)
+POST {{base}}/api/loans/1/accept
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{"classGroupId":null,"students":20,"studentsPerComputer":2,"needsProjector":false,
+ "needsTeacherComputer":true,"needsStudentComputers":true,"minTier":"Basico",
+ "softwareIds":[],"minRamGb":0,"needsDedicatedGpu":false}
+
+### Finalizar emprestimo (titular)
+POST {{base}}/api/loans/1/finalize
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{"disposition":"OutraSala","replacementRoomId":2}
+
+### Ocupação do painel
+GET {{base}}/api/dashboard/usage?from=2026-10-01&to=2026-10-31
+Authorization: Bearer {{token}}
+
+### Notificações
+GET {{base}}/api/notifications
+Authorization: Bearer {{token}}

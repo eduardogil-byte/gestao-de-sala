@@ -1,0 +1,68 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  font-family: Inter, ui-sans-serif, system-ui, "Segoe UI", sans-serif;
+  color: #213047;
+  background: #f7f9fc;
+  font-synthesis: none;
+}
+body {
+  margin: 0;
+  min-width: 320px;
+}
+* {
+  box-sizing: border-box;
+}
+button,
+input,
+select,
+textarea {
+  font: inherit;
+}
+button {
+  cursor: pointer;
+}
+button:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+@layer components {
+  .card {
+    @apply bg-white border border-slate-200/80 rounded-2xl shadow-soft;
+  }
+  .section-title {
+    @apply text-[17px] font-semibold tracking-tight text-slate-800;
+  }
+  .muted {
+    @apply text-sm text-slate-500;
+  }
+  .field {
+    @apply w-full bg-white rounded-xl border border-slate-200 text-sm text-slate-800 px-3 py-2.5 outline-none transition focus:border-skybrand-500 focus:ring-2 focus:ring-skybrand-100 disabled:bg-slate-100;
+  }
+  .field-label {
+    @apply block text-xs font-semibold text-slate-600 mb-1.5;
+  }
+  .btn {
+    @apply inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold transition duration-150 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-skybrand-500;
+  }
+  .btn-primary {
+    @apply btn bg-skybrand-600 text-white hover:bg-skybrand-700;
+  }
+  .btn-secondary {
+    @apply btn bg-white text-slate-700 border border-slate-200 hover:bg-slate-50;
+  }
+  .btn-quiet {
+    @apply btn text-slate-600 hover:bg-slate-100;
+  }
+  .pill {
+    @apply inline-flex items-center gap-1.5 text-xs font-semibold px-2.5 py-1 rounded-lg;
+  }
+  .table-head {
+    @apply text-left text-[11px] font-bold uppercase tracking-wider text-slate-400 bg-slate-50/80;
+  }
+  .table-cell {
+    @apply py-3.5 px-4 text-sm border-b border-slate-100;
+  }
+}
