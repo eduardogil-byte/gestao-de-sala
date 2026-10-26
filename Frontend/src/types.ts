@@ -11,6 +11,33 @@ export type Shift = {
   startsAt: string;
   endsAt: string;
 };
+export type Course = { id: number; code: string; name: string; active: boolean };
+export type CourseModule = { id: number; courseId: number; name: string; order: number };
+export type CurricularUnit = {
+  id: number;
+  courseModuleId: number;
+  code: string;
+  name: string;
+  plannedHours: number | null;
+};
+export type CurricularCapability = {
+  id: number;
+  curricularUnitId: number;
+  description: string;
+  contents: string;
+  requiredHours: number;
+  order: number;
+};
+export type WorkloadSummary = {
+  curricularUnitId: number;
+  plannedHours: number | null;
+  capabilityHours: number;
+  status: "Undefined" | "Balanced" | "MissingHours" | "ExcessHours";
+  missingHours: number;
+  excessHours: number;
+  hoursPerShift: number;
+  requiredMeetings: number | null;
+};
 export type Software = { id: number; name: string };
 export type InstalledSoftware = {
   softwareId: number;
