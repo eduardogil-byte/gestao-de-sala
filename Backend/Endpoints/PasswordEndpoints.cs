@@ -7,7 +7,7 @@ using Microsoft.AspNetCore.Identity;
 using SalaGest.Api.Contracts;
 using SalaGest.Api.Models;
 
-namespace Backend.Endpoints
+namespace SalaGest.Api.Endpoints
 {
     public static partial class ApiEndpoints
     {
