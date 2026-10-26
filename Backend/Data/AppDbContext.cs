@@ -27,6 +27,7 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : Ident
     public DbSet<Course> Courses => Set<Course>();
     public DbSet<CourseModule> CourseModules => Set<CourseModule>();
     public DbSet<CurricularUnit> CurricularUnits => Set<CurricularUnit>();
+    public DbSet<CurricularCapability> CurricularCapabilities => Set<CurricularCapability>();
 
     protected override void OnModelCreating(ModelBuilder b)
     {
@@ -72,10 +73,28 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : Ident
         b.Entity<CurricularUnit>().Property(x => x.NormalizedCode).IsRequired().HasMaxLength(30);
         b.Entity<CurricularUnit>().Property(x => x.Name).IsRequired().HasMaxLength(160);
         b.Entity<CurricularUnit>().Property(x => x.NormalizedName).IsRequired().HasMaxLength(160);
+        b.Entity<CurricularUnit>().Property(x => x.PlannedHours).HasPrecision(9, 2);
+        b.Entity<CurricularUnit>().ToTable(t => t.HasCheckConstraint("CK_CurricularUnits_PlannedHours",
+            "[PlannedHours] IS NULL OR ([PlannedHours] > 0 AND [PlannedHours] <= 9999999.99)"));
         b.Entity<CurricularUnit>().HasIndex(x => new { x.CourseModuleId, x.NormalizedCode }).IsUnique();
         b.Entity<CurricularUnit>().HasIndex(x => new { x.CourseModuleId, x.NormalizedName }).IsUnique();
         b.Entity<CurricularUnit>().HasOne(x => x.CourseModule).WithMany(x => x.CurricularUnits)
             .HasForeignKey(x => x.CourseModuleId).OnDelete(DeleteBehavior.Restrict);
+
+        b.Entity<CurricularCapability>().Property(x => x.Description).IsRequired().HasMaxLength(300);
+        b.Entity<CurricularCapability>().Property(x => x.NormalizedDescription).IsRequired().HasMaxLength(300);
+        b.Entity<CurricularCapability>().Property(x => x.Contents).IsRequired().HasMaxLength(4000);
+        b.Entity<CurricularCapability>().Property(x => x.RequiredHours).HasPrecision(9, 2);
+        b.Entity<CurricularCapability>().HasIndex(x => new { x.CurricularUnitId, x.NormalizedDescription }).IsUnique();
+        b.Entity<CurricularCapability>().HasIndex(x => new { x.CurricularUnitId, x.Order }).IsUnique();
+        b.Entity<CurricularCapability>().HasOne(x => x.CurricularUnit).WithMany(x => x.Capabilities)
+            .HasForeignKey(x => x.CurricularUnitId).OnDelete(DeleteBehavior.Restrict);
+        b.Entity<CurricularCapability>().ToTable(t =>
+        {
+            t.HasCheckConstraint("CK_CurricularCapabilities_Order", "[Order] > 0");
+            t.HasCheckConstraint("CK_CurricularCapabilities_RequiredHours",
+                "[RequiredHours] > 0 AND [RequiredHours] <= 9999999.99");
+        });
 
         // Restringimos exclusões para proteger o histórico de agendas e evitar caminhos de cascata no SQL Server.
         foreach (var entity in b.Model.GetEntityTypes())

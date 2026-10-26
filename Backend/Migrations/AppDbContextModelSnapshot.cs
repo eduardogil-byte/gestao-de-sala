@@ -475,6 +475,55 @@ namespace SalaGest.Api.Migrations
                         });
                 });
 
+            modelBuilder.Entity("SalaGest.Api.Models.CurricularCapability", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<string>("Contents")
+                        .IsRequired()
+                        .HasMaxLength(4000)
+                        .HasColumnType("nvarchar(4000)");
+
+                    b.Property<int>("CurricularUnitId")
+                        .HasColumnType("int");
+
+                    b.Property<string>("Description")
+                        .IsRequired()
+                        .HasMaxLength(300)
+                        .HasColumnType("nvarchar(300)");
+
+                    b.Property<string>("NormalizedDescription")
+                        .IsRequired()
+                        .HasMaxLength(300)
+                        .HasColumnType("nvarchar(300)");
+
+                    b.Property<int>("Order")
+                        .HasColumnType("int");
+
+                    b.Property<decimal>("RequiredHours")
+                        .HasPrecision(9, 2)
+                        .HasColumnType("decimal(9,2)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("CurricularUnitId", "NormalizedDescription")
+                        .IsUnique();
+
+                    b.HasIndex("CurricularUnitId", "Order")
+                        .IsUnique();
+
+                    b.ToTable("CurricularCapabilities", t =>
+                        {
+                            t.HasCheckConstraint("CK_CurricularCapabilities_Order", "[Order] > 0");
+
+                            t.HasCheckConstraint("CK_CurricularCapabilities_RequiredHours", "[RequiredHours] > 0 AND [RequiredHours] <= 9999999.99");
+                        });
+                });
+
             modelBuilder.Entity("SalaGest.Api.Models.CurricularUnit", b =>
                 {
                     b.Property<int>("Id")
@@ -506,6 +555,10 @@ namespace SalaGest.Api.Migrations
                         .HasMaxLength(160)
                         .HasColumnType("nvarchar(160)");
 
+                    b.Property<decimal?>("PlannedHours")
+                        .HasPrecision(9, 2)
+                        .HasColumnType("decimal(9,2)");
+
                     b.HasKey("Id");
 
                     b.HasIndex("CourseModuleId", "NormalizedCode")
@@ -514,7 +567,10 @@ namespace SalaGest.Api.Migrations
                     b.HasIndex("CourseModuleId", "NormalizedName")
                         .IsUnique();
 
-                    b.ToTable("CurricularUnits");
+                    b.ToTable("CurricularUnits", t =>
+                        {
+                            t.HasCheckConstraint("CK_CurricularUnits_PlannedHours", "[PlannedHours] IS NULL OR ([PlannedHours] > 0 AND [PlannedHours] <= 9999999.99)");
+                        });
                 });
 
             modelBuilder.Entity("SalaGest.Api.Models.GroupSoftware", b =>
@@ -1112,6 +1168,17 @@ namespace SalaGest.Api.Migrations
                     b.Navigation("Course");
                 });
 
+            modelBuilder.Entity("SalaGest.Api.Models.CurricularCapability", b =>
+                {
+                    b.HasOne("SalaGest.Api.Models.CurricularUnit", "CurricularUnit")
+                        .WithMany("Capabilities")
+                        .HasForeignKey("CurricularUnitId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("CurricularUnit");
+                });
+
             modelBuilder.Entity("SalaGest.Api.Models.CurricularUnit", b =>
                 {
                     b.HasOne("SalaGest.Api.Models.CourseModule", "CourseModule")
@@ -1289,6 +1356,11 @@ namespace SalaGest.Api.Migrations
             modelBuilder.Entity("SalaGest.Api.Models.CourseModule", b =>
                 {
                     b.Navigation("CurricularUnits");
+                });
+
+            modelBuilder.Entity("SalaGest.Api.Models.CurricularUnit", b =>
+                {
+                    b.Navigation("Capabilities");
                 });
 
             modelBuilder.Entity("SalaGest.Api.Models.Room", b =>

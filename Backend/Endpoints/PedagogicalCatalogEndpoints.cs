@@ -133,7 +133,7 @@ public static partial class ApiEndpoints
                 return Results.NotFound();
             return Results.Ok(await db.CurricularUnits.AsNoTracking()
                 .Where(x => x.CourseModuleId == moduleId).OrderBy(x => x.Code)
-                .Select(x => new CurricularUnitResponse(x.Id, x.CourseModuleId, x.Code, x.Name))
+                .Select(x => new CurricularUnitResponse(x.Id, x.CourseModuleId, x.Code, x.Name, x.PlannedHours))
                 .ToListAsync());
         });
 
@@ -142,7 +142,7 @@ public static partial class ApiEndpoints
         {
             var item = await db.CurricularUnits.AsNoTracking()
                 .Where(x => x.Id == unitId && x.CourseModuleId == moduleId && x.CourseModule.CourseId == courseId)
-                .Select(x => new CurricularUnitResponse(x.Id, x.CourseModuleId, x.Code, x.Name))
+                .Select(x => new CurricularUnitResponse(x.Id, x.CourseModuleId, x.Code, x.Name, x.PlannedHours))
                 .FirstOrDefaultAsync();
             return item is null ? Results.NotFound() : Results.Ok(item);
         });
@@ -202,7 +202,7 @@ public static partial class ApiEndpoints
     private static CourseModuleResponse ModuleView(CourseModule item) =>
         new(item.Id, item.CourseId, item.Name, item.Order);
     private static CurricularUnitResponse UnitView(CurricularUnit item) =>
-        new(item.Id, item.CourseModuleId, item.Code, item.Name);
+        new(item.Id, item.CourseModuleId, item.Code, item.Name, item.PlannedHours);
     private static IResult CatalogConflict(string message) => Results.Conflict(new ApiError(message));
     private static bool IsUniqueViolation(DbUpdateException ex) =>
         ex.InnerException is SqlException { Number: 2601 or 2627 };
