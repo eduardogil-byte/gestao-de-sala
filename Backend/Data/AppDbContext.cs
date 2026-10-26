@@ -24,6 +24,9 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : Ident
     public DbSet<RoomLoan> Loans => Set<RoomLoan>();
     public DbSet<UserNotification> Notifications => Set<UserNotification>();
     public DbSet<OccupationChange> OccupationChanges => Set<OccupationChange>();
+    public DbSet<Course> Courses => Set<Course>();
+    public DbSet<CourseModule> CourseModules => Set<CourseModule>();
+    public DbSet<CurricularUnit> CurricularUnits => Set<CurricularUnit>();
 
     protected override void OnModelCreating(ModelBuilder b)
     {
@@ -49,6 +52,30 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : Ident
         b.Entity<RoomLoan>().HasIndex(x => x.RoomOccupationId);
         b.Entity<UserNotification>().HasIndex(x => new { x.UserId, x.CreatedAtUtc });
         b.Entity<OccupationChange>().HasIndex(x => new { x.RoomOccupationId, x.ChangedAtUtc });
+
+        b.Entity<Course>().Property(x => x.Code).IsRequired().HasMaxLength(30);
+        b.Entity<Course>().Property(x => x.NormalizedCode).IsRequired().HasMaxLength(30);
+        b.Entity<Course>().Property(x => x.Name).IsRequired().HasMaxLength(160);
+        b.Entity<Course>().Property(x => x.NormalizedName).IsRequired().HasMaxLength(160);
+        b.Entity<Course>().HasIndex(x => x.NormalizedCode).IsUnique();
+        b.Entity<Course>().HasIndex(x => x.NormalizedName).IsUnique();
+
+        b.Entity<CourseModule>().Property(x => x.Name).IsRequired().HasMaxLength(120);
+        b.Entity<CourseModule>().Property(x => x.NormalizedName).IsRequired().HasMaxLength(120);
+        b.Entity<CourseModule>().HasIndex(x => new { x.CourseId, x.NormalizedName }).IsUnique();
+        b.Entity<CourseModule>().HasIndex(x => new { x.CourseId, x.Order }).IsUnique();
+        b.Entity<CourseModule>().HasOne(x => x.Course).WithMany(x => x.Modules)
+            .HasForeignKey(x => x.CourseId).OnDelete(DeleteBehavior.Restrict);
+        b.Entity<CourseModule>().ToTable(t => t.HasCheckConstraint("CK_CourseModules_Order", "[Order] > 0"));
+
+        b.Entity<CurricularUnit>().Property(x => x.Code).IsRequired().HasMaxLength(30);
+        b.Entity<CurricularUnit>().Property(x => x.NormalizedCode).IsRequired().HasMaxLength(30);
+        b.Entity<CurricularUnit>().Property(x => x.Name).IsRequired().HasMaxLength(160);
+        b.Entity<CurricularUnit>().Property(x => x.NormalizedName).IsRequired().HasMaxLength(160);
+        b.Entity<CurricularUnit>().HasIndex(x => new { x.CourseModuleId, x.NormalizedCode }).IsUnique();
+        b.Entity<CurricularUnit>().HasIndex(x => new { x.CourseModuleId, x.NormalizedName }).IsUnique();
+        b.Entity<CurricularUnit>().HasOne(x => x.CourseModule).WithMany(x => x.CurricularUnits)
+            .HasForeignKey(x => x.CourseModuleId).OnDelete(DeleteBehavior.Restrict);
 
         // Restringimos exclusões para proteger o histórico de agendas e evitar caminhos de cascata no SQL Server.
         foreach (var entity in b.Model.GetEntityTypes())

@@ -24,9 +24,40 @@ dotnet tool install --global dotnet-ef --version 8.0.0
 dotnet user-secrets set "Seed:AdminEmail" "admin@instituicao.local"
 dotnet user-secrets set "Seed:AdminPassword" "TroquePorUmaSenhaForte123!"
 
-dotnet ef migrations add InitialCreate
 dotnet ef database update
 dotnet run
+```
+
+As migrations `InitialCreate` e `SG07PedagogicalCatalog` já estão versionadas. Não execute
+`migrations add InitialCreate` novamente. `database update` aplica as migrations pendentes
+ao banco configurado; execute-o apenas quando houver um SQL Server disponível.
+
+### SG-07: catálogo pedagógico
+
+As consultas exigem autenticação Bearer; POST e PUT exigem o perfil `Admin`. Os caminhos
+de módulo e UC preservam o contexto do curso. Exemplos de escrita:
+
+```text
+POST /api/courses                                  {"code":"AUT","name":"Técnico em Automação","active":true}
+POST /api/courses/1/modules                        {"name":"Módulo Introdutório","order":1}
+POST /api/courses/1/modules/2/curricular-units     {"code":"UC01","name":"Fundamentos de Automação"}
+```
+
+Use GET e PUT nos mesmos recursos: `/api/courses/{courseId}`,
+`/api/courses/{courseId}/modules/{moduleId}` e
+`/api/courses/{courseId}/modules/{moduleId}/curricular-units/{unitId}`.
+GET nas coleções lista cursos, módulos do curso e UCs do módulo, respectivamente.
+Não há endpoint de exclusão do catálogo; as FKs impedem exclusão em cascata.
+
+Depois de configurar o SQL Server, valide a aplicação da migration a partir de `Backend/`:
+
+```powershell
+dotnet restore
+dotnet build
+dotnet test .\SalaGest.Backend.Tests\SalaGest.Backend.Tests.csproj
+dotnet tool restore
+dotnet ef migrations list --context AppDbContext
+dotnet ef database update --context AppDbContext
 ```
 
 O endereço padrão em `Properties/launchSettings.json` é `http://localhost:5108`;

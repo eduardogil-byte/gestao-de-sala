@@ -15,6 +15,7 @@ public static partial class ApiEndpoints
         MapAccounts(app);
         MapPasswords(app);
         MapCatalog(app);
+        MapPedagogicalCatalog(app);
         MapSchedules(app);
         MapBookings(app);
         MapLoans(app);

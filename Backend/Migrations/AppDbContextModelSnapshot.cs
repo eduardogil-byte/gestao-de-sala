@@ -395,6 +395,128 @@ namespace SalaGest.Api.Migrations
                     b.ToTable("ComputerGroups");
                 });
 
+            modelBuilder.Entity("SalaGest.Api.Models.Course", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<bool>("Active")
+                        .HasColumnType("bit");
+
+                    b.Property<string>("Code")
+                        .IsRequired()
+                        .HasMaxLength(30)
+                        .HasColumnType("nvarchar(30)");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(160)
+                        .HasColumnType("nvarchar(160)");
+
+                    b.Property<string>("NormalizedCode")
+                        .IsRequired()
+                        .HasMaxLength(30)
+                        .HasColumnType("nvarchar(30)");
+
+                    b.Property<string>("NormalizedName")
+                        .IsRequired()
+                        .HasMaxLength(160)
+                        .HasColumnType("nvarchar(160)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("NormalizedCode")
+                        .IsUnique();
+
+                    b.HasIndex("NormalizedName")
+                        .IsUnique();
+
+                    b.ToTable("Courses");
+                });
+
+            modelBuilder.Entity("SalaGest.Api.Models.CourseModule", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<int>("CourseId")
+                        .HasColumnType("int");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(120)
+                        .HasColumnType("nvarchar(120)");
+
+                    b.Property<string>("NormalizedName")
+                        .IsRequired()
+                        .HasMaxLength(120)
+                        .HasColumnType("nvarchar(120)");
+
+                    b.Property<int>("Order")
+                        .HasColumnType("int");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("CourseId", "NormalizedName")
+                        .IsUnique();
+
+                    b.HasIndex("CourseId", "Order")
+                        .IsUnique();
+
+                    b.ToTable("CourseModules", t =>
+                        {
+                            t.HasCheckConstraint("CK_CourseModules_Order", "[Order] > 0");
+                        });
+                });
+
+            modelBuilder.Entity("SalaGest.Api.Models.CurricularUnit", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<string>("Code")
+                        .IsRequired()
+                        .HasMaxLength(30)
+                        .HasColumnType("nvarchar(30)");
+
+                    b.Property<int>("CourseModuleId")
+                        .HasColumnType("int");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(160)
+                        .HasColumnType("nvarchar(160)");
+
+                    b.Property<string>("NormalizedCode")
+                        .IsRequired()
+                        .HasMaxLength(30)
+                        .HasColumnType("nvarchar(30)");
+
+                    b.Property<string>("NormalizedName")
+                        .IsRequired()
+                        .HasMaxLength(160)
+                        .HasColumnType("nvarchar(160)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("CourseModuleId", "NormalizedCode")
+                        .IsUnique();
+
+                    b.HasIndex("CourseModuleId", "NormalizedName")
+                        .IsUnique();
+
+                    b.ToTable("CurricularUnits");
+                });
+
             modelBuilder.Entity("SalaGest.Api.Models.GroupSoftware", b =>
                 {
                     b.Property<int>("ComputerGroupId")
@@ -979,6 +1101,28 @@ namespace SalaGest.Api.Migrations
                     b.Navigation("Room");
                 });
 
+            modelBuilder.Entity("SalaGest.Api.Models.CourseModule", b =>
+                {
+                    b.HasOne("SalaGest.Api.Models.Course", "Course")
+                        .WithMany("Modules")
+                        .HasForeignKey("CourseId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("Course");
+                });
+
+            modelBuilder.Entity("SalaGest.Api.Models.CurricularUnit", b =>
+                {
+                    b.HasOne("SalaGest.Api.Models.CourseModule", "CourseModule")
+                        .WithMany("CurricularUnits")
+                        .HasForeignKey("CourseModuleId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("CourseModule");
+                });
+
             modelBuilder.Entity("SalaGest.Api.Models.GroupSoftware", b =>
                 {
                     b.HasOne("SalaGest.Api.Models.ComputerGroup", "ComputerGroup")
@@ -1135,6 +1279,16 @@ namespace SalaGest.Api.Migrations
             modelBuilder.Entity("SalaGest.Api.Models.ComputerGroup", b =>
                 {
                     b.Navigation("Software");
+                });
+
+            modelBuilder.Entity("SalaGest.Api.Models.Course", b =>
+                {
+                    b.Navigation("Modules");
+                });
+
+            modelBuilder.Entity("SalaGest.Api.Models.CourseModule", b =>
+                {
+                    b.Navigation("CurricularUnits");
                 });
 
             modelBuilder.Entity("SalaGest.Api.Models.Room", b =>
