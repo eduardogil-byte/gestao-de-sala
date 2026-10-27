@@ -5,6 +5,9 @@ namespace SalaGest.Api.Models;
 public sealed class AppUser : IdentityUser
 {
     public string DisplayName { get; set; } = "";
+    public string Education { get; set; } = "";
+    public string TechnicalSkills { get; set; } = "";
+    public string ProfessionalKnowledge { get; set; } = "";
 }
 
 public enum RoomKind { Comum = 1, Laboratorio = 2, Hibrida = 3 }

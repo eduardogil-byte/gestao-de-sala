@@ -28,11 +28,17 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : Ident
     public DbSet<CourseModule> CourseModules => Set<CourseModule>();
     public DbSet<CurricularUnit> CurricularUnits => Set<CurricularUnit>();
     public DbSet<CurricularCapability> CurricularCapabilities => Set<CurricularCapability>();
+    public DbSet<TeacherCourseQualification> TeacherCourseQualifications => Set<TeacherCourseQualification>();
+    public DbSet<TeacherUnitQualification> TeacherUnitQualifications => Set<TeacherUnitQualification>();
+    public DbSet<TeacherCapabilityQualification> TeacherCapabilityQualifications => Set<TeacherCapabilityQualification>();
 
     protected override void OnModelCreating(ModelBuilder b)
     {
         base.OnModelCreating(b);
         b.Entity<AppUser>().Property(x => x.DisplayName).HasMaxLength(120);
+        b.Entity<AppUser>().Property(x => x.Education).IsRequired().HasMaxLength(2000);
+        b.Entity<AppUser>().Property(x => x.TechnicalSkills).IsRequired().HasMaxLength(2000);
+        b.Entity<AppUser>().Property(x => x.ProfessionalKnowledge).IsRequired().HasMaxLength(2000);
         b.Entity<Room>().Property(x => x.Name).HasMaxLength(120);
         b.Entity<Room>().Property(x => x.Location).HasMaxLength(160);
         b.Entity<Room>().Property(x => x.Purpose).HasMaxLength(350);
@@ -95,6 +101,22 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : Ident
             t.HasCheckConstraint("CK_CurricularCapabilities_RequiredHours",
                 "[RequiredHours] > 0 AND [RequiredHours] <= 9999999.99");
         });
+
+        b.Entity<TeacherCourseQualification>().HasKey(x => new { x.TeacherId, x.CourseId });
+        b.Entity<TeacherCourseQualification>().HasOne(x => x.Teacher).WithMany()
+            .HasForeignKey(x => x.TeacherId).OnDelete(DeleteBehavior.Restrict);
+        b.Entity<TeacherCourseQualification>().HasOne(x => x.Course).WithMany()
+            .HasForeignKey(x => x.CourseId).OnDelete(DeleteBehavior.Restrict);
+        b.Entity<TeacherUnitQualification>().HasKey(x => new { x.TeacherId, x.CurricularUnitId });
+        b.Entity<TeacherUnitQualification>().HasOne(x => x.Teacher).WithMany()
+            .HasForeignKey(x => x.TeacherId).OnDelete(DeleteBehavior.Restrict);
+        b.Entity<TeacherUnitQualification>().HasOne(x => x.CurricularUnit).WithMany()
+            .HasForeignKey(x => x.CurricularUnitId).OnDelete(DeleteBehavior.Restrict);
+        b.Entity<TeacherCapabilityQualification>().HasKey(x => new { x.TeacherId, x.CurricularCapabilityId });
+        b.Entity<TeacherCapabilityQualification>().HasOne(x => x.Teacher).WithMany()
+            .HasForeignKey(x => x.TeacherId).OnDelete(DeleteBehavior.Restrict);
+        b.Entity<TeacherCapabilityQualification>().HasOne(x => x.CurricularCapability).WithMany()
+            .HasForeignKey(x => x.CurricularCapabilityId).OnDelete(DeleteBehavior.Restrict);
 
         // Restringimos exclusões para proteger o histórico de agendas e evitar caminhos de cascata no SQL Server.
         foreach (var entity in b.Model.GetEntityTypes())
