@@ -155,6 +155,44 @@ namespace SalaGest.Api.Migrations
                     b.ToTable("AspNetUserTokens", (string)null);
                 });
 
+            modelBuilder.Entity("SalaGest.Api.Models.AcademicCalendarEvent", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<string>("Description")
+                        .IsRequired()
+                        .HasMaxLength(250)
+                        .HasColumnType("nvarchar(250)");
+
+                    b.Property<DateOnly>("EndDate")
+                        .HasColumnType("date");
+
+                    b.Property<int>("Kind")
+                        .HasColumnType("int");
+
+                    b.Property<int>("SemesterId")
+                        .HasColumnType("int");
+
+                    b.Property<DateOnly>("StartDate")
+                        .HasColumnType("date");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("SemesterId", "StartDate", "EndDate")
+                        .IsUnique();
+
+                    b.ToTable("AcademicCalendarEvents", t =>
+                        {
+                            t.HasCheckConstraint("CK_AcademicCalendarEvents_Dates", "[StartDate] <= [EndDate]");
+
+                            t.HasCheckConstraint("CK_AcademicCalendarEvents_Kind", "[Kind] BETWEEN 1 AND 6");
+                        });
+                });
+
             modelBuilder.Entity("SalaGest.Api.Models.AppUser", b =>
                 {
                     b.Property<string>("Id")
@@ -349,6 +387,30 @@ namespace SalaGest.Api.Migrations
                     b.ToTable("BookingSoftware");
                 });
 
+            modelBuilder.Entity("SalaGest.Api.Models.ClassCalendarException", b =>
+                {
+                    b.Property<int>("ClassGroupId")
+                        .HasColumnType("int");
+
+                    b.Property<DateOnly>("Date")
+                        .HasColumnType("date");
+
+                    b.Property<string>("Description")
+                        .IsRequired()
+                        .HasMaxLength(250)
+                        .HasColumnType("nvarchar(250)");
+
+                    b.Property<int>("Kind")
+                        .HasColumnType("int");
+
+                    b.HasKey("ClassGroupId", "Date");
+
+                    b.ToTable("ClassCalendarExceptions", t =>
+                        {
+                            t.HasCheckConstraint("CK_ClassCalendarExceptions_Kind", "[Kind] IN (1, 2, 6)");
+                        });
+                });
+
             modelBuilder.Entity("SalaGest.Api.Models.ClassGroup", b =>
                 {
                     b.Property<int>("Id")
@@ -358,6 +420,15 @@ namespace SalaGest.Api.Migrations
                     SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
 
                     b.Property<int?>("CourseId")
+                        .HasColumnType("int");
+
+                    b.Property<DateOnly?>("EadEndDate")
+                        .HasColumnType("date");
+
+                    b.Property<DateOnly?>("EadStartDate")
+                        .HasColumnType("date");
+
+                    b.Property<int?>("EadWeekday")
                         .HasColumnType("int");
 
                     b.Property<string>("Name")
@@ -377,7 +448,10 @@ namespace SalaGest.Api.Migrations
 
                     b.HasIndex("SemesterId");
 
-                    b.ToTable("Classes");
+                    b.ToTable("Classes", t =>
+                        {
+                            t.HasCheckConstraint("CK_Classes_EadPattern", "([EadWeekday] IS NULL AND [EadStartDate] IS NULL AND [EadEndDate] IS NULL) OR ([EadWeekday] IS NOT NULL AND [EadWeekday] BETWEEN 1 AND 5 AND [EadStartDate] IS NOT NULL AND [EadEndDate] IS NOT NULL AND [EadStartDate] <= [EadEndDate])");
+                        });
                 });
 
             modelBuilder.Entity("SalaGest.Api.Models.ComputerGroup", b =>
@@ -1160,6 +1234,17 @@ namespace SalaGest.Api.Migrations
                         .IsRequired();
                 });
 
+            modelBuilder.Entity("SalaGest.Api.Models.AcademicCalendarEvent", b =>
+                {
+                    b.HasOne("SalaGest.Api.Models.Semester", "Semester")
+                        .WithMany()
+                        .HasForeignKey("SemesterId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("Semester");
+                });
+
             modelBuilder.Entity("SalaGest.Api.Models.AssignmentSoftware", b =>
                 {
                     b.HasOne("SalaGest.Api.Models.Software", "Software")
@@ -1214,6 +1299,17 @@ namespace SalaGest.Api.Migrations
                     b.Navigation("Booking");
 
                     b.Navigation("Software");
+                });
+
+            modelBuilder.Entity("SalaGest.Api.Models.ClassCalendarException", b =>
+                {
+                    b.HasOne("SalaGest.Api.Models.ClassGroup", "ClassGroup")
+                        .WithMany()
+                        .HasForeignKey("ClassGroupId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("ClassGroup");
                 });
 
             modelBuilder.Entity("SalaGest.Api.Models.ClassGroup", b =>

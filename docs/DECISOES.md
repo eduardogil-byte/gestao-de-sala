@@ -35,6 +35,7 @@ Este documento separa **regras confirmadas**, **propostas do coordenador** e **d
 | D-08 | Planejamento semestral | Quem propõe, quem aprova e quem publica; como notificar? |
 | D-09 | Blocos | Uma oferta pode usar vários ambientes em períodos distintos? |
 | D-10 | Horários | Necessidade futura de início/fim dentro do turno? |
+| D-11 | EAD e reservas existentes | Marcar aula como EAD libera a sala? Até decisão institucional, SG-12 não cancela, altera nem libera reservas automaticamente. |
 
 ## Recomendações de arquitetura de produto (não aprovadas)
 - Separar **reserva cotidiana direta** de eventual **aprovação/publicação de planejamento semestral**. Reconciliar com coordenação antes de implantar um segundo fluxo.

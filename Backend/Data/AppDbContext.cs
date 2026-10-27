@@ -31,6 +31,8 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : Ident
     public DbSet<TeacherCourseQualification> TeacherCourseQualifications => Set<TeacherCourseQualification>();
     public DbSet<TeacherUnitQualification> TeacherUnitQualifications => Set<TeacherUnitQualification>();
     public DbSet<TeacherCapabilityQualification> TeacherCapabilityQualifications => Set<TeacherCapabilityQualification>();
+    public DbSet<AcademicCalendarEvent> AcademicCalendarEvents => Set<AcademicCalendarEvent>();
+    public DbSet<ClassCalendarException> ClassCalendarExceptions => Set<ClassCalendarException>();
 
     protected override void OnModelCreating(ModelBuilder b)
     {
@@ -49,6 +51,10 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : Ident
         b.Entity<ClassGroup>().Property(x => x.Name).HasMaxLength(100);
         b.Entity<ClassGroup>().HasOne(x => x.Course).WithMany()
             .HasForeignKey(x => x.CourseId).OnDelete(DeleteBehavior.Restrict);
+        b.Entity<ClassGroup>().ToTable(t => t.HasCheckConstraint("CK_Classes_EadPattern",
+            "([EadWeekday] IS NULL AND [EadStartDate] IS NULL AND [EadEndDate] IS NULL) OR " +
+            "([EadWeekday] IS NOT NULL AND [EadWeekday] BETWEEN 1 AND 5 AND [EadStartDate] IS NOT NULL AND " +
+            "[EadEndDate] IS NOT NULL AND [EadStartDate] <= [EadEndDate])"));
         b.Entity<TeachingAssignment>().Property(x => x.DisciplineName).HasMaxLength(140);
         b.Entity<TeachingAssignment>().HasOne(x => x.CurricularUnit).WithMany()
             .HasForeignKey(x => x.CurricularUnitId).OnDelete(DeleteBehavior.Restrict);
@@ -126,6 +132,22 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : Ident
             .HasForeignKey(x => x.TeacherId).OnDelete(DeleteBehavior.Restrict);
         b.Entity<TeacherCapabilityQualification>().HasOne(x => x.CurricularCapability).WithMany()
             .HasForeignKey(x => x.CurricularCapabilityId).OnDelete(DeleteBehavior.Restrict);
+
+        b.Entity<AcademicCalendarEvent>().Property(x => x.Description).IsRequired().HasMaxLength(250);
+        b.Entity<AcademicCalendarEvent>().HasIndex(x => new { x.SemesterId, x.StartDate, x.EndDate }).IsUnique();
+        b.Entity<AcademicCalendarEvent>().HasOne(x => x.Semester).WithMany()
+            .HasForeignKey(x => x.SemesterId).OnDelete(DeleteBehavior.Restrict);
+        b.Entity<AcademicCalendarEvent>().ToTable(t =>
+        {
+            t.HasCheckConstraint("CK_AcademicCalendarEvents_Dates", "[StartDate] <= [EndDate]");
+            t.HasCheckConstraint("CK_AcademicCalendarEvents_Kind", "[Kind] BETWEEN 1 AND 6");
+        });
+        b.Entity<ClassCalendarException>().HasKey(x => new { x.ClassGroupId, x.Date });
+        b.Entity<ClassCalendarException>().Property(x => x.Description).IsRequired().HasMaxLength(250);
+        b.Entity<ClassCalendarException>().HasOne(x => x.ClassGroup).WithMany()
+            .HasForeignKey(x => x.ClassGroupId).OnDelete(DeleteBehavior.Restrict);
+        b.Entity<ClassCalendarException>().ToTable(t => t.HasCheckConstraint("CK_ClassCalendarExceptions_Kind",
+            "[Kind] IN (1, 2, 6)"));
 
         // Restringimos exclusões para proteger o histórico de agendas e evitar caminhos de cascata no SQL Server.
         foreach (var entity in b.Model.GetEntityTypes())

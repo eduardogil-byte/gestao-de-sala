@@ -87,6 +87,9 @@ public sealed class ClassGroup
     public Semester Semester { get; set; } = null!;
     public int? CourseId { get; set; }
     public Course? Course { get; set; }
+    public int? EadWeekday { get; set; }
+    public DateOnly? EadStartDate { get; set; }
+    public DateOnly? EadEndDate { get; set; }
     public string Name { get; set; } = "";
     public int Students { get; set; }
 }
