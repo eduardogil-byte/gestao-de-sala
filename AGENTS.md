@@ -31,3 +31,17 @@ O SalaGest organiza ambientes pedagógicos, turmas, professores e suas reservas 
 2. Implemente somente o escopo combinado e evite reescrever código estável.
 3. Revise possíveis regressões, permissões, entradas inválidas e vínculos no banco.
 4. Apresente resumo do que foi feito, arquivos modificados, testes realmente executados e pendências de validação.
+
+## Documentação obrigatória
+
+Antes de implementar uma Issue SG-XX:
+
+1. Leia docs/REGRAS_NEGOCIO.md.
+2. Leia docs/DECISOES.md.
+3. Consulte docs/ARQUITETURA.md.
+4. Leia docs/tasks/SG-XX.md, se existir.
+
+Não invente decisões de negócio.
+Não implemente funcionalidades fora do escopo.
+Se uma regra estiver indefinida, registre a pendência.
+Priorize alterações pequenas e reutilize o código existente.
