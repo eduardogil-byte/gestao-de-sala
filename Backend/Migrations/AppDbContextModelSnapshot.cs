@@ -172,6 +172,11 @@ namespace SalaGest.Api.Migrations
                         .HasMaxLength(120)
                         .HasColumnType("nvarchar(120)");
 
+                    b.Property<string>("Education")
+                        .IsRequired()
+                        .HasMaxLength(2000)
+                        .HasColumnType("nvarchar(2000)");
+
                     b.Property<string>("Email")
                         .HasMaxLength(256)
                         .HasColumnType("nvarchar(256)");
@@ -202,8 +207,18 @@ namespace SalaGest.Api.Migrations
                     b.Property<bool>("PhoneNumberConfirmed")
                         .HasColumnType("bit");
 
+                    b.Property<string>("ProfessionalKnowledge")
+                        .IsRequired()
+                        .HasMaxLength(2000)
+                        .HasColumnType("nvarchar(2000)");
+
                     b.Property<string>("SecurityStamp")
                         .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("TechnicalSkills")
+                        .IsRequired()
+                        .HasMaxLength(2000)
+                        .HasColumnType("nvarchar(2000)");
 
                     b.Property<bool>("TwoFactorEnabled")
                         .HasColumnType("bit");
@@ -901,6 +916,51 @@ namespace SalaGest.Api.Migrations
                     b.ToTable("Availabilities");
                 });
 
+            modelBuilder.Entity("SalaGest.Api.Models.TeacherCapabilityQualification", b =>
+                {
+                    b.Property<string>("TeacherId")
+                        .HasColumnType("nvarchar(450)");
+
+                    b.Property<int>("CurricularCapabilityId")
+                        .HasColumnType("int");
+
+                    b.HasKey("TeacherId", "CurricularCapabilityId");
+
+                    b.HasIndex("CurricularCapabilityId");
+
+                    b.ToTable("TeacherCapabilityQualifications");
+                });
+
+            modelBuilder.Entity("SalaGest.Api.Models.TeacherCourseQualification", b =>
+                {
+                    b.Property<string>("TeacherId")
+                        .HasColumnType("nvarchar(450)");
+
+                    b.Property<int>("CourseId")
+                        .HasColumnType("int");
+
+                    b.HasKey("TeacherId", "CourseId");
+
+                    b.HasIndex("CourseId");
+
+                    b.ToTable("TeacherCourseQualifications");
+                });
+
+            modelBuilder.Entity("SalaGest.Api.Models.TeacherUnitQualification", b =>
+                {
+                    b.Property<string>("TeacherId")
+                        .HasColumnType("nvarchar(450)");
+
+                    b.Property<int>("CurricularUnitId")
+                        .HasColumnType("int");
+
+                    b.HasKey("TeacherId", "CurricularUnitId");
+
+                    b.HasIndex("CurricularUnitId");
+
+                    b.ToTable("TeacherUnitQualifications");
+                });
+
             modelBuilder.Entity("SalaGest.Api.Models.TeachingAssignment", b =>
                 {
                     b.Property<int>("Id")
@@ -1273,6 +1333,63 @@ namespace SalaGest.Api.Migrations
                         .IsRequired();
 
                     b.Navigation("Shift");
+
+                    b.Navigation("Teacher");
+                });
+
+            modelBuilder.Entity("SalaGest.Api.Models.TeacherCapabilityQualification", b =>
+                {
+                    b.HasOne("SalaGest.Api.Models.CurricularCapability", "CurricularCapability")
+                        .WithMany()
+                        .HasForeignKey("CurricularCapabilityId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("SalaGest.Api.Models.AppUser", "Teacher")
+                        .WithMany()
+                        .HasForeignKey("TeacherId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("CurricularCapability");
+
+                    b.Navigation("Teacher");
+                });
+
+            modelBuilder.Entity("SalaGest.Api.Models.TeacherCourseQualification", b =>
+                {
+                    b.HasOne("SalaGest.Api.Models.Course", "Course")
+                        .WithMany()
+                        .HasForeignKey("CourseId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("SalaGest.Api.Models.AppUser", "Teacher")
+                        .WithMany()
+                        .HasForeignKey("TeacherId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("Course");
+
+                    b.Navigation("Teacher");
+                });
+
+            modelBuilder.Entity("SalaGest.Api.Models.TeacherUnitQualification", b =>
+                {
+                    b.HasOne("SalaGest.Api.Models.CurricularUnit", "CurricularUnit")
+                        .WithMany()
+                        .HasForeignKey("CurricularUnitId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("SalaGest.Api.Models.AppUser", "Teacher")
+                        .WithMany()
+                        .HasForeignKey("TeacherId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("CurricularUnit");
 
                     b.Navigation("Teacher");
                 });
