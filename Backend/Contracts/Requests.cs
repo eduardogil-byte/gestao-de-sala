@@ -13,12 +13,15 @@ public record RoomInput(string Name, string Location, RoomKind Kind, int Seats, 
     List<ComputerGroupInput> ComputerGroups, string? Purpose = null);
 public record ShiftInput(string Name, TimeOnly StartsAt, TimeOnly EndsAt);
 public record SemesterCreate(string Name, DateOnly StartDate, DateOnly EndDate);
-public record ClassCreate(int SemesterId, string Name, int Students);
+public record ClassCreate(int SemesterId, string Name, int Students, int? CourseId = null);
+public record ClassCourseInput(int CourseId);
 public record AvailabilityInput(int Weekday, int ShiftId);
-public record AssignmentCreate(int ClassGroupId, string TeacherId, string DisciplineName,
-    int MeetingsPerWeek, int? PreferredShiftId, bool NeedsProjector, bool NeedsTeacherComputer,
-    bool NeedsStudentComputers, HardwareTier MinTier, List<int> SoftwareIds, string? LessonPlanLink,
-    int MinRamGb = 0, bool NeedsDedicatedGpu = false);
+public record AssignmentCreate(int ClassGroupId, string TeacherId, string? DisciplineName = null,
+    int MeetingsPerWeek = 1, int? PreferredShiftId = null, bool NeedsProjector = false,
+    bool NeedsTeacherComputer = false, bool NeedsStudentComputers = false,
+    HardwareTier MinTier = HardwareTier.Basico, List<int>? SoftwareIds = null,
+    string? LessonPlanLink = null, int MinRamGb = 0, bool NeedsDedicatedGpu = false,
+    int? CurricularUnitId = null, int? Weekday = null);
 public record BookingCreate(int? ClassGroupId, DateTime StartsAt, DateTime EndsAt, int Students,
     bool NeedsProjector, bool NeedsTeacherComputer, bool NeedsStudentComputers,
     HardwareTier MinTier, List<int> SoftwareIds, string Reason, string? LessonPlanLink,

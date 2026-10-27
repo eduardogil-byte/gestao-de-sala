@@ -18,6 +18,7 @@ public static partial class ApiEndpoints
         MapPedagogicalCatalog(app);
         MapCurricularWorkload(app);
         MapTeacherPedagogicalProfiles(app);
+        MapAssignments(app);
         MapSchedules(app);
         MapBookings(app);
         MapLoans(app);
@@ -212,14 +213,30 @@ public static partial class ApiEndpoints
             if (input.Students < 1 || input.Students > 500 || string.IsNullOrWhiteSpace(input.Name))
                 return Error("Turma deve ter nome e quantidade de alunos válida");
             if (!await db.Semesters.AnyAsync(s => s.Id == input.SemesterId)) return Error("Semestre não encontrado");
+            if (input.CourseId is int courseId && !await db.Courses.AnyAsync(c => c.Id == courseId))
+                return Error("Curso não encontrado");
             var item = new ClassGroup
             {
                 SemesterId = input.SemesterId,
+                CourseId = input.CourseId,
                 Name = input.Name.Trim(),
                 Students = input.Students
             };
             db.Classes.Add(item); await db.SaveChangesAsync();
             return Results.Created($"/api/classes/{item.Id}", item);
+        }).RequireAuthorization("Admin");
+        api.MapPut("/classes/{id:int}/course", async (int id, ClassCourseInput input, AppDbContext db) =>
+        {
+            var classGroup = await db.Classes.FindAsync(id);
+            if (classGroup is null) return Results.NotFound();
+            if (!await db.Courses.AnyAsync(c => c.Id == input.CourseId)) return Error("Curso não encontrado");
+            if (classGroup.CourseId == input.CourseId) return Results.NoContent();
+            if (classGroup.CourseId is not null ||
+                await db.Assignments.AnyAsync(a => a.ClassGroupId == id && a.CurricularUnitId != null))
+                return Results.Conflict(new ApiError("O curso da turma já está definido ou possui atribuições pedagógicas"));
+            classGroup.CourseId = input.CourseId;
+            await db.SaveChangesAsync();
+            return Results.NoContent();
         }).RequireAuthorization("Admin");
 
         api.MapGet("/teachers/{teacherId}/availability", async (string teacherId, AppDbContext db) =>
@@ -243,60 +260,6 @@ public static partial class ApiEndpoints
             return Results.NoContent();
         });
 
-        api.MapGet("/assignments", async (int? semesterId, AppDbContext db) =>
-        {
-            var items = await db.Assignments.Include(a => a.ClassGroup).Include(a => a.Software)
-                .Where(a => semesterId == null || a.ClassGroup.SemesterId == semesterId).ToListAsync();
-            return Results.Ok(items.Select(a => new
-            {
-                a.Id,
-                a.TeacherId,
-                a.ClassGroupId,
-                a.DisciplineName,
-                a.MeetingsPerWeek,
-                a.PreferredShiftId,
-                a.NeedsProjector,
-                a.NeedsTeacherComputer,
-                a.NeedsStudentComputers,
-                a.MinTier,
-                a.MinRamGb,
-                a.NeedsDedicatedGpu,
-                a.LessonPlanLink,
-                SoftwareIds = a.Software.Select(s => s.SoftwareId)
-            }));
-        });
-        api.MapPost("/assignments", async (AssignmentCreate input, AppDbContext db,
-            UserManager<AppUser> users) =>
-        {
-            var teacher = await users.FindByIdAsync(input.TeacherId);
-            if (teacher is null || !await users.IsInRoleAsync(teacher, "Professor"))
-                return Error("Professor não encontrado");
-            if (!await db.Classes.AnyAsync(c => c.Id == input.ClassGroupId) ||
-                input.MeetingsPerWeek < 1 || input.MeetingsPerWeek > 5 ||
-                string.IsNullOrWhiteSpace(input.DisciplineName) ||
-                !Enum.IsDefined(input.MinTier) || input.MinRamGb < 0 || input.MinRamGb > 512 ||
-                (input.PreferredShiftId is int shiftId && !await db.Shifts.AnyAsync(s => s.Id == shiftId)) ||
-                !await SoftwareExists(db, input.SoftwareIds))
-                return Error("Dados da atribuição inválidos");
-            var item = new TeachingAssignment
-            {
-                ClassGroupId = input.ClassGroupId,
-                TeacherId = input.TeacherId,
-                DisciplineName = input.DisciplineName.Trim(),
-                MeetingsPerWeek = input.MeetingsPerWeek,
-                PreferredShiftId = input.PreferredShiftId,
-                NeedsProjector = input.NeedsProjector,
-                NeedsTeacherComputer = input.NeedsTeacherComputer,
-                NeedsStudentComputers = input.NeedsStudentComputers,
-                MinTier = input.MinTier,
-                MinRamGb = input.MinRamGb,
-                NeedsDedicatedGpu = input.NeedsDedicatedGpu,
-                LessonPlanLink = input.LessonPlanLink,
-                Software = input.SoftwareIds.Distinct().Select(id => new AssignmentSoftware { SoftwareId = id }).ToList()
-            };
-            db.Assignments.Add(item); await db.SaveChangesAsync();
-            return Results.Created($"/api/assignments/{item.Id}", new { item.Id });
-        }).RequireAuthorization("Admin");
     }
 
     private static async Task<string?> ValidateRoom(AppDbContext db, RoomInput input)

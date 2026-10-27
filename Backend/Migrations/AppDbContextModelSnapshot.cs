@@ -357,6 +357,9 @@ namespace SalaGest.Api.Migrations
 
                     SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
 
+                    b.Property<int?>("CourseId")
+                        .HasColumnType("int");
+
                     b.Property<string>("Name")
                         .IsRequired()
                         .HasMaxLength(100)
@@ -369,6 +372,8 @@ namespace SalaGest.Api.Migrations
                         .HasColumnType("int");
 
                     b.HasKey("Id");
+
+                    b.HasIndex("CourseId");
 
                     b.HasIndex("SemesterId");
 
@@ -972,10 +977,16 @@ namespace SalaGest.Api.Migrations
                     b.Property<int>("ClassGroupId")
                         .HasColumnType("int");
 
+                    b.Property<int?>("CurricularUnitId")
+                        .HasColumnType("int");
+
                     b.Property<string>("DisciplineName")
                         .IsRequired()
                         .HasMaxLength(140)
                         .HasColumnType("nvarchar(140)");
+
+                    b.Property<DateTime?>("EndedAtUtc")
+                        .HasColumnType("datetime2");
 
                     b.Property<string>("LessonPlanLink")
                         .HasColumnType("nvarchar(max)");
@@ -1008,15 +1019,25 @@ namespace SalaGest.Api.Migrations
                         .IsRequired()
                         .HasColumnType("nvarchar(450)");
 
+                    b.Property<int?>("Weekday")
+                        .HasColumnType("int");
+
                     b.HasKey("Id");
 
-                    b.HasIndex("ClassGroupId");
+                    b.HasIndex("CurricularUnitId");
 
                     b.HasIndex("PreferredShiftId");
 
                     b.HasIndex("TeacherId");
 
-                    b.ToTable("Assignments");
+                    b.HasIndex("ClassGroupId", "TeacherId", "CurricularUnitId", "Weekday", "PreferredShiftId")
+                        .IsUnique()
+                        .HasFilter("[CurricularUnitId] IS NOT NULL AND [EndedAtUtc] IS NULL");
+
+                    b.ToTable("Assignments", t =>
+                        {
+                            t.HasCheckConstraint("CK_Assignments_PedagogicalSlot", "[CurricularUnitId] IS NULL OR ([Weekday] IS NOT NULL AND [Weekday] BETWEEN 1 AND 5 AND [PreferredShiftId] IS NOT NULL)");
+                        });
                 });
 
             modelBuilder.Entity("SalaGest.Api.Models.UserNotification", b =>
@@ -1197,11 +1218,18 @@ namespace SalaGest.Api.Migrations
 
             modelBuilder.Entity("SalaGest.Api.Models.ClassGroup", b =>
                 {
+                    b.HasOne("SalaGest.Api.Models.Course", "Course")
+                        .WithMany()
+                        .HasForeignKey("CourseId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
                     b.HasOne("SalaGest.Api.Models.Semester", "Semester")
                         .WithMany()
                         .HasForeignKey("SemesterId")
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
+
+                    b.Navigation("Course");
 
                     b.Navigation("Semester");
                 });
@@ -1402,6 +1430,11 @@ namespace SalaGest.Api.Migrations
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
 
+                    b.HasOne("SalaGest.Api.Models.CurricularUnit", "CurricularUnit")
+                        .WithMany()
+                        .HasForeignKey("CurricularUnitId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
                     b.HasOne("SalaGest.Api.Models.SchoolShift", "PreferredShift")
                         .WithMany()
                         .HasForeignKey("PreferredShiftId")
@@ -1414,6 +1447,8 @@ namespace SalaGest.Api.Migrations
                         .IsRequired();
 
                     b.Navigation("ClassGroup");
+
+                    b.Navigation("CurricularUnit");
 
                     b.Navigation("PreferredShift");
 

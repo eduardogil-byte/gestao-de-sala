@@ -12,7 +12,8 @@ public sealed class ScheduleGenerator(AppDbContext db)
         if (semester is null) return (null, "Semestre não encontrado");
 
         var assignments = await db.Assignments.Include(a => a.ClassGroup)
-            .Include(a => a.Software).Where(a => a.ClassGroup.SemesterId == semesterId).ToListAsync();
+            .Include(a => a.Software).Where(a => a.ClassGroup.SemesterId == semesterId &&
+                a.EndedAtUtc == null).ToListAsync();
         if (assignments.Count == 0) return (null, "Cadastre pelo menos uma disciplina atribuída a uma turma");
         var availability = await db.Availabilities.ToListAsync();
         var shifts = await db.Shifts.OrderBy(s => s.StartsAt).ToListAsync();
@@ -33,7 +34,8 @@ public sealed class ScheduleGenerator(AppDbContext db)
                 assignment.NeedsTeacherComputer, assignment.NeedsStudentComputers,
                 assignment.MinTier, softwareIds, assignment.MinRamGb, assignment.NeedsDedicatedGpu);
             var teacherSlots = availability.Where(a => a.TeacherId == assignment.TeacherId
-                && (assignment.PreferredShiftId is null || a.ShiftId == assignment.PreferredShiftId))
+                && (assignment.PreferredShiftId is null || a.ShiftId == assignment.PreferredShiftId)
+                && (assignment.Weekday is null || a.Weekday == assignment.Weekday))
                 .OrderBy(a => a.Weekday).ThenBy(a => a.ShiftId).ToList();
             var placed = new List<WeeklyClass>();
 

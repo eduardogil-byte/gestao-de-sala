@@ -85,6 +85,8 @@ public sealed class ClassGroup
     public int Id { get; set; }
     public int SemesterId { get; set; }
     public Semester Semester { get; set; } = null!;
+    public int? CourseId { get; set; }
+    public Course? Course { get; set; }
     public string Name { get; set; } = "";
     public int Students { get; set; }
 }
@@ -106,10 +108,14 @@ public sealed class TeachingAssignment
     public ClassGroup ClassGroup { get; set; } = null!;
     public string TeacherId { get; set; } = "";
     public AppUser Teacher { get; set; } = null!;
+    public int? CurricularUnitId { get; set; }
+    public CurricularUnit? CurricularUnit { get; set; }
     public string DisciplineName { get; set; } = "";
     public int MeetingsPerWeek { get; set; } = 1;
+    public int? Weekday { get; set; }
     public int? PreferredShiftId { get; set; }
     public SchoolShift? PreferredShift { get; set; }
+    public DateTime? EndedAtUtc { get; set; }
     public bool NeedsProjector { get; set; }
     public bool NeedsTeacherComputer { get; set; }
     public bool NeedsStudentComputers { get; set; }

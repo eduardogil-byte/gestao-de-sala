@@ -47,7 +47,16 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : Ident
         b.Entity<Software>().HasIndex(x => x.Name).IsUnique();
         b.Entity<SchoolShift>().Property(x => x.Name).HasMaxLength(60);
         b.Entity<ClassGroup>().Property(x => x.Name).HasMaxLength(100);
+        b.Entity<ClassGroup>().HasOne(x => x.Course).WithMany()
+            .HasForeignKey(x => x.CourseId).OnDelete(DeleteBehavior.Restrict);
         b.Entity<TeachingAssignment>().Property(x => x.DisciplineName).HasMaxLength(140);
+        b.Entity<TeachingAssignment>().HasOne(x => x.CurricularUnit).WithMany()
+            .HasForeignKey(x => x.CurricularUnitId).OnDelete(DeleteBehavior.Restrict);
+        b.Entity<TeachingAssignment>().HasIndex(x => new
+            { x.ClassGroupId, x.TeacherId, x.CurricularUnitId, x.Weekday, x.PreferredShiftId })
+            .IsUnique().HasFilter("[CurricularUnitId] IS NOT NULL AND [EndedAtUtc] IS NULL");
+        b.Entity<TeachingAssignment>().ToTable(t => t.HasCheckConstraint("CK_Assignments_PedagogicalSlot",
+            "[CurricularUnitId] IS NULL OR ([Weekday] IS NOT NULL AND [Weekday] BETWEEN 1 AND 5 AND [PreferredShiftId] IS NOT NULL)"));
         b.Entity<Semester>().Property(x => x.Name).HasMaxLength(100);
 
         b.Entity<GroupSoftware>().HasKey(x => new { x.ComputerGroupId, x.SoftwareId });
