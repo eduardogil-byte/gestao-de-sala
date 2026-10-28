@@ -10,7 +10,7 @@ public sealed class AppUser : IdentityUser
     public string ProfessionalKnowledge { get; set; } = "";
 }
 
-public enum RoomKind { Comum = 1, Laboratorio = 2, Hibrida = 3 }
+public enum RoomKind { Comum = 1, Laboratorio = 2, Hibrida = 3, Oficina = 4 }
 public enum HardwareTier { Basico = 1, Intermediario = 2, Alto = 3 }
 public enum ScheduleStatus { Rascunho = 1, Publicada = 2, Arquivada = 3 }
 public enum BookingStatus { Pendente = 1, Aprovada = 2, Rejeitada = 3 }

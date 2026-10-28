@@ -29,6 +29,9 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : Ident
     public DbSet<CourseModule> CourseModules => Set<CourseModule>();
     public DbSet<CurricularUnit> CurricularUnits => Set<CurricularUnit>();
     public DbSet<CurricularCapability> CurricularCapabilities => Set<CurricularCapability>();
+    public DbSet<CapabilityEnvironmentRequirement> CapabilityEnvironmentRequirements => Set<CapabilityEnvironmentRequirement>();
+    public DbSet<CapabilityResourceRequirement> CapabilityResourceRequirements => Set<CapabilityResourceRequirement>();
+    public DbSet<CapabilitySoftwareRequirement> CapabilitySoftwareRequirements => Set<CapabilitySoftwareRequirement>();
     public DbSet<TeacherCourseQualification> TeacherCourseQualifications => Set<TeacherCourseQualification>();
     public DbSet<TeacherUnitQualification> TeacherUnitQualifications => Set<TeacherUnitQualification>();
     public DbSet<TeacherCapabilityQualification> TeacherCapabilityQualifications => Set<TeacherCapabilityQualification>();
@@ -144,6 +147,29 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : Ident
             t.HasCheckConstraint("CK_CurricularCapabilities_RequiredHours",
                 "[RequiredHours] > 0 AND [RequiredHours] <= 9999999.99");
         });
+
+        b.Entity<CapabilityEnvironmentRequirement>().HasKey(x => x.CurricularCapabilityId);
+        b.Entity<CapabilityEnvironmentRequirement>().HasOne(x => x.CurricularCapability)
+            .WithOne(x => x.EnvironmentRequirement).HasForeignKey<CapabilityEnvironmentRequirement>(x => x.CurricularCapabilityId)
+            .OnDelete(DeleteBehavior.Restrict);
+        b.Entity<CapabilityEnvironmentRequirement>().ToTable(t => t.HasCheckConstraint(
+            "CK_CapabilityEnvironmentRequirements_Computers",
+            "([RequiredComputers] IS NULL OR [RequiredComputers] > 0) AND ([MinRamGb] IS NULL OR [MinRamGb] > 0)"));
+        b.Entity<CapabilityResourceRequirement>().Property(x => x.Name).IsRequired().HasMaxLength(120);
+        b.Entity<CapabilityResourceRequirement>().Property(x => x.Type).IsRequired().HasMaxLength(80);
+        b.Entity<CapabilityResourceRequirement>().Property(x => x.NormalizedName).IsRequired().HasMaxLength(120);
+        b.Entity<CapabilityResourceRequirement>().Property(x => x.NormalizedType).IsRequired().HasMaxLength(80);
+        b.Entity<CapabilityResourceRequirement>().HasIndex(x => new { x.CurricularCapabilityId, x.NormalizedName, x.NormalizedType }).IsUnique();
+        b.Entity<CapabilityResourceRequirement>().HasOne(x => x.EnvironmentRequirement).WithMany(x => x.Resources)
+            .HasForeignKey(x => x.CurricularCapabilityId).OnDelete(DeleteBehavior.Restrict);
+        b.Entity<CapabilityResourceRequirement>().ToTable(t => t.HasCheckConstraint("CK_CapabilityResourceRequirements_Quantity", "[Quantity] > 0"));
+        b.Entity<CapabilitySoftwareRequirement>().HasKey(x => new { x.CurricularCapabilityId, x.SoftwareId });
+        b.Entity<CapabilitySoftwareRequirement>().HasOne(x => x.EnvironmentRequirement).WithMany(x => x.Software)
+            .HasForeignKey(x => x.CurricularCapabilityId).OnDelete(DeleteBehavior.Restrict);
+        b.Entity<CapabilitySoftwareRequirement>().HasOne(x => x.Software).WithMany()
+            .HasForeignKey(x => x.SoftwareId).OnDelete(DeleteBehavior.Restrict);
+        b.Entity<CapabilitySoftwareRequirement>().ToTable(t => t.HasCheckConstraint(
+            "CK_CapabilitySoftwareRequirements_Licenses", "[RequiredLicenses] IS NULL OR [RequiredLicenses] > 0"));
 
         b.Entity<TeacherCourseQualification>().HasKey(x => new { x.TeacherId, x.CourseId });
         b.Entity<TeacherCourseQualification>().HasOne(x => x.Teacher).WithMany()

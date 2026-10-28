@@ -45,4 +45,41 @@ public sealed class CurricularCapability
     public string Contents { get; set; } = "";
     public decimal RequiredHours { get; set; }
     public int Order { get; set; }
+    public CapabilityEnvironmentRequirement? EnvironmentRequirement { get; set; }
+}
+
+public sealed class CapabilityEnvironmentRequirement
+{
+    public int CurricularCapabilityId { get; set; }
+    public CurricularCapability CurricularCapability { get; set; } = null!;
+    public RoomKind? RoomKind { get; set; }
+    public bool RequiresProjector { get; set; }
+    public int? RequiredComputers { get; set; }
+    public int? MinRamGb { get; set; }
+    public bool ComputersCritical { get; set; }
+    public List<CapabilityResourceRequirement> Resources { get; set; } = new();
+    public List<CapabilitySoftwareRequirement> Software { get; set; } = new();
+}
+
+public sealed class CapabilityResourceRequirement
+{
+    public int Id { get; set; }
+    public int CurricularCapabilityId { get; set; }
+    public CapabilityEnvironmentRequirement EnvironmentRequirement { get; set; } = null!;
+    public string Name { get; set; } = "";
+    public string Type { get; set; } = "";
+    public string NormalizedName { get; set; } = "";
+    public string NormalizedType { get; set; } = "";
+    public int Quantity { get; set; }
+    public bool Critical { get; set; }
+}
+
+public sealed class CapabilitySoftwareRequirement
+{
+    public int CurricularCapabilityId { get; set; }
+    public CapabilityEnvironmentRequirement EnvironmentRequirement { get; set; } = null!;
+    public int SoftwareId { get; set; }
+    public Software Software { get; set; } = null!;
+    public int? RequiredLicenses { get; set; }
+    public bool Critical { get; set; } = true;
 }

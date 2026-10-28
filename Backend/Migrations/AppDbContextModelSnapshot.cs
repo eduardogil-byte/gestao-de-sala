@@ -387,6 +387,106 @@ namespace SalaGest.Api.Migrations
                     b.ToTable("BookingSoftware");
                 });
 
+            modelBuilder.Entity("SalaGest.Api.Models.CapabilityEnvironmentRequirement", b =>
+                {
+                    b.Property<int>("CurricularCapabilityId")
+                        .HasColumnType("int");
+
+                    b.Property<bool>("ComputersCritical")
+                        .HasColumnType("bit");
+
+                    b.Property<int?>("MinRamGb")
+                        .HasColumnType("int");
+
+                    b.Property<int?>("RequiredComputers")
+                        .HasColumnType("int");
+
+                    b.Property<bool>("RequiresProjector")
+                        .HasColumnType("bit");
+
+                    b.Property<int?>("RoomKind")
+                        .HasColumnType("int");
+
+                    b.HasKey("CurricularCapabilityId");
+
+                    b.ToTable("CapabilityEnvironmentRequirements", t =>
+                        {
+                            t.HasCheckConstraint("CK_CapabilityEnvironmentRequirements_Computers", "([RequiredComputers] IS NULL OR [RequiredComputers] > 0) AND ([MinRamGb] IS NULL OR [MinRamGb] > 0)");
+                        });
+                });
+
+            modelBuilder.Entity("SalaGest.Api.Models.CapabilityResourceRequirement", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<bool>("Critical")
+                        .HasColumnType("bit");
+
+                    b.Property<int>("CurricularCapabilityId")
+                        .HasColumnType("int");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(120)
+                        .HasColumnType("nvarchar(120)");
+
+                    b.Property<string>("NormalizedName")
+                        .IsRequired()
+                        .HasMaxLength(120)
+                        .HasColumnType("nvarchar(120)");
+
+                    b.Property<string>("NormalizedType")
+                        .IsRequired()
+                        .HasMaxLength(80)
+                        .HasColumnType("nvarchar(80)");
+
+                    b.Property<int>("Quantity")
+                        .HasColumnType("int");
+
+                    b.Property<string>("Type")
+                        .IsRequired()
+                        .HasMaxLength(80)
+                        .HasColumnType("nvarchar(80)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("CurricularCapabilityId", "NormalizedName", "NormalizedType")
+                        .IsUnique();
+
+                    b.ToTable("CapabilityResourceRequirements", t =>
+                        {
+                            t.HasCheckConstraint("CK_CapabilityResourceRequirements_Quantity", "[Quantity] > 0");
+                        });
+                });
+
+            modelBuilder.Entity("SalaGest.Api.Models.CapabilitySoftwareRequirement", b =>
+                {
+                    b.Property<int>("CurricularCapabilityId")
+                        .HasColumnType("int");
+
+                    b.Property<int>("SoftwareId")
+                        .HasColumnType("int");
+
+                    b.Property<bool>("Critical")
+                        .HasColumnType("bit");
+
+                    b.Property<int?>("RequiredLicenses")
+                        .HasColumnType("int");
+
+                    b.HasKey("CurricularCapabilityId", "SoftwareId");
+
+                    b.HasIndex("SoftwareId");
+
+                    b.ToTable("CapabilitySoftwareRequirements", t =>
+                        {
+                            t.HasCheckConstraint("CK_CapabilitySoftwareRequirements_Licenses", "[RequiredLicenses] IS NULL OR [RequiredLicenses] > 0");
+                        });
+                });
+
             modelBuilder.Entity("SalaGest.Api.Models.ClassCalendarException", b =>
                 {
                     b.Property<int>("ClassGroupId")
@@ -1428,6 +1528,47 @@ namespace SalaGest.Api.Migrations
                     b.Navigation("Software");
                 });
 
+            modelBuilder.Entity("SalaGest.Api.Models.CapabilityEnvironmentRequirement", b =>
+                {
+                    b.HasOne("SalaGest.Api.Models.CurricularCapability", "CurricularCapability")
+                        .WithOne("EnvironmentRequirement")
+                        .HasForeignKey("SalaGest.Api.Models.CapabilityEnvironmentRequirement", "CurricularCapabilityId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("CurricularCapability");
+                });
+
+            modelBuilder.Entity("SalaGest.Api.Models.CapabilityResourceRequirement", b =>
+                {
+                    b.HasOne("SalaGest.Api.Models.CapabilityEnvironmentRequirement", "EnvironmentRequirement")
+                        .WithMany("Resources")
+                        .HasForeignKey("CurricularCapabilityId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("EnvironmentRequirement");
+                });
+
+            modelBuilder.Entity("SalaGest.Api.Models.CapabilitySoftwareRequirement", b =>
+                {
+                    b.HasOne("SalaGest.Api.Models.CapabilityEnvironmentRequirement", "EnvironmentRequirement")
+                        .WithMany("Software")
+                        .HasForeignKey("CurricularCapabilityId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("SalaGest.Api.Models.Software", "Software")
+                        .WithMany()
+                        .HasForeignKey("SoftwareId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("EnvironmentRequirement");
+
+                    b.Navigation("Software");
+                });
+
             modelBuilder.Entity("SalaGest.Api.Models.ClassCalendarException", b =>
                 {
                     b.HasOne("SalaGest.Api.Models.ClassGroup", "ClassGroup")
@@ -1729,6 +1870,13 @@ namespace SalaGest.Api.Migrations
                     b.Navigation("Software");
                 });
 
+            modelBuilder.Entity("SalaGest.Api.Models.CapabilityEnvironmentRequirement", b =>
+                {
+                    b.Navigation("Resources");
+
+                    b.Navigation("Software");
+                });
+
             modelBuilder.Entity("SalaGest.Api.Models.ComputerGroup", b =>
                 {
                     b.Navigation("Software");
@@ -1742,6 +1890,11 @@ namespace SalaGest.Api.Migrations
             modelBuilder.Entity("SalaGest.Api.Models.CourseModule", b =>
                 {
                     b.Navigation("CurricularUnits");
+                });
+
+            modelBuilder.Entity("SalaGest.Api.Models.CurricularCapability", b =>
+                {
+                    b.Navigation("EnvironmentRequirement");
                 });
 
             modelBuilder.Entity("SalaGest.Api.Models.CurricularUnit", b =>
