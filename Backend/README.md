@@ -1,50 +1,44 @@
-# SalaGest — Backend de desenvolvimento (v0.2, regras de alocação por turno)
+# SalaGest — Backend
 
-**Stack preservada:** C# / ASP.NET Core 8 Minimal API, Entity Framework Core 8, SQL Server Express,
-ASP.NET Core Identity Bearer Token. O React já enviado anteriormente é um projeto separado e
-**ainda deve ser atualizado** para este novo fluxo.
+ASP.NET Core 8 Minimal API, Entity Framework Core 8, SQL Server e ASP.NET Core Identity com Bearer Token. O frontend versionado nesta base já usa confirmação direta de reservas e empréstimos por oferta, aceite e finalização.
 
-**Estado de validação:** esta versão foi preparada a partir do backend ZIP original, com revisão estática
-local; **não foi compilada nem executada** aqui porque o SDK do .NET e o SQL Server não estão
-instalados no ambiente de preparação. Execute `dotnet build`, `dotnet test`, crie/aplique as migrations
-e teste os fluxos no seu computador antes de colocar usuários reais. Não há promessa de homologação.
+## Instalação e execução
 
-## Começar no Windows
+Siga o [guia principal](../README.md) para pré-requisitos, conexão SQL, credenciais locais, restauração da ferramenta EF, aplicação de migrations e execução. Execute os comandos do backend na pasta `Backend/`.
 
-Instale .NET 8 SDK, SQL Server Express e (opcional) Visual Studio. Abra um terminal
-na pasta `Backend/` e execute:
+- `SalaGest.Api.csproj`: alvo `net8.0`, pacotes EF Core 8.0.0.
+- `dotnet-tools.json`: ferramenta local `dotnet-ef` 8.0.32; restaure com `dotnet tool restore --tool-manifest .\dotnet-tools.json` e confira `dotnet ef --version`.
+- `appsettings.json`: instância padrão `localhost`, banco `SalaGestDb`, autenticação integrada. Uma instância nomeada deve ser configurada explicitamente.
+- `Properties/launchSettings.json`: perfil `SalaGest.Api`, ambiente Development, API em `http://localhost:5108` e Swagger em `/swagger`.
 
-```powershell
-dotnet --version
-dotnet restore
-dotnet build
-dotnet tool install --global dotnet-ef --version 8.0.0
-# se já estiver instalado: dotnet tool update --global dotnet-ef --version 8.0.0
+A migration `20261014054221_InitialCreate` já existe. Não a recrie para instalar o projeto. Aplique as migrations existentes somente ao banco de desenvolvimento conferido; a API não as aplica automaticamente.
 
-dotnet user-secrets set "Seed:AdminEmail" "admin@instituicao.local"
-dotnet user-secrets set "Seed:AdminPassword" "TroquePorUmaSenhaForte123!"
+## Configuração e inicialização
 
-dotnet ef migrations add InitialCreate
-dotnet ef database update
-dotnet run
-```
+A API usa a configuração padrão do ASP.NET Core. A factory de design time em `Data/AppDbContextFactory.cs` usa somente `appsettings.json` e variáveis de ambiente, sem User Secrets. Para manter migrations e execução no mesmo banco, defina `ConnectionStrings__DefaultConnection` no terminal que fará ambas as operações, como detalhado no guia raiz.
 
-O endereço padrão em `Properties/launchSettings.json` é `http://localhost:5108`;
-abra `http://localhost:5108/swagger` no perfil Development.
+`Seed:AdminEmail` e `Seed:AdminPassword` podem ser definidos com User Secrets em Development. O seed cria `Admin` e `Professor`, os turnos abaixo somente quando não existe nenhum turno e o Admin configurado. Não fornece base demonstrativa completa, não altera turnos existentes nem promove automaticamente uma conta comum preexistente.
 
-`appsettings.json` usa `Server=localhost\\SQLEXPRESS;Database=SalaGestDb;Trusted_Connection=True;...`.
-Use **um banco exclusivo**, preferencialmente novo. Se você já criou migrations para a
-versão anterior, **não rode `InitialCreate` outra vez:** gere uma nova migration ou
-faça backup e decida como migrar os dados existentes. Não apague tabelas de produção.
-O seed cria três turnos apenas quando não existe nenhum: manhã **08:00–12:00**,
-tarde **13:30–17:30**, noite **18:30–22:30**. Se o banco já tinha turnos
-cadastrados, confira-os; o seed não altera horários existentes automaticamente.
+| Turno inicial | Horário |
+| --- | --- |
+| Manhã | 08:00–12:00 |
+| Tarde | 13:30–17:30 |
+| Noite | 18:30–22:30 |
 
-Para executar os testes puros (em outro terminal, a partir da pasta que contém `SalaGest.Backend.Tests`):
+## Organização e testes
+
+`Models` define entidades, `Contracts` define entradas HTTP, `Data` configura persistência, `Endpoints` contém rotas e autorização e `Services` contém regras de recorrência, conflitos, compatibilidade e geração legada.
+
+Na pasta `Backend/`:
 
 ```powershell
+dotnet build SalaGest.Api.csproj
 dotnet test .\SalaGest.Backend.Tests\SalaGest.Backend.Tests.csproj
 ```
+
+Os cinco testes atuais estão em `BookingPeriodsTests.cs` e `RoomCompatibilityTests.cs`. Validam períodos e capacidade/quantidade de computadores sem SQL Server. Não comprovam login real, autorização HTTP, migrations, persistência ou concorrência. Para integração, consulte [TESTES_MANUAIS.md](../Frontend/TESTES_MANUAIS.md) e [SalaGest.http](SalaGest.http).
+
+Esta contribuição revisou as instruções estaticamente; não executou instalação, build, testes ou banco. A execução e a homologação permanecem pendentes de evidências no ambiente de desenvolvimento.
 
 ## Regra principal
 
@@ -119,9 +113,9 @@ Empréstimos vigentes bloqueiam operações incompatíveis de transferência/lib
 ### Painel e notificações
 
 - `GET /api/dashboard/usage?from=2026-10-01&to=2026-10-31` lista salas mais/menos
-  ocupadas entre as que possuem ocorrências, horas e número distinto de salas por data.
-  Filtros opcionais `shiftId` e `classGroupId`. Uma sala que não aparece em `Rooms`
-  possui zero ocorrências no período; o frontend pode cruzar com `/api/rooms`.
+  ocupadas, incluindo salas com zero ocorrências, horas e número distinto de salas por data.
+  Filtros opcionais `shiftId` e `classGroupId`. O retorno inclui os IDs de todas as salas;
+  o frontend cruza esses IDs com `/api/rooms` para apresentar os nomes.
 - `GET /api/notifications` devolve até 100 notificações do usuário, com autoria (ID).
 - `POST /api/notifications/{id}/read` marca como lida.
 
@@ -131,7 +125,7 @@ Empréstimos vigentes bloqueiam operações incompatíveis de transferência/lib
 - Turnos, semestres e turmas têm endpoints administrativos.
 - Professor pode solicitar/confirmar, alterar dia, liberar e transferir **sua própria** alocação.
 - Admin pode transferir/liberar alocações da instituição e consultar o painel.
-- Os endpoints legados `/api/schedules/generate` e `/publish` foram **preservados**
+- Os endpoints legados `/api/schedules/generate/{semesterId}` e `/api/schedules/{id}/publish` foram **preservados**
   para não descartar o código original, mas a geração automática da grade
   completa **não é o fluxo principal e não deve ser utilizada no MVP sem nova validação**.
 - O endpoint legado `POST /api/bookings/{id}/approve` não efetiva mais reservas;
@@ -139,14 +133,17 @@ Empréstimos vigentes bloqueiam operações incompatíveis de transferência/lib
 - Os endpoints antigos de empréstimo com aprovação do admin foram substituídos
   por `/offer`, `/accept` e `/finalize`.
 
-## Integração com o frontend antigo
+## Autenticação e integração com o frontend
 
-O ZIP React original ainda espera `/bookings/{id}/approve`,
-`/loans/{id}/owner-approve`, `/loans/{id}/admin-approve` e o fluxo de
-"solicitação pendente". **Essas telas devem ser alteradas antes de um teste ponta a ponta.**
-A documentação em `SalaGest.http` fornece exemplos das novas chamadas. A API usa
-Bearer Token do ASP.NET Core Identity 8 e serializa enums com nomes (strings).
-Datas e horários de aula são **locais da instituição sem sufixo `Z`**.
+`POST /api/auth/login` retorna o token usado em `Authorization: Bearer <accessToken>`. `GET /api/me` retorna a identidade autenticada. `POST /api/auth/register` permite cadastro público de Professor nesta base; essa política ainda requer revisão antes da disponibilização institucional. `POST /api/auth/change-password` exige autenticação.
+
+No Swagger, execute `POST /api/auth/login` e copie o `accessToken` retornado. Clique em **Authorize**, cole somente o valor do token, sem o prefixo `Bearer`, e confirme. A configuração HTTP Bearer do Swagger acrescenta esse prefixo ao cabeçalho `Authorization` nas chamadas autenticadas.
+
+O cliente React atual chama `/confirm` nas reservas e `/offer`, `/accept` e `/finalize` nos empréstimos. O proxy Vite de desenvolvimento preserva `/api` e encaminha para a porta 5108 por padrão. Consulte o [README do frontend](../Frontend/README.md) para configurar outro destino.
+
+A API serializa enums por nome (strings). Datas/horários de aulas são locais da instituição, sem sufixo `Z`; carimbos de auditoria com sufixo `Utc` têm finalidade distinta. `/api/agenda` limita a consulta a 32 dias. O painel `/api/dashboard/usage` exige autenticação e aceita o intervalo validado no endpoint; o filtro atual considera situação letiva e empréstimos, portanto não representa automaticamente toda a capacidade física reservada.
+
+O Swagger está habilitado somente em Development. A política CORS padrão permite `http://localhost:5173` e `http://localhost:3000`. O fluxo local documentado utiliza o proxy Vite.
 
 ## Limitações e próximos testes
 
