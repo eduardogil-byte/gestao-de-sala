@@ -15,6 +15,7 @@ public static partial class ApiEndpoints
         MapAccounts(app);
         MapPasswords(app);
         MapCatalog(app);
+        MapEnvironmentInventory(app);
         MapPedagogicalCatalog(app);
         MapCurricularWorkload(app);
         MapTeacherPedagogicalProfiles(app);
@@ -188,9 +189,7 @@ public static partial class ApiEndpoints
             existing.HasProjector = input.HasProjector;
             existing.HasTeacherComputer = input.HasTeacherComputer;
             existing.HasInternet = input.HasInternet; existing.Active = input.Active;
-            db.GroupSoftware.RemoveRange(existing.ComputerGroups.SelectMany(g => g.Software));
-            db.ComputerGroups.RemoveRange(existing.ComputerGroups);
-            existing.ComputerGroups = NewComputerGroups(input.ComputerGroups);
+            UpdateComputerGroups(existing.ComputerGroups, input.ComputerGroups);
             await db.SaveChangesAsync();
             return Results.NoContent();
         }).RequireAuthorization("Admin");
@@ -307,4 +306,34 @@ public static partial class ApiEndpoints
             Software = g.Software.Select(s => new GroupSoftware
             { SoftwareId = s.SoftwareId, InstalledQuantity = s.InstalledQuantity }).ToList()
         }).ToList();
+
+    private static void UpdateComputerGroups(List<ComputerGroup> existing,
+        IEnumerable<ComputerGroupInput> inputs)
+    {
+        foreach (var input in inputs)
+        {
+            var group = existing.FirstOrDefault(g => string.Equals(g.Description.Trim(),
+                input.Description.Trim(), StringComparison.OrdinalIgnoreCase));
+            if (group is null)
+            {
+                existing.Add(NewComputerGroups(new[] { input })[0]);
+                continue;
+            }
+
+            group.Description = input.Description.Trim();
+            group.Quantity = input.Quantity;
+            group.RamGb = input.RamGb;
+            group.Tier = input.Tier;
+            group.DedicatedGpu = input.DedicatedGpu;
+            foreach (var software in input.Software)
+            {
+                var link = group.Software.FirstOrDefault(s => s.SoftwareId == software.SoftwareId);
+                if (link is null)
+                    group.Software.Add(new GroupSoftware
+                    { SoftwareId = software.SoftwareId, InstalledQuantity = software.InstalledQuantity });
+                else
+                    link.InstalledQuantity = software.InstalledQuantity;
+            }
+        }
+    }
 }

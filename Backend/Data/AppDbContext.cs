@@ -7,6 +7,7 @@ namespace SalaGest.Api.Data;
 public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : IdentityDbContext<AppUser>(options)
 {
     public DbSet<Room> Rooms => Set<Room>();
+    public DbSet<RoomResource> RoomResources => Set<RoomResource>();
     public DbSet<ComputerGroup> ComputerGroups => Set<ComputerGroup>();
     public DbSet<Software> SoftwareCatalog => Set<Software>();
     public DbSet<GroupSoftware> GroupSoftware => Set<GroupSoftware>();
@@ -45,8 +46,35 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : Ident
         b.Entity<Room>().Property(x => x.Location).HasMaxLength(160);
         b.Entity<Room>().Property(x => x.Purpose).HasMaxLength(350);
         b.Entity<ComputerGroup>().Property(x => x.Description).HasMaxLength(120);
+        b.Entity<ComputerGroup>().Property(x => x.Processor).HasMaxLength(160);
+        b.Entity<ComputerGroup>().Property(x => x.Storage).HasMaxLength(120);
+        b.Entity<ComputerGroup>().Property(x => x.GraphicsCard).HasMaxLength(160);
+        b.Entity<ComputerGroup>().Property(x => x.OperatingSystem).HasMaxLength(120);
+        b.Entity<ComputerGroup>().Property(x => x.NetworkDetails).HasMaxLength(500);
+        b.Entity<ComputerGroup>().ToTable(t => t.HasCheckConstraint("CK_ComputerGroups_OperationalQuantity",
+            "[OperationalQuantity] IS NULL OR ([OperationalQuantity] >= 0 AND [OperationalQuantity] <= [Quantity])"));
+        b.Entity<RoomResource>().Property(x => x.Name).IsRequired().HasMaxLength(120);
+        b.Entity<RoomResource>().Property(x => x.NormalizedName).IsRequired().HasMaxLength(120);
+        b.Entity<RoomResource>().Property(x => x.Type).IsRequired().HasMaxLength(80);
+        b.Entity<RoomResource>().Property(x => x.NormalizedType).IsRequired().HasMaxLength(80);
+        b.Entity<RoomResource>().Property(x => x.Description).HasMaxLength(500);
+        b.Entity<RoomResource>().Property(x => x.Condition).HasMaxLength(80);
+        b.Entity<RoomResource>().Property(x => x.TechnicalDetails).HasMaxLength(2000);
+        b.Entity<RoomResource>().HasIndex(x => new { x.RoomId, x.NormalizedName, x.NormalizedType }).IsUnique();
+        b.Entity<RoomResource>().HasOne(x => x.Room).WithMany(x => x.Resources)
+            .HasForeignKey(x => x.RoomId).OnDelete(DeleteBehavior.Restrict);
+        b.Entity<RoomResource>().ToTable(t =>
+        {
+            t.HasCheckConstraint("CK_RoomResources_Quantity", "[Quantity] >= 0");
+            t.HasCheckConstraint("CK_RoomResources_OperationalQuantity",
+                "[OperationalQuantity] IS NULL OR ([OperationalQuantity] >= 0 AND [OperationalQuantity] <= [Quantity])");
+            t.HasCheckConstraint("CK_RoomResources_Voltage", "[Voltage] IS NULL OR [Voltage] BETWEEN 1 AND 1000");
+        });
         b.Entity<Software>().Property(x => x.Name).HasMaxLength(100);
         b.Entity<Software>().HasIndex(x => x.Name).IsUnique();
+        b.Entity<GroupSoftware>().Property(x => x.Version).HasMaxLength(80);
+        b.Entity<GroupSoftware>().ToTable(t => t.HasCheckConstraint("CK_GroupSoftware_Quantities",
+            "[InstalledQuantity] >= 1 AND ([LicenseQuantity] IS NULL OR [LicenseQuantity] >= 1)"));
         b.Entity<SchoolShift>().Property(x => x.Name).HasMaxLength(60);
         b.Entity<ClassGroup>().Property(x => x.Name).HasMaxLength(100);
         b.Entity<ClassGroup>().HasOne(x => x.Course).WithMany()

@@ -462,6 +462,9 @@ namespace SalaGest.Api.Migrations
 
                     SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
 
+                    b.Property<bool?>("CadCompatible")
+                        .HasColumnType("bit");
+
                     b.Property<bool>("DedicatedGpu")
                         .HasColumnType("bit");
 
@@ -469,6 +472,31 @@ namespace SalaGest.Api.Migrations
                         .IsRequired()
                         .HasMaxLength(120)
                         .HasColumnType("nvarchar(120)");
+
+                    b.Property<bool?>("DockerWsl")
+                        .HasColumnType("bit");
+
+                    b.Property<string>("GraphicsCard")
+                        .HasMaxLength(160)
+                        .HasColumnType("nvarchar(160)");
+
+                    b.Property<bool?>("InternetAvailable")
+                        .HasColumnType("bit");
+
+                    b.Property<string>("NetworkDetails")
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)");
+
+                    b.Property<string>("OperatingSystem")
+                        .HasMaxLength(120)
+                        .HasColumnType("nvarchar(120)");
+
+                    b.Property<int?>("OperationalQuantity")
+                        .HasColumnType("int");
+
+                    b.Property<string>("Processor")
+                        .HasMaxLength(160)
+                        .HasColumnType("nvarchar(160)");
 
                     b.Property<int>("Quantity")
                         .HasColumnType("int");
@@ -479,14 +507,27 @@ namespace SalaGest.Api.Migrations
                     b.Property<int>("RoomId")
                         .HasColumnType("int");
 
+                    b.Property<bool?>("SimulatorCompatible")
+                        .HasColumnType("bit");
+
+                    b.Property<string>("Storage")
+                        .HasMaxLength(120)
+                        .HasColumnType("nvarchar(120)");
+
                     b.Property<int>("Tier")
                         .HasColumnType("int");
+
+                    b.Property<bool?>("Virtualization")
+                        .HasColumnType("bit");
 
                     b.HasKey("Id");
 
                     b.HasIndex("RoomId");
 
-                    b.ToTable("ComputerGroups");
+                    b.ToTable("ComputerGroups", t =>
+                        {
+                            t.HasCheckConstraint("CK_ComputerGroups_OperationalQuantity", "[OperationalQuantity] IS NULL OR ([OperationalQuantity] >= 0 AND [OperationalQuantity] <= [Quantity])");
+                        });
                 });
 
             modelBuilder.Entity("SalaGest.Api.Models.Course", b =>
@@ -678,11 +719,24 @@ namespace SalaGest.Api.Migrations
                     b.Property<int>("InstalledQuantity")
                         .HasColumnType("int");
 
+                    b.Property<DateOnly?>("LicenseExpiresOn")
+                        .HasColumnType("date");
+
+                    b.Property<int?>("LicenseQuantity")
+                        .HasColumnType("int");
+
+                    b.Property<string>("Version")
+                        .HasMaxLength(80)
+                        .HasColumnType("nvarchar(80)");
+
                     b.HasKey("ComputerGroupId", "SoftwareId");
 
                     b.HasIndex("SoftwareId");
 
-                    b.ToTable("GroupSoftware");
+                    b.ToTable("GroupSoftware", t =>
+                        {
+                            t.HasCheckConstraint("CK_GroupSoftware_Quantities", "[InstalledQuantity] >= 1 AND ([LicenseQuantity] IS NULL OR [LicenseQuantity] >= 1)");
+                        });
                 });
 
             modelBuilder.Entity("SalaGest.Api.Models.OccupationChange", b =>
@@ -869,6 +923,79 @@ namespace SalaGest.Api.Migrations
                     b.HasIndex("TeacherId", "StartsAt", "EndsAt");
 
                     b.ToTable("Occupations");
+                });
+
+            modelBuilder.Entity("SalaGest.Api.Models.RoomResource", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<string>("Condition")
+                        .HasMaxLength(80)
+                        .HasColumnType("nvarchar(80)");
+
+                    b.Property<string>("Description")
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)");
+
+                    b.Property<DateOnly?>("LicenseExpiresOn")
+                        .HasColumnType("date");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(120)
+                        .HasColumnType("nvarchar(120)");
+
+                    b.Property<string>("NormalizedName")
+                        .IsRequired()
+                        .HasMaxLength(120)
+                        .HasColumnType("nvarchar(120)");
+
+                    b.Property<string>("NormalizedType")
+                        .IsRequired()
+                        .HasMaxLength(80)
+                        .HasColumnType("nvarchar(80)");
+
+                    b.Property<int?>("OperationalQuantity")
+                        .HasColumnType("int");
+
+                    b.Property<int>("Quantity")
+                        .HasColumnType("int");
+
+                    b.Property<int>("RoomId")
+                        .HasColumnType("int");
+
+                    b.Property<string>("TechnicalDetails")
+                        .HasMaxLength(2000)
+                        .HasColumnType("nvarchar(2000)");
+
+                    b.Property<string>("Type")
+                        .IsRequired()
+                        .HasMaxLength(80)
+                        .HasColumnType("nvarchar(80)");
+
+                    b.Property<int?>("Voltage")
+                        .HasColumnType("int");
+
+                    b.Property<DateOnly?>("WarrantyExpiresOn")
+                        .HasColumnType("date");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("RoomId", "NormalizedName", "NormalizedType")
+                        .IsUnique();
+
+                    b.ToTable("RoomResources", t =>
+                        {
+                            t.HasCheckConstraint("CK_RoomResources_OperationalQuantity", "[OperationalQuantity] IS NULL OR ([OperationalQuantity] >= 0 AND [OperationalQuantity] <= [Quantity])");
+
+                            t.HasCheckConstraint("CK_RoomResources_Quantity", "[Quantity] >= 0");
+
+                            t.HasCheckConstraint("CK_RoomResources_Voltage", "[Voltage] IS NULL OR [Voltage] BETWEEN 1 AND 1000");
+                        });
                 });
 
             modelBuilder.Entity("SalaGest.Api.Models.Schedule", b =>
@@ -1431,6 +1558,17 @@ namespace SalaGest.Api.Migrations
                     b.Navigation("Room");
                 });
 
+            modelBuilder.Entity("SalaGest.Api.Models.RoomResource", b =>
+                {
+                    b.HasOne("SalaGest.Api.Models.Room", "Room")
+                        .WithMany("Resources")
+                        .HasForeignKey("RoomId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("Room");
+                });
+
             modelBuilder.Entity("SalaGest.Api.Models.Schedule", b =>
                 {
                     b.HasOne("SalaGest.Api.Models.Semester", "Semester")
@@ -1614,6 +1752,8 @@ namespace SalaGest.Api.Migrations
             modelBuilder.Entity("SalaGest.Api.Models.Room", b =>
                 {
                     b.Navigation("ComputerGroups");
+
+                    b.Navigation("Resources");
                 });
 
             modelBuilder.Entity("SalaGest.Api.Models.Schedule", b =>
