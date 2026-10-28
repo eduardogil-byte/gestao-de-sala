@@ -24,6 +24,7 @@ public static partial class ApiEndpoints
         MapAcademicCalendar(app);
         MapSchedules(app);
         MapBookings(app);
+        MapPedagogicalBookingOptions(app);
         MapLoans(app);
         MapOccupationManagement(app);
     }

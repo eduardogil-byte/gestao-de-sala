@@ -26,8 +26,9 @@ public static partial class ApiEndpoints
                         ? (int)input.StartsAt.DayOfWeek != ed
                         : (input.WeekdaysMask & (1 << ed)) == 0))))
                 return Error("Dia recorrente de EAD deve existir entre os dias selecionados");
-            if (!await db.Shifts.AnyAsync(s => s.StartsAt == TimeOnly.FromDateTime(input.StartsAt)
-                && s.EndsAt == TimeOnly.FromDateTime(input.EndsAt)))
+            var shift = await db.Shifts.FirstOrDefaultAsync(s => s.StartsAt == TimeOnly.FromDateTime(input.StartsAt)
+                && s.EndsAt == TimeOnly.FromDateTime(input.EndsAt));
+            if (shift is null)
                 return Error("A reserva deve ocupar exatamente um dos turnos cadastrados");
             if (input.Students is < 1 or > 500 || input.StudentsPerComputer is < 1 or > 20 ||
                 !Enum.IsDefined(input.MinTier) || input.MinRamGb is < 0 or > 512 ||
@@ -40,6 +41,8 @@ public static partial class ApiEndpoints
             {
                 TeacherId = UserId(current),
                 ClassGroupId = input.ClassGroupId,
+                CurricularUnitId = input.CurricularUnitId,
+                CurricularCapabilityId = input.CurricularCapabilityId,
                 StartsAt = input.StartsAt,
                 EndsAt = input.EndsAt,
                 Recurrence = input.Recurrence,
@@ -58,12 +61,37 @@ public static partial class ApiEndpoints
                 LessonPlanLink = input.LessonPlanLink,
                 Software = input.SoftwareIds.Distinct().Select(id => new BookingSoftware { SoftwareId = id }).ToList()
             };
+            var pedagogical = input.CurricularUnitId is not null || input.CurricularCapabilityId is not null;
+            var qualificationWarning = false;
+            if (pedagogical)
+            {
+                if (input.ClassGroupId is null || input.CurricularUnitId is null || input.CurricularCapabilityId is null)
+                    return Error("Turma, UC e capacidade são obrigatórias na reserva pedagógica");
+                var classGroup = await db.Classes.FirstAsync(x => x.Id == input.ClassGroupId);
+                if (!await db.CurricularUnits.AnyAsync(x => x.Id == input.CurricularUnitId &&
+                    x.CourseModule.CourseId == classGroup.CourseId))
+                    return Error("A UC não pertence ao curso da turma");
+                if (!await db.CurricularCapabilities.AnyAsync(x => x.Id == input.CurricularCapabilityId &&
+                    x.CurricularUnitId == input.CurricularUnitId))
+                    return Error("A capacidade não pertence à UC informada");
+                if (!await db.Assignments.AnyAsync(x => x.TeacherId == booking.TeacherId &&
+                    x.ClassGroupId == booking.ClassGroupId && x.CurricularUnitId == booking.CurricularUnitId &&
+                    x.EndedAtUtc == null))
+                    return Results.Forbid();
+                if (!await PedagogicalAssignmentValid(db, booking, shift.Id))
+                    return Error("Datas e turno não correspondem à atribuição da UC para esta turma");
+                qualificationWarning = !await db.TeacherUnitQualifications.AnyAsync(x =>
+                    x.TeacherId == booking.TeacherId && x.CurricularUnitId == input.CurricularUnitId);
+            }
             db.Bookings.Add(booking);
             await db.SaveChangesAsync();
             return Results.Created($"/api/bookings/{booking.Id}", new
             {
                 booking.Id,
                 booking.Status,
+                booking.CurricularUnitId,
+                booking.CurricularCapabilityId,
+                QualificationWarning = qualificationWarning,
                 Occurrences = BookingPeriods.Expand(booking).Count,
                 NextStep = $"GET /api/bookings/{booking.Id}/suggestions"
             });
@@ -74,6 +102,7 @@ public static partial class ApiEndpoints
             var teacherId = UserId(current);
             var isAdmin = current.IsInRole("Admin");
             var bookings = await db.Bookings.AsNoTracking().Include(b => b.Software)
+                .Include(b => b.CurricularUnit).Include(b => b.CurricularCapability)
                 .Where(b => isAdmin || b.TeacherId == teacherId)
                 .OrderByDescending(b => b.Id).ToListAsync();
             return Results.Ok(bookings.Select(b => new
@@ -81,6 +110,10 @@ public static partial class ApiEndpoints
                 b.Id,
                 b.TeacherId,
                 b.ClassGroupId,
+                b.CurricularUnitId,
+                b.CurricularCapabilityId,
+                CurricularUnitName = b.CurricularUnit?.Name,
+                CurricularCapabilityDescription = b.CurricularCapability?.Description,
                 b.StartsAt,
                 b.EndsAt,
                 b.Recurrence,
@@ -111,6 +144,63 @@ public static partial class ApiEndpoints
             if (booking is null) return Results.NotFound();
             if (booking.TeacherId != UserId(current) && !current.IsInRole("Admin")) return Results.Forbid();
             var periods = BookingPeriods.Expand(booking);
+            if (booking.CurricularCapabilityId is int capabilityId)
+            {
+                var calendar = await CalendarForBooking(db, booking);
+                var requirement = await RequirementQuery(db).FirstOrDefaultAsync(x => x.CurricularCapabilityId == capabilityId);
+                var technicalRooms = await RoomQuery(db).ToListAsync();
+                var fromDate = periods.Min(p => p.Start);
+                var toDate = periods.Max(p => p.End);
+                var occupied = await db.Occupations.AsNoTracking().Where(o => o.CancelledAtUtc == null &&
+                    o.StartsAt < toDate && o.EndsAt > fromDate).ToListAsync();
+                var occupiedIds = occupied.Select(o => o.Id).ToArray();
+                var loans = await db.Loans.AsNoTracking().Include(l => l.BookingRequest)
+                    .Where(l => l.Status == LoanStatus.Aprovado && occupiedIds.Contains(l.RoomOccupationId))
+                    .ToListAsync();
+                var choices = technicalRooms.Select(room =>
+                {
+                    var technical = EnvironmentCompatibility.Evaluate(requirement, room, booking.Students,
+                        DateOnly.FromDateTime(periods.Max(p => p.Start)));
+                    bool Blocks(RoomOccupation o, (DateTime Start, DateTime End) p)
+                    {
+                        if (!ScheduleGenerator.Overlap(o.StartsAt, o.EndsAt, p.Start, p.End)) return false;
+                        var loan = loans.FirstOrDefault(l => l.RoomOccupationId == o.Id);
+                        return o.RoomId == room.Id || (loan?.BorrowerId ?? o.TeacherId) == booking.TeacherId ||
+                            (loan is null ? o.ClassGroupId : loan.BookingRequest.ClassGroupId) == booking.ClassGroupId;
+                    }
+                    var conflicts = occupied.Where(o => periods.Any(p => Blocks(o, p)))
+                        .Select(o => new { o.Id, o.StartsAt, o.EndsAt, o.RoomId,
+                            TeacherId = loans.FirstOrDefault(l => l.RoomOccupationId == o.Id)?.BorrowerId ?? o.TeacherId,
+                            ClassGroupId = loans.Any(l => l.RoomOccupationId == o.Id)
+                                ? loans.First(l => l.RoomOccupationId == o.Id).BookingRequest.ClassGroupId
+                                : o.ClassGroupId }).ToArray();
+                    var free = room.Active ? periods.Count(p => calendar[DateOnly.FromDateTime(p.Start)].CountsAsPresential &&
+                        !occupied.Any(o => Blocks(o, p))) : 0;
+                    return new
+                    {
+                        room.Id, room.Name, room.Location, room.Purpose, room.Kind, room.Seats,
+                        room.Active, Computers = room.ComputerGroups.Sum(g => g.Quantity),
+                        Compatible = technical.Classification == "Compatible",
+                        Incompatibility = string.Join("; ", technical.Findings.Where(x => x.Status != "Met")
+                            .Select(x => x.Detail)),
+                        TechnicalClassification = technical.Classification,
+                        TechnicalFindings = technical.Findings,
+                        Available = room.Active && free == periods.Count,
+                        AvailabilityReason = room.Active ? null : "Sala inativa",
+                        AvailableOccurrences = free, TotalOccurrences = periods.Count,
+                        CalendarBlockedCount = periods.Count(p => !calendar[DateOnly.FromDateTime(p.Start)].CountsAsPresential),
+                        Conflicts = conflicts,
+                        ComputerGroups = room.ComputerGroups.Select(g => new
+                        {
+                            g.Quantity, g.RamGb, g.Tier,
+                            Software = g.Software.Select(s => new { s.Software.Name, s.InstalledQuantity })
+                        })
+                    };
+                }).OrderBy(x => x.TechnicalClassification switch
+                { "Compatible" => 0, "Partial" => 1, _ => 2 })
+                    .ThenBy(x => x.Name).ThenBy(x => x.Id).ToList();
+                return Results.Ok(choices);
+            }
             var rooms = await AllRooms(db);
             var from = periods.Min(p => p.Start);
             var to = periods.Max(p => p.End);
@@ -179,27 +269,49 @@ public static partial class ApiEndpoints
             var booking = await db.Bookings.Include(b => b.Software).FirstOrDefaultAsync(b => b.Id == id);
             if (booking is null) return Results.NotFound();
             if (booking.TeacherId != UserId(current) && !current.IsInRole("Admin")) return Results.Forbid();
-            if (!await db.Rooms.AnyAsync(r => r.Id == roomId)) return Results.NotFound();
+            var selectedRoom = await db.Rooms.AsNoTracking().Where(r => r.Id == roomId)
+                .Select(r => new { r.Active }).FirstOrDefaultAsync();
+            if (selectedRoom is null) return Results.NotFound();
             var periods = BookingPeriods.Expand(booking);
+            var calendar = booking.CurricularCapabilityId is null ? null : await CalendarForBooking(db, booking);
             var from = periods.Min(p => p.Start);
             var to = periods.Max(p => p.End);
             var occ = await db.Occupations.AsNoTracking().Where(o => o.CancelledAtUtc == null
                 && o.StartsAt < to && o.EndsAt > from).ToListAsync();
+            var occIds = occ.Select(o => o.Id).ToArray();
+            var loans = booking.CurricularCapabilityId is null ? new List<RoomLoan>() :
+                await db.Loans.AsNoTracking().Include(l => l.BookingRequest)
+                    .Where(l => l.Status == LoanStatus.Aprovado && occIds.Contains(l.RoomOccupationId)).ToListAsync();
             var result = periods.Select(p =>
             {
                 var blockers = occ.Where(o => ScheduleGenerator.Overlap(o.StartsAt, o.EndsAt, p.Start, p.End)
-                    && (o.RoomId == roomId || o.TeacherId == booking.TeacherId ||
-                        (booking.ClassGroupId.HasValue && o.ClassGroupId == booking.ClassGroupId)))
+                    && (o.RoomId == roomId ||
+                        (loans.FirstOrDefault(l => l.RoomOccupationId == o.Id)?.BorrowerId ?? o.TeacherId) == booking.TeacherId ||
+                        (booking.ClassGroupId.HasValue &&
+                            (loans.Any(l => l.RoomOccupationId == o.Id)
+                                ? loans.First(l => l.RoomOccupationId == o.Id).BookingRequest.ClassGroupId
+                                : o.ClassGroupId) == booking.ClassGroupId)))
                     .Select(o => new
                     {
                         o.Id,
                         o.RoomId,
-                        o.TeacherId,
-                        o.ClassGroupId,
+                        TeacherId = loans.FirstOrDefault(l => l.RoomOccupationId == o.Id)?.BorrowerId ?? o.TeacherId,
+                        ClassGroupId = loans.Any(l => l.RoomOccupationId == o.Id)
+                            ? loans.First(l => l.RoomOccupationId == o.Id).BookingRequest.ClassGroupId
+                            : o.ClassGroupId,
                         o.StartsAt,
                         o.EndsAt
                     }).ToList();
-                return new { p.Start, p.End, Available = blockers.Count == 0, Conflicts = blockers };
+                var day = calendar?.GetValueOrDefault(DateOnly.FromDateTime(p.Start));
+                return new
+                {
+                    p.Start, p.End,
+                    Available = selectedRoom.Active && blockers.Count == 0 && (day is null || day.CountsAsPresential),
+                    AvailabilityReason = selectedRoom.Active ? null : "Sala inativa",
+                    CalendarStatus = day?.Kind,
+                    CalendarReason = day is not null && !day.CountsAsPresential ? day.Reason : null,
+                    Conflicts = blockers
+                };
             }).ToList();
             return Results.Ok(new
             {
@@ -220,15 +332,43 @@ public static partial class ApiEndpoints
             if (booking is null) return Results.NotFound();
             if (booking.TeacherId != UserId(current) && !current.IsInRole("Admin")) return Results.Forbid();
             if (booking.Status != BookingStatus.Pendente) return Error("A reserva já foi processada");
-            var room = (await AllRooms(db)).FirstOrDefault(r => r.Id == input.RoomId);
+            var room = booking.CurricularCapabilityId is null
+                ? (await AllRooms(db)).FirstOrDefault(r => r.Id == input.RoomId)
+                : await RoomQuery(db).FirstOrDefaultAsync(r => r.Id == input.RoomId);
             if (room is null) return Results.NotFound();
-            var mismatch = RoomCompatibility.Incompatibility(room, Need(booking));
-            if (mismatch is not null) return Error($"A sala não atende aos requisitos: {mismatch}");
+            Dictionary<DateOnly, CalendarDateResult>? calendar = null;
+            if (booking.CurricularCapabilityId is int capabilityId)
+            {
+                var shiftId = await db.Shifts.Where(s => s.StartsAt == TimeOnly.FromDateTime(booking.StartsAt)
+                    && s.EndsAt == TimeOnly.FromDateTime(booking.EndsAt)).Select(s => s.Id).FirstOrDefaultAsync();
+                if (shiftId == 0 || !await PedagogicalAssignmentValid(db, booking, shiftId))
+                    return Results.Forbid();
+                var requirement = await RequirementQuery(db).FirstOrDefaultAsync(x => x.CurricularCapabilityId == capabilityId);
+                var technical = EnvironmentCompatibility.Evaluate(requirement, room, booking.Students,
+                    DateOnly.FromDateTime(BookingPeriods.Expand(booking).Max(p => p.Start)));
+                if (technical.Classification != "Compatible")
+                    return Results.Conflict(new { Error = "Compatibilidade técnica não comprovada",
+                        technical.Classification, technical.Findings });
+                calendar = await CalendarForBooking(db, booking);
+            }
+            if (booking.CurricularCapabilityId is null)
+            {
+                var mismatch = RoomCompatibility.Incompatibility(room, Need(booking));
+                if (mismatch is not null) return Error($"A sala não atende aos requisitos: {mismatch}");
+            }
+            else if (!room.Active) return Results.Conflict(new ApiError("Sala inativa"));
             var free = new List<(DateTime Start, DateTime End)>();
             var unavailable = new List<object>();
             var replaced = new List<int>();
             foreach (var period in BookingPeriods.Expand(booking))
             {
+                if (calendar is not null &&
+                    !calendar[DateOnly.FromDateTime(period.Start)].CountsAsPresential)
+                {
+                    unavailable.Add(new { period.Start, period.End,
+                        Reason = calendar[DateOnly.FromDateTime(period.Start)].Reason });
+                    continue;
+                }
                 RoomOccupation? original = null;
                 if (input.ReplaceOwnClassBooking && booking.ClassGroupId.HasValue)
                 {
@@ -263,6 +403,14 @@ public static partial class ApiEndpoints
                     }
                 }
                 else unavailable.Add(new { period.Start, period.End, Reason = conflict });
+            }
+            if (calendar is not null)
+            {
+                var expected = input.ExpectedAvailableDates;
+                var actual = free.Select(p => DateOnly.FromDateTime(p.Start)).OrderBy(x => x).ToArray();
+                if (expected is null || expected.Count != expected.Distinct().Count() ||
+                    !actual.SequenceEqual(expected.OrderBy(x => x)))
+                    return Results.Conflict(new ApiError("A disponibilidade mudou; consulte a prévia e confirme as datas novamente"));
             }
             if (unavailable.Count > 0 && !input.ConfirmPartial)
                 return Results.Conflict(new

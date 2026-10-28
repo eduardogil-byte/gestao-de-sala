@@ -307,6 +307,12 @@ namespace SalaGest.Api.Migrations
                     b.Property<int?>("ClassGroupId")
                         .HasColumnType("int");
 
+                    b.Property<int?>("CurricularCapabilityId")
+                        .HasColumnType("int");
+
+                    b.Property<int?>("CurricularUnitId")
+                        .HasColumnType("int");
+
                     b.Property<DateTime>("EndsAt")
                         .HasColumnType("datetime2");
 
@@ -366,6 +372,10 @@ namespace SalaGest.Api.Migrations
                     b.HasKey("Id");
 
                     b.HasIndex("ClassGroupId");
+
+                    b.HasIndex("CurricularCapabilityId");
+
+                    b.HasIndex("CurricularUnitId");
 
                     b.HasIndex("TeacherId");
 
@@ -1498,6 +1508,16 @@ namespace SalaGest.Api.Migrations
                         .HasForeignKey("ClassGroupId")
                         .OnDelete(DeleteBehavior.Restrict);
 
+                    b.HasOne("SalaGest.Api.Models.CurricularCapability", "CurricularCapability")
+                        .WithMany()
+                        .HasForeignKey("CurricularCapabilityId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.HasOne("SalaGest.Api.Models.CurricularUnit", "CurricularUnit")
+                        .WithMany()
+                        .HasForeignKey("CurricularUnitId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
                     b.HasOne("SalaGest.Api.Models.AppUser", "Teacher")
                         .WithMany()
                         .HasForeignKey("TeacherId")
@@ -1505,6 +1525,10 @@ namespace SalaGest.Api.Migrations
                         .IsRequired();
 
                     b.Navigation("ClassGroup");
+
+                    b.Navigation("CurricularCapability");
+
+                    b.Navigation("CurricularUnit");
 
                     b.Navigation("Teacher");
                 });

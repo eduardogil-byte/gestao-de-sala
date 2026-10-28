@@ -203,6 +203,10 @@ public sealed class BookingRequest
     public AppUser Teacher { get; set; } = null!;
     public int? ClassGroupId { get; set; }
     public ClassGroup? ClassGroup { get; set; }
+    public int? CurricularUnitId { get; set; }
+    public CurricularUnit? CurricularUnit { get; set; }
+    public int? CurricularCapabilityId { get; set; }
+    public CurricularCapability? CurricularCapability { get; set; }
     public DateTime StartsAt { get; set; }
     public DateTime EndsAt { get; set; }
     public BookingRecurrence Recurrence { get; set; } = BookingRecurrence.Nenhuma;

@@ -27,8 +27,10 @@ public record BookingCreate(int? ClassGroupId, DateTime StartsAt, DateTime EndsA
     HardwareTier MinTier, List<int> SoftwareIds, string Reason, string? LessonPlanLink,
     BookingRecurrence Recurrence = BookingRecurrence.Nenhuma, DateOnly? RepeatUntil = null,
     int MinRamGb = 0, bool NeedsDedicatedGpu = false, int WeekdaysMask = 0,
-    int StudentsPerComputer = 1, int? RecurringEadWeekday = null);
-public record ConfirmBooking(int RoomId, bool ConfirmPartial = false, bool ReplaceOwnClassBooking = false);
+    int StudentsPerComputer = 1, int? RecurringEadWeekday = null,
+    int? CurricularUnitId = null, int? CurricularCapabilityId = null);
+public record ConfirmBooking(int RoomId, bool ConfirmPartial = false, bool ReplaceOwnClassBooking = false,
+    List<DateOnly>? ExpectedAvailableDates = null);
 public record DayStatusChange(ClassDayStatus Status);
 public record MoveOccupation(int RoomId, bool NotifyTeachers = true);
 public record LoanOffer(List<int> RoomOccupationIds, string BorrowerId, string Reason);

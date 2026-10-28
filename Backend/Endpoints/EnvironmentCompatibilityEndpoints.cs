@@ -101,7 +101,7 @@ public static partial class ApiEndpoints
 
     private static IQueryable<Room> RoomQuery(AppDbContext db)
         => db.Rooms.AsNoTracking().AsSplitQuery().Include(x => x.Resources)
-            .Include(x => x.ComputerGroups).ThenInclude(x => x.Software);
+            .Include(x => x.ComputerGroups).ThenInclude(x => x.Software).ThenInclude(x => x.Software);
 
     private static async Task<string?> ValidateRequirements(AppDbContext db, CapabilityEnvironmentInput input)
     {

@@ -147,6 +147,10 @@ export type Booking = {
   id: number;
   teacherId: string;
   classGroupId: number | null;
+  curricularUnitId?: number | null;
+  curricularCapabilityId?: number | null;
+  curricularUnitName?: string | null;
+  curricularCapabilityDescription?: string | null;
   startsAt: string;
   endsAt: string;
   students: number;
@@ -185,6 +189,10 @@ export type Suggestion = {
   score: number;
   compatible: boolean;
   incompatibility: string | null;
+  technicalClassification?: "Compatible" | "Partial" | "Incompatible";
+  technicalFindings?: { requirement: string; status: string; detail: string }[];
+  calendarBlockedCount?: number;
+  availabilityReason?: string | null;
   available: boolean;
   availableOccurrences: number;
   totalOccurrences: number;
@@ -200,6 +208,9 @@ export type AvailabilityDay = {
   start: string;
   end: string;
   available: boolean;
+  calendarStatus?: string | null;
+  calendarReason?: string | null;
+  availabilityReason?: string | null;
   conflicts: ConflictInfo[];
 };
 export type BookingAvailability = {
