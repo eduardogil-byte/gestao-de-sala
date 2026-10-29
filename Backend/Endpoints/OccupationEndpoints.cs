@@ -20,8 +20,14 @@ public static partial class ApiEndpoints
             var occ = await db.Occupations.FindAsync(id);
             if (occ is null) return Results.NotFound();
             if (occ.TeacherId != UserId(current) && !current.IsInRole("Admin")) return Results.Forbid();
-            return Results.Ok(await db.OccupationChanges.AsNoTracking()
-                .Where(c => c.RoomOccupationId == id).OrderByDescending(c => c.ChangedAtUtc).ToListAsync());
+            var changes = await db.OccupationChanges.AsNoTracking()
+                .Where(c => c.RoomOccupationId == id).OrderByDescending(c => c.ChangedAtUtc).ToListAsync();
+            var actorIds = changes.Select(c => c.ChangedById).Distinct().ToArray();
+            var names = await db.Users.AsNoTracking().Where(u => actorIds.Contains(u.Id))
+                .Select(u => new { u.Id, u.DisplayName }).ToDictionaryAsync(u => u.Id, u => u.DisplayName);
+            return Results.Ok(changes.Select(c => new { c.Id, c.RoomOccupationId, c.ChangedById,
+                ActorName = names.GetValueOrDefault(c.ChangedById, "Usuário"), c.Action, c.Details,
+                ChangedAtUtc = DateTime.SpecifyKind(c.ChangedAtUtc, DateTimeKind.Utc) }));
         });
 
         // Editar letivo/EAD/não letivo NÃO libera a sala: a liberação é uma ação explícita.
@@ -36,6 +42,8 @@ public static partial class ApiEndpoints
             if (await db.Loans.AnyAsync(l => l.RoomOccupationId == id &&
                 l.Status == LoanStatus.Aprovado))
                 return Results.Conflict(new ApiError("A ocorrência emprestada precisa preservar a situação da turma titular no empréstimo"));
+            if (occ.DayStatus == input.Status)
+                return Results.Ok(new { occ.Id, occ.DayStatus, RoomRemainsReserved = true });
             var old = occ.DayStatus;
             occ.DayStatus = input.Status;
             occ.ChangedById = UserId(current);
@@ -46,6 +54,10 @@ public static partial class ApiEndpoints
                 Action = "DiaLetivo",
                 Details = $"{old} -> {input.Status}"
             });
+            if (occ.TeacherId is string teacherId)
+                AuditTrail.Notify(db, teacherId, UserId(current), "Situação da aula alterada",
+                    $"A situação da sua aula em {occ.StartsAt:dd/MM/yyyy HH:mm} foi alterada de {old} para {input.Status}.",
+                    "Occupation", occ.Id);
             await db.SaveChangesAsync();
             return Results.Ok(new { occ.Id, occ.DayStatus, RoomRemainsReserved = true });
         });
@@ -78,6 +90,10 @@ public static partial class ApiEndpoints
                     Action = "Liberada",
                     Details = $"Sala {occ.RoomId}, {occ.StartsAt:dd/MM/yyyy HH:mm}"
                 });
+                if (occ.TeacherId is string teacherId)
+                    AuditTrail.Notify(db, teacherId, UserId(current), "Aula liberada",
+                        $"Sua ocupação de {occ.StartsAt:dd/MM/yyyy HH:mm} foi liberada pela coordenação.",
+                        "Occupation", occ.Id);
             }
             await db.SaveChangesAsync();
             await tx.CommitAsync();
@@ -104,6 +120,10 @@ public static partial class ApiEndpoints
                 Action = "Liberada",
                 Details = $"Sala {occ.RoomId}, {occ.StartsAt:dd/MM/yyyy HH:mm}"
             });
+            if (occ.TeacherId is string teacherId)
+                AuditTrail.Notify(db, teacherId, UserId(current), "Aula liberada",
+                    $"Sua ocupação de {occ.StartsAt:dd/MM/yyyy HH:mm} foi liberada pela coordenação.",
+                    "Occupation", occ.Id);
             await db.SaveChangesAsync();
             await tx.CommitAsync();
             return Results.Ok(new { occ.Id, Released = true });
@@ -217,13 +237,10 @@ public static partial class ApiEndpoints
                 Action = "Transferida",
                 Details = $"Sala {oldRoomId} -> sala {room.Id}"
             });
-            if (input.NotifyTeachers && occ.TeacherId != UserId(current) && occ.TeacherId is not null)
-                db.Notifications.Add(new UserNotification
-                {
-                    UserId = occ.TeacherId,
-                    ActorId = UserId(current),
-                    Message = $"Sua aula em {occ.StartsAt:dd/MM/yyyy HH:mm} foi transferida da sala {oldRoomId} para {room.Name}."
-                });
+            if (occ.TeacherId is string teacherId)
+                AuditTrail.Notify(db, teacherId, UserId(current), "Ambiente alterado",
+                    $"Sua aula em {occ.StartsAt:dd/MM/yyyy HH:mm} foi transferida da sala {oldRoomId} para {room.Name}.",
+                    "Occupation", occ.Id);
             await db.SaveChangesAsync();
             await tx.CommitAsync();
             return Results.Ok(new { occ.Id, OldRoomId = oldRoomId, occ.RoomId });
@@ -245,8 +262,12 @@ public static partial class ApiEndpoints
                 n.ActorId,
                 ActorName = names.GetValueOrDefault(n.ActorId, "Usuário"),
                 n.Message,
-                n.CreatedAtUtc,
-                n.ReadAtUtc
+                n.Subject,
+                n.RelatedType,
+                n.RelatedId,
+                CreatedAtUtc = DateTime.SpecifyKind(n.CreatedAtUtc, DateTimeKind.Utc),
+                ReadAtUtc = n.ReadAtUtc is DateTime read
+                    ? DateTime.SpecifyKind(read, DateTimeKind.Utc) : (DateTime?)null
             }));
         });
         notifications.MapGet("/unread-count", async (ClaimsPrincipal current, AppDbContext db) =>

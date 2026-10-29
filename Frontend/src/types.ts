@@ -290,7 +290,10 @@ export type Need = {
 export type Notification = {
   id: number;
   actorName: string;
+  subject: string | null;
   message: string;
+  relatedType: string | null;
+  relatedId: number | null;
   createdAtUtc: string;
   readAtUtc: string | null;
 };

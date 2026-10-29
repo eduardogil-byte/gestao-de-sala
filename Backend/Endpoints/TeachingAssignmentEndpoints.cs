@@ -4,6 +4,7 @@ using Microsoft.EntityFrameworkCore;
 using SalaGest.Api.Contracts;
 using SalaGest.Api.Data;
 using SalaGest.Api.Models;
+using SalaGest.Api.Services;
 
 namespace SalaGest.Api.Endpoints;
 
@@ -53,7 +54,7 @@ public static partial class ApiEndpoints
             return Results.Ok(AssignmentView(item, qualified));
         });
 
-        assignments.MapPost("", async (AssignmentCreate input, AppDbContext db,
+        assignments.MapPost("", async (AssignmentCreate input, AppDbContext db, ClaimsPrincipal current,
             UserManager<AppUser> users) =>
         {
             if (string.IsNullOrWhiteSpace(input.TeacherId)) return Error("Professor não encontrado");
@@ -96,17 +97,26 @@ public static partial class ApiEndpoints
                 NeedsDedicatedGpu = input.NeedsDedicatedGpu, LessonPlanLink = input.LessonPlanLink,
                 Software = softwareIds.Select(id => new AssignmentSoftware { SoftwareId = id }).ToList()
             };
+            await using var createTx = await db.Database.BeginTransactionAsync();
             db.Assignments.Add(item);
             try { await db.SaveChangesAsync(); }
             catch (DbUpdateException ex) when (IsUniqueViolation(ex))
             { return CatalogConflict("Atribuição pedagógica já cadastrada"); }
+            AuditTrail.Add(db, "Assignment", item.Id.ToString(), "Criada", UserId(current), null,
+                new { item.TeacherId, item.ClassGroupId, item.CurricularUnitId,
+                    item.Weekday, item.PreferredShiftId, item.MeetingsPerWeek });
+            AuditTrail.Notify(db, item.TeacherId, UserId(current), "Atribuição criada",
+                $"Você recebeu uma atribuição para a turma {classGroup.Name}: {item.DisciplineName}.",
+                "Assignment", item.Id);
+            await db.SaveChangesAsync();
+            await createTx.CommitAsync();
             bool? qualified = unit is null ? null : await db.TeacherUnitQualifications.AnyAsync(q =>
                 q.TeacherId == teacher.Id && q.CurricularUnitId == unit.Id);
             return Results.Created($"/api/assignments/{item.Id}", AssignmentView(item, qualified));
         }).RequireAuthorization("Admin");
 
         assignments.MapPut("/{id:int}/pedagogical", async (int id, PedagogicalAssignmentUpdate input,
-            AppDbContext db, UserManager<AppUser> users) =>
+            AppDbContext db, UserManager<AppUser> users, ClaimsPrincipal current) =>
         {
             var item = await db.Assignments.Include(a => a.ClassGroup).Include(a => a.Software)
                 .FirstOrDefaultAsync(a => a.Id == id);
@@ -120,11 +130,26 @@ public static partial class ApiEndpoints
             var validation = await ValidatePedagogicalAssignment(db, item.ClassGroup, input.TeacherId,
                 input.CurricularUnitId, input.Weekday, input.ShiftId, id);
             if (validation.Error is not null) return validation.Error;
+            var oldTeacher = item.TeacherId;
+            var before = new { item.TeacherId, item.ClassGroupId, item.CurricularUnitId,
+                item.DisciplineName, item.Weekday, item.PreferredShiftId };
             item.TeacherId = input.TeacherId;
             item.CurricularUnitId = input.CurricularUnitId;
             item.DisciplineName = validation.Unit!.Name;
             item.Weekday = input.Weekday;
             item.PreferredShiftId = input.ShiftId;
+            if (AuditTrail.Add(db, "Assignment", item.Id.ToString(), "Alterada", UserId(current), before,
+                new { item.TeacherId, item.ClassGroupId, item.CurricularUnitId,
+                    item.DisciplineName, item.Weekday, item.PreferredShiftId }))
+            {
+                if (oldTeacher != item.TeacherId)
+                    AuditTrail.Notify(db, oldTeacher, UserId(current), "Atribuição alterada",
+                        $"A atribuição da turma {item.ClassGroup.Name} deixou de pertencer à sua agenda.",
+                        "Assignment", item.Id);
+                AuditTrail.Notify(db, item.TeacherId, UserId(current), "Atribuição alterada",
+                    $"Sua atribuição da turma {item.ClassGroup.Name} foi alterada. Consulte a agenda.",
+                    "Assignment", item.Id);
+            }
             try { await db.SaveChangesAsync(); }
             catch (DbUpdateException ex) when (IsUniqueViolation(ex))
             { return CatalogConflict("Atribuição pedagógica já cadastrada"); }
@@ -133,7 +158,7 @@ public static partial class ApiEndpoints
             return Results.Ok(AssignmentView(item, qualified));
         }).RequireAuthorization("Admin");
 
-        assignments.MapPost("/{id:int}/end", async (int id, AppDbContext db) =>
+        assignments.MapPost("/{id:int}/end", async (int id, AppDbContext db, ClaimsPrincipal current) =>
         {
             var item = await db.Assignments.FindAsync(id);
             if (item is null) return Results.NotFound();
@@ -142,6 +167,11 @@ public static partial class ApiEndpoints
                 w.Schedule.Status != ScheduleStatus.Arquivada))
                 return CatalogConflict("Atribuição utilizada por uma grade ativa não pode ser encerrada");
             item.EndedAtUtc = DateTime.UtcNow;
+            AuditTrail.Add(db, "Assignment", item.Id.ToString(), "Encerrada", UserId(current),
+                new { EndedAtUtc = (DateTime?)null }, new { item.EndedAtUtc });
+            AuditTrail.Notify(db, item.TeacherId, UserId(current), "Atribuição encerrada",
+                "Uma atribuição pedagógica sua foi encerrada. Consulte a agenda para detalhes.",
+                "Assignment", item.Id);
             await db.SaveChangesAsync();
             return Results.NoContent();
         }).RequireAuthorization("Admin");

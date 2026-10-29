@@ -64,6 +64,7 @@ const nav: [Page, string, typeof LayoutDashboard][] = [
 function Workspace({ user, onLogout }: { user: User; onLogout: () => void }) {
   const { data, loading, error, reload } = useData();
   const [page, setPage] = useState<Page>("dashboard");
+  const [related, setRelated] = useState<{ page: Page; id: number } | null>(null);
   const [menu, setMenu] = useState(false);
   const [occupations, setOccupations] = useState<Occupation[]>([]);
   const [agendaError, setAgendaError] = useState("");
@@ -108,6 +109,7 @@ function Workspace({ user, onLogout }: { user: User; onLogout: () => void }) {
     void reloadAgenda();
   }, [reloadAgenda]);
   const open = (p: string) => {
+    setRelated(null);
     setPage(p as Page);
     setMenu(false);
     window.scrollTo({ top: 0, behavior: "smooth" });
@@ -277,11 +279,17 @@ function Workspace({ user, onLogout }: { user: User; onLogout: () => void }) {
           ) : page === "schedules" && admin ? (
             <Schedules user={user} reloadAgenda={reloadAgenda} />
           ) : page === "bookings" ? (
-            <Bookings user={user} reloadAgenda={reloadAgenda} />
+            <Bookings user={user} reloadAgenda={reloadAgenda}
+              focusId={related?.page === "bookings" ? related.id : null} />
           ) : page === "loans" ? (
-            <Loans user={user} reloadAgenda={reloadAgenda} />
+            <Loans user={user} reloadAgenda={reloadAgenda}
+              focusId={related?.page === "loans" ? related.id : null} />
           ) : page === "notifications" ? (
-            <Notifications />
+            <Notifications openRelated={(type, id) => {
+              const target = ({ Occupation: "room-timeline", Booking: "bookings", Loan: "loans",
+                Assignment: "instructor-agenda", Room: "rooms" } as Record<string, Page>)[type];
+              if (target) { setRelated({ page: target, id }); setPage(target); }
+            }} />
           ) : null}
         </main>
         <footer className="py-5 px-8 text-center text-xs text-slate-400">

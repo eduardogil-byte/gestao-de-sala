@@ -83,8 +83,15 @@ public static partial class ApiEndpoints
                 qualificationWarning = !await db.TeacherUnitQualifications.AnyAsync(x =>
                     x.TeacherId == booking.TeacherId && x.CurricularUnitId == input.CurricularUnitId);
             }
+            await using var createTx = await db.Database.BeginTransactionAsync(IsolationLevel.Serializable);
             db.Bookings.Add(booking);
             await db.SaveChangesAsync();
+            AuditTrail.Add(db, "Booking", booking.Id.ToString(), "Criada", UserId(current), null,
+                new { booking.TeacherId, booking.ClassGroupId, booking.CurricularUnitId,
+                    booking.CurricularCapabilityId, booking.StartsAt, booking.EndsAt,
+                    booking.Recurrence, booking.RepeatUntil, booking.Status });
+            await db.SaveChangesAsync();
+            await createTx.CommitAsync();
             return Results.Created($"/api/bookings/{booking.Id}", new
             {
                 booking.Id,
@@ -435,6 +442,13 @@ public static partial class ApiEndpoints
             }));
             booking.Status = BookingStatus.Aprovada; // preserva enum antigo para o frontend
             booking.ApprovedRoomId = room.Id;
+            AuditTrail.Add(db, "Booking", booking.Id.ToString(), "Confirmada", UserId(current),
+                new { Status = BookingStatus.Pendente, ApprovedRoomId = (int?)null },
+                new { booking.Status, booking.ApprovedRoomId, ReservedCount = free.Count,
+                    ReplacedOccupationIds = replaced.ToArray() });
+            AuditTrail.Notify(db, booking.TeacherId, UserId(current), "Reserva confirmada",
+                $"Sua reserva foi confirmada em {room.Name} para {free.Count} data(s).",
+                "Booking", booking.Id);
             await db.SaveChangesAsync();
             await tx.CommitAsync();
             return Results.Ok(new
@@ -463,6 +477,10 @@ public static partial class ApiEndpoints
             if (booking.TeacherId != UserId(current) && !current.IsInRole("Admin")) return Results.Forbid();
             if (booking.Status != BookingStatus.Pendente) return Error("Somente solicitações pendentes podem ser descartadas");
             booking.Status = BookingStatus.Rejeitada;
+            AuditTrail.Add(db, "Booking", booking.Id.ToString(), "Descartada", UserId(current),
+                new { Status = BookingStatus.Pendente }, new { booking.Status });
+            AuditTrail.Notify(db, booking.TeacherId, UserId(current), "Reserva descartada",
+                "Sua solicitação de reserva pendente foi descartada.", "Booking", booking.Id);
             await db.SaveChangesAsync();
             return Results.Ok(new { booking.Id, booking.Status });
         });

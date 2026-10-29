@@ -194,6 +194,186 @@ public sealed class OccupationMoveTests
         using var checkScope = host.App.Services.CreateScope();
         var checkDb = checkScope.ServiceProvider.GetRequiredService<AppDbContext>();
         Assert.False(await checkDb.OccupationChanges.AnyAsync(c => c.RoomOccupationId == host.ManualId));
+        Assert.False(await checkDb.Notifications.AnyAsync(n => n.RelatedType == "Occupation" && n.RelatedId == host.ManualId));
+    }
+
+    [Fact]
+    public async Task NotificationWriteFailureRollsBackMoveAndAudit()
+    {
+        await using var host = await Host.CreateAsync();
+        var preview = await host.Preview(host.ManualId, host.RoomBId, new(2027, 3, 4), host.MorningId);
+        using (var scope = host.App.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+            await db.Database.ExecuteSqlRawAsync("CREATE TRIGGER fail_move_notification BEFORE INSERT ON Notifications BEGIN SELECT RAISE(ABORT, 'notification failure'); END;");
+        }
+        await Assert.ThrowsAnyAsync<Exception>(() => host.Confirm(host.ManualId, preview,
+            host.RoomBId, new(2027, 3, 4), host.MorningId));
+        await host.AssertOccupation(host.ManualId, host.RoomAId, new(2027, 3, 2, 8, 0, 0));
+        using var check = host.App.Services.CreateScope();
+        var dbCheck = check.ServiceProvider.GetRequiredService<AppDbContext>();
+        Assert.False(await dbCheck.OccupationChanges.AnyAsync(c => c.RoomOccupationId == host.ManualId));
+        Assert.False(await dbCheck.Notifications.AnyAsync(n => n.RelatedType == "Occupation" &&
+            n.RelatedId == host.ManualId));
+    }
+
+    [Fact]
+    public async Task ConfirmedMovesKeepHistoryAndNotifyOnlyTheAffectedTeacher()
+    {
+        await using var host = await Host.CreateAsync();
+        var first = await host.Preview(host.ManualId, host.RoomBId, new(2027, 3, 4), host.MorningId);
+        Assert.Equal(HttpStatusCode.OK, (await host.Confirm(host.ManualId, first,
+            host.RoomBId, new(2027, 3, 4), host.MorningId, "Ajuste de ambiente")).StatusCode);
+        var second = await host.Preview(host.ManualId, host.RoomCId, new(2027, 3, 5), host.MorningId);
+        Assert.Equal(HttpStatusCode.OK, (await host.Confirm(host.ManualId, second,
+            host.RoomCId, new(2027, 3, 5), host.MorningId)).StatusCode);
+        Assert.Equal(HttpStatusCode.Conflict, (await host.Confirm(host.ManualId, first,
+            host.RoomBId, new(2027, 3, 4), host.MorningId)).StatusCode);
+
+        using var scope = host.App.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+        var changes = await db.OccupationChanges.AsNoTracking()
+            .Where(c => c.RoomOccupationId == host.ManualId).OrderBy(c => c.Id).ToListAsync();
+        Assert.Equal(2, changes.Count);
+        Assert.All(changes, change => { Assert.Equal("admin", change.ChangedById);
+            Assert.InRange(change.ChangedAtUtc, DateTime.UtcNow.AddMinutes(-2), DateTime.UtcNow.AddMinutes(2)); });
+        Assert.Contains("Laboratório A", changes[0].Details);
+        Assert.Contains("Laboratório B", changes[1].Details);
+        var notices = await db.Notifications.AsNoTracking().Where(n => n.RelatedType == "Occupation" &&
+            n.RelatedId == host.ManualId).ToListAsync();
+        Assert.Equal(2, notices.Count);
+        Assert.All(notices, notice => { Assert.Equal("teacher2", notice.UserId); Assert.Equal("admin", notice.ActorId); });
+
+        host.AsTeacher();
+        Assert.Equal(HttpStatusCode.Forbidden,
+            (await host.Client.GetAsync($"/api/occupations/{host.ManualId}/history")).StatusCode);
+        Assert.Empty((await host.Client.GetFromJsonAsync<List<System.Text.Json.JsonElement>>("/api/notifications"))!);
+        host.AsOtherTeacher();
+        var own = await host.Client.GetFromJsonAsync<List<System.Text.Json.JsonElement>>("/api/notifications");
+        Assert.Equal(2, own!.Count);
+        var notificationId = own[0].GetProperty("id").GetInt32();
+        host.AsTeacher();
+        Assert.Equal(HttpStatusCode.NotFound,
+            (await host.Client.PostAsync($"/api/notifications/{notificationId}/read", null)).StatusCode);
+        host.AsOtherTeacher();
+        Assert.Equal(HttpStatusCode.NoContent,
+            (await host.Client.PostAsync($"/api/notifications/{notificationId}/read", null)).StatusCode);
+    }
+
+    [Fact]
+    public async Task LoanRejectionCreatesOneAuditEventAndNotifiesTheOtherParty()
+    {
+        await using var host = await Host.CreateAsync();
+        int loanId;
+        using (var scope = host.App.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+            loanId = await db.Loans.Where(l => l.RoomOccupationId == host.LoanedId).Select(l => l.Id).SingleAsync();
+        }
+        host.AsTeacher();
+        Assert.Equal(HttpStatusCode.OK,
+            (await host.Client.PostAsync($"/api/loans/{loanId}/reject", null)).StatusCode);
+        Assert.Equal(HttpStatusCode.BadRequest,
+            (await host.Client.PostAsync($"/api/loans/{loanId}/reject", null)).StatusCode);
+        var ownHistory = await host.Client.GetFromJsonAsync<List<System.Text.Json.JsonElement>>(
+            $"/api/audit/Loan/{loanId}");
+        Assert.Single(ownHistory!);
+        Assert.Equal("Recusado", ownHistory[0].GetProperty("action").GetString());
+        using var check = host.App.Services.CreateScope();
+        var checkDb = check.ServiceProvider.GetRequiredService<AppDbContext>();
+        Assert.Single(await checkDb.AuditEntries.Where(a => a.EntityType == "Loan" &&
+            a.EntityId == loanId.ToString()).ToListAsync());
+        var notice = Assert.Single(await checkDb.Notifications.Where(n => n.RelatedType == "Loan" &&
+            n.RelatedId == loanId).ToListAsync());
+        Assert.Equal("teacher2", notice.UserId);
+        Assert.Equal("teacher1", notice.ActorId);
+    }
+
+    [Fact]
+    public async Task LoanAcceptanceAndFinalizationAuditTransitionsAndNotifyEachCounterparty()
+    {
+        await using var host = await Host.CreateAsync();
+        int loanId;
+        using (var scope = host.App.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+            loanId = await db.Loans.Where(l => l.RoomOccupationId == host.LoanedId).Select(l => l.Id).SingleAsync();
+        }
+        host.AsTeacher();
+        var input = new LoanAccept(null, 1, 1, false, false, false, HardwareTier.Basico, []);
+        Assert.Equal(HttpStatusCode.OK,
+            (await host.Client.PostAsJsonAsync($"/api/loans/{loanId}/accept", input)).StatusCode);
+        Assert.Equal(HttpStatusCode.BadRequest,
+            (await host.Client.PostAsJsonAsync($"/api/loans/{loanId}/accept", input)).StatusCode);
+        host.AsOtherTeacher();
+        Assert.Equal(HttpStatusCode.OK,
+            (await host.Client.PostAsJsonAsync($"/api/loans/{loanId}/finalize",
+                new LoanFinish(OwnerClassDisposition.Ead))).StatusCode);
+        using var check = host.App.Services.CreateScope();
+        var dbCheck = check.ServiceProvider.GetRequiredService<AppDbContext>();
+        var entries = await dbCheck.AuditEntries.Where(a => a.EntityType == "Loan" &&
+            a.EntityId == loanId.ToString()).OrderBy(a => a.Id).ToListAsync();
+        Assert.Equal(new[] { "Aceito", "Confirmado" }, entries.Select(a => a.Action).ToArray());
+        Assert.Equal("teacher1", entries[0].ActorId);
+        Assert.Equal("teacher2", entries[1].ActorId);
+        var notices = await dbCheck.Notifications.Where(n => n.RelatedType == "Loan" &&
+            n.RelatedId == loanId).OrderBy(n => n.Id).ToListAsync();
+        Assert.Equal(new[] { "teacher2", "teacher1" }, notices.Select(n => n.UserId).ToArray());
+        Assert.Equal(LoanStatus.Aprovado,
+            (await dbCheck.Loans.SingleAsync(l => l.Id == loanId)).Status);
+    }
+
+    [Fact]
+    public async Task OfferedLoanPersistsAuditAndOneRecipientNotification()
+    {
+        await using var host = await Host.CreateAsync();
+        using (var scope = host.App.Services.CreateScope())
+        {
+            var roles = scope.ServiceProvider.GetRequiredService<RoleManager<IdentityRole>>();
+            await roles.CreateAsync(new IdentityRole("Professor"));
+            var users = scope.ServiceProvider.GetRequiredService<UserManager<AppUser>>();
+            var borrower = (await users.FindByIdAsync("teacher2"))!;
+            Assert.True((await users.AddToRoleAsync(borrower, "Professor")).Succeeded);
+        }
+        host.AsTeacher();
+        var response = await host.Client.PostAsJsonAsync("/api/loans/offer",
+            new LoanOffer([host.RecurringFirstId], "teacher2", "Uso pontual"));
+        Assert.Equal(HttpStatusCode.Created, response.StatusCode);
+        using var check = host.App.Services.CreateScope();
+        var db = check.ServiceProvider.GetRequiredService<AppDbContext>();
+        var loan = await db.Loans.SingleAsync(l => l.RoomOccupationId == host.RecurringFirstId);
+        var audit = Assert.Single(await db.AuditEntries.Where(a => a.EntityType == "Loan" &&
+            a.EntityId == loan.Id.ToString()).ToListAsync());
+        Assert.Equal("Solicitado", audit.Action);
+        Assert.Equal("teacher1", audit.ActorId);
+        Assert.Equal("Uso pontual", audit.Reason);
+        var notice = Assert.Single(await db.Notifications.Where(n => n.RelatedType == "Loan" &&
+            n.RelatedId == loan.Id).ToListAsync());
+        Assert.Equal("teacher2", notice.UserId);
+        Assert.Equal("teacher1", notice.ActorId);
+    }
+
+    [Fact]
+    public async Task BookingHistoryIncludesTheExistingOccurrenceMoveWithoutDuplicatingIt()
+    {
+        await using var host = await Host.CreateAsync();
+        var preview = await host.Preview(host.RecurringFirstId, host.RoomBId,
+            new(2027, 3, 1), host.MorningId);
+        Assert.Equal(HttpStatusCode.OK, (await host.Confirm(host.RecurringFirstId, preview,
+            host.RoomBId, new(2027, 3, 1), host.MorningId)).StatusCode);
+        int bookingId;
+        using (var scope = host.App.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+            bookingId = (await db.Occupations.SingleAsync(o => o.Id == host.RecurringFirstId)).BookingRequestId!.Value;
+            Assert.Single(await db.OccupationChanges.Where(c => c.RoomOccupationId == host.RecurringFirstId).ToListAsync());
+        }
+        var history = await host.Client.GetFromJsonAsync<List<System.Text.Json.JsonElement>>(
+            $"/api/audit/Booking/{bookingId}");
+        var move = Assert.Single(history!);
+        Assert.Equal("Remanejada", move.GetProperty("action").GetString());
+        Assert.Equal("Occupation", move.GetProperty("entityType").GetString());
+        Assert.Contains("Laboratório", move.GetProperty("details").GetString());
     }
 
     [Fact]
@@ -234,6 +414,7 @@ public sealed class OccupationMoveTests
         { App = app; this.connection = connection; Client = app.GetTestClient(); }
         public void AsAdmin() => SetUser("admin", "Admin");
         public void AsTeacher() => SetUser("teacher1", "Professor");
+        public void AsOtherTeacher() => SetUser("teacher2", "Professor");
         private void SetUser(string id, string role)
         { Client.DefaultRequestHeaders.Remove("X-Test-User"); Client.DefaultRequestHeaders.Remove("X-Test-Role");
             Client.DefaultRequestHeaders.Add("X-Test-User", id);

@@ -87,12 +87,16 @@ public static partial class ApiEndpoints
                 db.Loans.Add(loan);
                 offers.Add(loan);
             }
-            db.Notifications.Add(new UserNotification
+            await db.SaveChangesAsync();
+            foreach (var loan in offers)
             {
-                UserId = input.BorrowerId,
-                ActorId = ownerId,
-                Message = $"Você recebeu {offers.Count} oferta(s) de empréstimo de sala."
-            });
+                AuditTrail.Add(db, "Loan", loan.Id.ToString(), "Solicitado", ownerId, null,
+                    new { loan.RoomOccupationId, OwnerId = ownerId, loan.BorrowerId,
+                        loan.Status, loan.RequestedAtUtc }, loan.Reason);
+                AuditTrail.Notify(db, input.BorrowerId, ownerId, "Empréstimo oferecido",
+                    $"Você recebeu uma oferta de empréstimo para {loan.BookingRequest.StartsAt:dd/MM/yyyy HH:mm}. Consulte a solicitação para aceitar ou recusar.",
+                    "Loan", loan.Id);
+            }
             await db.SaveChangesAsync();
             await tx.CommitAsync();
             return Results.Created("/api/loans", offers.Select(l => new { l.Id, l.RoomOccupationId, l.Status }));
@@ -136,12 +140,13 @@ public static partial class ApiEndpoints
                 occ.StartsAt, occ.EndsAt, booking.TeacherId, booking.ClassGroupId, exceptOccupationId: occ.Id);
             if (conflict is not null) return Results.Conflict(new ApiError(conflict));
             loan.Status = LoanStatus.AguardandoSituacaoTitular;
-            db.Notifications.Add(new UserNotification
-            {
-                UserId = occ.TeacherId!,
-                ActorId = UserId(current),
-                Message = "Empréstimo aceito. Defina EAD, dia não letivo ou outra sala para sua turma."
-            });
+            AuditTrail.Add(db, "Loan", loan.Id.ToString(), "Aceito", UserId(current),
+                new { Status = LoanStatus.AguardandoDestinatario },
+                new { loan.Status, booking.ClassGroupId, booking.Students });
+            if (occ.TeacherId is string ownerId)
+                AuditTrail.Notify(db, ownerId, UserId(current), "Empréstimo aceito",
+                    "O destinatário aceitou o empréstimo. Defina EAD, dia não letivo ou outra sala para sua turma.",
+                    "Loan", loan.Id);
             await db.SaveChangesAsync();
             await tx.CommitAsync();
             return Results.Ok(new { loan.Id, loan.Status });
@@ -230,12 +235,12 @@ public static partial class ApiEndpoints
             loan.ApprovedAtUtc = DateTime.UtcNow;
             booking.Status = BookingStatus.Aprovada;
             booking.ApprovedRoomId = occ.RoomId;
-            db.Notifications.Add(new UserNotification
-            {
-                UserId = booking.TeacherId,
-                ActorId = owner!,
-                Message = $"Empréstimo #{loan.Id} confirmado para {occ.StartsAt:dd/MM/yyyy} ({occ.StartsAt:HH:mm}–{occ.EndsAt:HH:mm})."
-            });
+            AuditTrail.Add(db, "Loan", loan.Id.ToString(), "Confirmado", UserId(current),
+                new { Status = LoanStatus.AguardandoSituacaoTitular, OwnerDisposition = (OwnerClassDisposition?)null },
+                new { loan.Status, loan.OwnerDisposition, loan.ReplacementOccupationId, loan.ApprovedAtUtc });
+            AuditTrail.Notify(db, booking.TeacherId, UserId(current), "Empréstimo confirmado",
+                $"Empréstimo confirmado para {occ.StartsAt:dd/MM/yyyy} ({occ.StartsAt:HH:mm}–{occ.EndsAt:HH:mm}).",
+                "Loan", loan.Id);
             await db.SaveChangesAsync();
             await tx.CommitAsync();
             return Results.Ok(new { loan.Id, loan.Status, loan.OwnerDisposition, loan.ReplacementOccupationId });
@@ -249,7 +254,16 @@ public static partial class ApiEndpoints
                 && !current.IsInRole("Admin")) return Results.Forbid();
             if (loan.Status != LoanStatus.AguardandoDestinatario &&
                 loan.Status != LoanStatus.AguardandoSituacaoTitular) return Error("Só é possível recusar empréstimos pendentes");
+            var oldStatus = loan.Status;
             loan.Status = LoanStatus.Rejeitado;
+            AuditTrail.Add(db, "Loan", loan.Id.ToString(), "Recusado", UserId(current),
+                new { Status = oldStatus },
+                new { loan.Status });
+            if (loan.RoomOccupation.TeacherId is string ownerId && ownerId != loan.BorrowerId)
+                AuditTrail.Notify(db, ownerId, UserId(current), "Empréstimo recusado",
+                    "A proposta de empréstimo foi recusada ou cancelada.", "Loan", loan.Id);
+            AuditTrail.Notify(db, loan.BorrowerId, UserId(current), "Empréstimo recusado",
+                "A proposta de empréstimo foi recusada ou cancelada.", "Loan", loan.Id);
             await db.SaveChangesAsync();
             return Results.Ok(new { loan.Id, loan.Status });
         });

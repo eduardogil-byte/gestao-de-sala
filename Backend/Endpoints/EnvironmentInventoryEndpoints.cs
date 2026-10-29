@@ -1,7 +1,9 @@
+using System.Security.Claims;
 using Microsoft.EntityFrameworkCore;
 using SalaGest.Api.Contracts;
 using SalaGest.Api.Data;
 using SalaGest.Api.Models;
+using SalaGest.Api.Services;
 
 namespace SalaGest.Api.Endpoints;
 
@@ -29,7 +31,7 @@ public static partial class ApiEndpoints
         });
 
         api.MapPost("/rooms/{roomId:int}/resources", async (int roomId,
-            RoomResourceInput input, AppDbContext db) =>
+            RoomResourceInput input, AppDbContext db, ClaimsPrincipal current) =>
         {
             var roomExists = await db.Rooms.AnyAsync(r => r.Id == roomId);
             if (!roomExists) return Results.NotFound();
@@ -40,12 +42,18 @@ public static partial class ApiEndpoints
                     r.NormalizedName == normalizedName && r.NormalizedType == normalizedType))
                 return Results.Conflict(new ApiError("Este recurso já está cadastrado no ambiente"));
             var item = CreateResource(roomId, input, normalizedName, normalizedType);
+            await using var createTx = await db.Database.BeginTransactionAsync();
             db.RoomResources.Add(item);
             await db.SaveChangesAsync();
+            AuditTrail.Add(db, "Resource", item.Id.ToString(), "Criado", UserId(current), null,
+                ResourceAudit(item));
+            await db.SaveChangesAsync();
+            await createTx.CommitAsync();
             return Results.Created($"/api/rooms/{roomId}/inventory", ResourceView(item));
         }).RequireAuthorization("Admin");
 
-        api.MapPut("/resources/{id:int}", async (int id, RoomResourceInput input, AppDbContext db) =>
+        api.MapPut("/resources/{id:int}", async (int id, RoomResourceInput input, AppDbContext db,
+            ClaimsPrincipal current) =>
         {
             if (varError(input) is string error) return Results.BadRequest(new ApiError(error));
             var item = await db.RoomResources.FirstOrDefaultAsync(r => r.Id == id);
@@ -55,7 +63,10 @@ public static partial class ApiEndpoints
             if (await db.RoomResources.AnyAsync(r => r.RoomId == item.RoomId && r.Id != id &&
                     r.NormalizedName == normalizedName && r.NormalizedType == normalizedType))
                 return Results.Conflict(new ApiError("Este recurso já está cadastrado no ambiente"));
+            var before = ResourceAudit(item);
             UpdateResource(item, input, normalizedName, normalizedType);
+            AuditTrail.Add(db, "Resource", item.Id.ToString(), "Alterado", UserId(current), before,
+                ResourceAudit(item));
             await db.SaveChangesAsync();
             return Results.NoContent();
         }).RequireAuthorization("Admin");
@@ -68,7 +79,7 @@ public static partial class ApiEndpoints
         });
 
         api.MapPost("/rooms/{roomId:int}/computer-groups", async (int roomId,
-            ComputerGroupInventoryInput input, AppDbContext db) =>
+            ComputerGroupInventoryInput input, AppDbContext db, ClaimsPrincipal current) =>
         {
             if (!await db.Rooms.AnyAsync(r => r.Id == roomId)) return Results.NotFound();
             if (GroupError(input) is string error) return Results.BadRequest(new ApiError(error));
@@ -76,13 +87,18 @@ public static partial class ApiEndpoints
                 return Results.Conflict(new ApiError("Já existe um grupo de computadores com esta identificação"));
             var group = new ComputerGroup { RoomId = roomId };
             UpdateGroup(group, input);
+            await using var createTx = await db.Database.BeginTransactionAsync();
             db.ComputerGroups.Add(group);
             await db.SaveChangesAsync();
+            AuditTrail.Add(db, "ComputerGroup", group.Id.ToString(), "Criado", UserId(current), null,
+                GroupAudit(group));
+            await db.SaveChangesAsync();
+            await createTx.CommitAsync();
             return Results.Created($"/api/computer-groups/{group.Id}", GroupView(group));
         }).RequireAuthorization("Admin");
 
         api.MapPut("/computer-groups/{id:int}", async (int id,
-            ComputerGroupInventoryInput input, AppDbContext db) =>
+            ComputerGroupInventoryInput input, AppDbContext db, ClaimsPrincipal current) =>
         {
             if (GroupError(input) is string error) return Results.BadRequest(new ApiError(error));
             var group = await db.ComputerGroups.FirstOrDefaultAsync(g => g.Id == id);
@@ -93,13 +109,16 @@ public static partial class ApiEndpoints
             if (await db.ComputerGroups.AnyAsync(g => g.RoomId == group.RoomId && g.Id != id &&
                     g.Description == input.Description.Trim()))
                 return Results.Conflict(new ApiError("Já existe um grupo de computadores com esta identificação"));
+            var before = GroupAudit(group);
             UpdateGroup(group, input);
+            AuditTrail.Add(db, "ComputerGroup", group.Id.ToString(), "Alterado", UserId(current), before,
+                GroupAudit(group));
             await db.SaveChangesAsync();
             return Results.NoContent();
         }).RequireAuthorization("Admin");
 
         api.MapPut("/computer-groups/{id:int}/software", async (int id,
-            List<GroupSoftwareInventoryInput> input, AppDbContext db) =>
+            List<GroupSoftwareInventoryInput> input, AppDbContext db, ClaimsPrincipal current) =>
         {
             var group = await db.ComputerGroups.Include(g => g.Software).FirstOrDefaultAsync(g => g.Id == id);
             if (group is null) return Results.NotFound();
@@ -111,6 +130,8 @@ public static partial class ApiEndpoints
             var softwareIds = input.Select(x => x.SoftwareId).ToArray();
             if (await db.SoftwareCatalog.CountAsync(s => softwareIds.Contains(s.Id)) != softwareIds.Distinct().Count())
                 return Results.BadRequest(new ApiError("Software não cadastrado"));
+            var before = group.Software.Select(s => new { s.SoftwareId, s.InstalledQuantity,
+                s.Version, s.LicenseQuantity, s.LicenseExpiresOn }).ToArray();
             db.GroupSoftware.RemoveRange(group.Software);
             group.Software = input.Select(x => new GroupSoftware
             {
@@ -121,6 +142,9 @@ public static partial class ApiEndpoints
                 LicenseQuantity = x.LicenseQuantity,
                 LicenseExpiresOn = x.LicenseExpiresOn
             }).ToList();
+            AuditTrail.Add(db, "ComputerGroup", group.Id.ToString(), "SoftwaresAlterados", UserId(current),
+                before, group.Software.Select(s => new { s.SoftwareId, s.InstalledQuantity,
+                    s.Version, s.LicenseQuantity, s.LicenseExpiresOn }).ToArray());
             await db.SaveChangesAsync();
             return Results.NoContent();
         }).RequireAuthorization("Admin");
@@ -205,6 +229,22 @@ public static partial class ApiEndpoints
         resource.Id, resource.RoomId, resource.Name, resource.Type, resource.Quantity,
         resource.OperationalQuantity, resource.Description, resource.Condition,
         resource.TechnicalDetails, resource.Voltage, resource.WarrantyExpiresOn, resource.LicenseExpiresOn
+    };
+
+    private static object ResourceAudit(RoomResource resource) => new
+    {
+        resource.RoomId, resource.Name, resource.Type, resource.Quantity,
+        resource.OperationalQuantity, resource.Description, resource.Condition,
+        resource.TechnicalDetails, resource.Voltage,
+        resource.WarrantyExpiresOn, resource.LicenseExpiresOn
+    };
+
+    private static object GroupAudit(ComputerGroup group) => new
+    {
+        group.RoomId, group.Description, group.Quantity, group.OperationalQuantity,
+        group.RamGb, group.Tier, group.DedicatedGpu, group.Processor, group.Storage,
+        group.GraphicsCard, group.OperatingSystem, group.Virtualization, group.DockerWsl,
+        group.CadCompatible, group.SimulatorCompatible, group.InternetAvailable
     };
 
     private static object GroupView(ComputerGroup group) => new

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   CalendarPlus,
   Check,
@@ -20,6 +20,7 @@ import {
   Checkbox,
 } from "../components/UI";
 import { BookingForm } from "../components/BookingForm";
+import { AuditHistory } from "../components/AuditHistory";
 import type {
   Booking,
   Suggestion,
@@ -31,9 +32,11 @@ import type {
 export function Bookings({
   user,
   reloadAgenda,
+  focusId,
 }: {
   user: User;
   reloadAgenda: () => Promise<void>;
+  focusId?: number | null;
 }) {
   const { data, reload } = useData();
   const [form, setForm] = useState(false),
@@ -48,6 +51,13 @@ export function Bookings({
     [busy, setBusy] = useState(false);
   const [error, setError] = useState(""),
     [success, setSuccess] = useState("");
+  const [historyBookingId, setHistoryBookingId] = useState<number | null>(null);
+  useEffect(() => {
+    if (!focusId) return;
+    setFilter("Todos");
+    const timer = window.setTimeout(() => document.getElementById("booking-" + focusId)?.scrollIntoView({ block: "center" }), 0);
+    return () => window.clearTimeout(timer);
+  }, [focusId, data.bookings]);
   const acceptedDates =
     availability?.days
       .filter(
@@ -233,7 +243,8 @@ export function Bookings({
       ) : (
         <div className="grid gap-3">
           {list.map((b) => (
-            <Card key={b.id} className="p-4 md:p-5">
+            <Card key={b.id} className={"p-4 md:p-5 " + (focusId === b.id ? "ring-2 ring-sky-500" : "")}>
+              <span id={"booking-" + b.id} />
               <div className="flex flex-wrap justify-between items-start gap-3">
                 <div className="flex gap-3">
                   <span className="bg-sky-50 text-sky-700 p-3 rounded-xl">
@@ -296,6 +307,8 @@ export function Bookings({
                   </div>
                 )}
               </div>
+              <button type="button" className="text-xs font-semibold text-sky-700 underline mt-3" onClick={() => setHistoryBookingId(historyBookingId === b.id ? null : b.id)}>Histórico da reserva</button>
+              {historyBookingId === b.id && <div className="mt-3 border-t pt-3"><AuditHistory type="Booking" id={b.id} /></div>}
             </Card>
           ))}
         </div>

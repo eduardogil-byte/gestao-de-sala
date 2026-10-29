@@ -54,6 +54,12 @@ public static partial class ApiEndpoints
                         $"{assessment.Destination.StartsAt:dd/MM/yyyy HH:mm}-{assessment.Destination.EndsAt:HH:mm}" +
                         (string.IsNullOrWhiteSpace(input.Reason) ? "" : $"; motivo: {input.Reason.Trim()}")
                 });
+                if (occupation.TeacherId is string teacherId)
+                    AuditTrail.Notify(db, teacherId, UserId(current), "Aula remanejada",
+                        $"Sua ocupação de {assessment.Origin.StartsAt:dd/MM/yyyy HH:mm} foi remanejada de " +
+                        $"{assessment.Origin.RoomName} para {assessment.Destination.RoomName} " +
+                        $"em {assessment.Destination.StartsAt:dd/MM/yyyy HH:mm}.",
+                        "Occupation", occupation.Id);
                 await db.SaveChangesAsync();
                 await transaction.CommitAsync();
                 return Results.Ok(new { occupation.Id, occupation.RoomId, occupation.StartsAt, occupation.EndsAt });

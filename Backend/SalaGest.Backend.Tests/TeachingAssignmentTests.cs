@@ -138,6 +138,45 @@ public sealed class TeachingAssignmentTests
     }
 
     [Fact]
+    public async Task AssignmentAuditKeepsSequenceAndNotificationsRespectPermissions()
+    {
+        await using var host = await AssignmentHost.CreateAsync();
+        host.AsAdmin();
+        var created = await host.CreateAssignment(host.TeacherId, host.ClassId, host.UnitId, 3);
+        var item = (await created.Content.ReadFromJsonAsync<AssignmentResponse>())!;
+        Assert.Equal(HttpStatusCode.Conflict,
+            (await host.CreateAssignment(host.TeacherId, host.ClassId, host.UnitId, 3)).StatusCode);
+        Assert.Equal(HttpStatusCode.OK, (await host.Client.PutAsJsonAsync(
+            $"/api/assignments/{item.Id}/pedagogical",
+            new PedagogicalAssignmentUpdate(host.OtherTeacherId, host.OtherUnitId, 4, host.ShiftId))).StatusCode);
+        Assert.Equal(HttpStatusCode.OK, (await host.Client.PutAsJsonAsync(
+            $"/api/assignments/{item.Id}/pedagogical",
+            new PedagogicalAssignmentUpdate(host.OtherTeacherId, host.OtherUnitId, 4, host.ShiftId))).StatusCode);
+        Assert.Equal(HttpStatusCode.NoContent,
+            (await host.Client.PostAsync($"/api/assignments/{item.Id}/end", null)).StatusCode);
+        var history = await host.Client.GetFromJsonAsync<List<System.Text.Json.JsonElement>>(
+            $"/api/audit/Assignment/{item.Id}");
+        Assert.Equal(new[] { "Criada", "Alterada", "Encerrada" },
+            history!.Select(row => row.GetProperty("action").GetString()).ToArray());
+        Assert.All(history, row => Assert.False(string.IsNullOrWhiteSpace(
+            row.GetProperty("actorName").GetString())));
+        Assert.Contains(host.TeacherId, history[1].GetProperty("beforeJson").GetString());
+        Assert.Contains(host.OtherTeacherId, history[1].GetProperty("afterJson").GetString());
+        Assert.DoesNotContain("password", history[1].ToString(), StringComparison.OrdinalIgnoreCase);
+        using var scope = host.App.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+        Assert.Equal(3, await db.AuditEntries.CountAsync(a => a.EntityType == "Assignment" &&
+            a.EntityId == item.Id.ToString()));
+        Assert.Equal(3, await db.AuditEntries.CountAsync(a => a.EntityType == "Assignment" &&
+            a.EntityId == item.Id.ToString() && a.ActorId == "admin"));
+        Assert.Equal(2, await db.Notifications.CountAsync(n => n.UserId == host.TeacherId));
+        Assert.Equal(2, await db.Notifications.CountAsync(n => n.UserId == host.OtherTeacherId));
+        host.AsTeacher();
+        Assert.Equal(HttpStatusCode.Forbidden,
+            (await host.Client.GetAsync($"/api/audit/Assignment/{item.Id}")).StatusCode);
+    }
+
+    [Fact]
     public async Task PublishedWeeklyClassBlocksChangesAndLegacyAssignmentRemainsReadable()
     {
         await using var host = await AssignmentHost.CreateAsync();

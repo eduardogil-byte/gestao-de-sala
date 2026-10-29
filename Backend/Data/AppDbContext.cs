@@ -25,6 +25,7 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : Ident
     public DbSet<RoomLoan> Loans => Set<RoomLoan>();
     public DbSet<UserNotification> Notifications => Set<UserNotification>();
     public DbSet<OccupationChange> OccupationChanges => Set<OccupationChange>();
+    public DbSet<AuditEntry> AuditEntries => Set<AuditEntry>();
     public DbSet<Course> Courses => Set<Course>();
     public DbSet<CourseModule> CourseModules => Set<CourseModule>();
     public DbSet<CurricularUnit> CurricularUnits => Set<CurricularUnit>();
@@ -109,6 +110,14 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : Ident
         b.Entity<RoomLoan>().HasIndex(x => x.RoomOccupationId);
         b.Entity<UserNotification>().HasIndex(x => new { x.UserId, x.CreatedAtUtc });
         b.Entity<OccupationChange>().HasIndex(x => new { x.RoomOccupationId, x.ChangedAtUtc });
+        b.Entity<AuditEntry>().HasIndex(x => new { x.EntityType, x.EntityId, x.CreatedAtUtc });
+        b.Entity<AuditEntry>().Property(x => x.EntityType).HasMaxLength(32);
+        b.Entity<AuditEntry>().Property(x => x.EntityId).HasMaxLength(128);
+        b.Entity<AuditEntry>().Property(x => x.Action).HasMaxLength(60);
+        b.Entity<AuditEntry>().Property(x => x.ActorId).HasMaxLength(450);
+        b.Entity<AuditEntry>().Property(x => x.Reason).HasMaxLength(500);
+        b.Entity<UserNotification>().Property(x => x.Subject).HasMaxLength(120);
+        b.Entity<UserNotification>().Property(x => x.RelatedType).HasMaxLength(32);
 
         b.Entity<Course>().Property(x => x.Code).IsRequired().HasMaxLength(30);
         b.Entity<Course>().Property(x => x.NormalizedCode).IsRequired().HasMaxLength(30);

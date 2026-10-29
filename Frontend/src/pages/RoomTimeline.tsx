@@ -4,6 +4,7 @@ import { useData } from "../lib/data";
 import { agendaPath, datesBetween, indexOccupations, isAgendaOccupation, movePeriod, period, summarize, weekStart, type TimelineView } from "../lib/roomTimeline";
 import { dateBR, localDate, nextDate, resultMessage } from "../lib/utils";
 import { Busy, Card, Field, Modal, Notice, Title } from "../components/UI";
+import { AuditHistory } from "../components/AuditHistory";
 import type { AgendaOccupation, OccupationMovePreview, User } from "../types";
 
 const calendarLabels: Record<string, string> = {
@@ -342,6 +343,7 @@ export function RoomTimeline({ user, openBookings }: { user: User; openBookings:
         ["Motivo do calendário", selected.calendarReason ?? "Não informado"],
         ["Conflitos", selected.conflicts.length ? selected.conflicts.map((reason) => conflictLabels[reason] ?? "Inconsistência sinalizada").join(", ") : "Nenhum sinalizado"]
       ] as [string, string][]).map(([label, value]) => <div key={label}><dt className="font-semibold text-slate-600">{label}</dt><dd className="text-slate-800">{value}</dd></div>)}</dl>
+      {(admin || selected.originalTeacherId === user.id) && <div className="mt-5 border-t border-slate-200 pt-4"><h3 className="font-semibold mb-2">Histórico de alterações</h3><AuditHistory type="Occupation" id={selected.id} /></div>}
       {admin && selected.kind !== "Bloqueio" && <button type="button" className="btn-primary mt-5" onClick={() => beginMove(selected)}>Mover ocupação</button>}
     </Modal>}
     {moveItem && <Modal title="Remanejar ocupação" onClose={() => { if (!moveBusy) { previewRequest.current++; setMoveItem(null); } }}>

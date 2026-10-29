@@ -4,6 +4,7 @@ using Microsoft.EntityFrameworkCore;
 using SalaGest.Api.Contracts;
 using SalaGest.Api.Data;
 using SalaGest.Api.Models;
+using SalaGest.Api.Services;
 
 namespace SalaGest.Api.Endpoints;
 
@@ -52,13 +53,15 @@ public static partial class ApiEndpoints
         }).RequireAuthorization("Admin");
 
         teachers.MapPost("/courses/{courseId:int}", async (string teacherId, int courseId,
-            UserManager<AppUser> users, AppDbContext db) =>
+            UserManager<AppUser> users, AppDbContext db, ClaimsPrincipal current) =>
         {
             if (await FindTeacher(users, teacherId) is null) return Results.NotFound();
             if (!await db.Courses.AnyAsync(x => x.Id == courseId)) return Results.NotFound();
             if (await db.TeacherCourseQualifications.AnyAsync(x => x.TeacherId == teacherId && x.CourseId == courseId))
                 return CatalogConflict("Professor já habilitado para este curso");
             db.TeacherCourseQualifications.Add(new() { TeacherId = teacherId, CourseId = courseId });
+            AuditTrail.Add(db, "TeacherQualification", $"{teacherId}:course:{courseId}", "Habilitada", UserId(current),
+                null, new { TeacherId = teacherId, CourseId = courseId });
             try { await db.SaveChangesAsync(); }
             catch (DbUpdateException ex) when (IsUniqueViolation(ex))
             { return CatalogConflict("Professor já habilitado para este curso"); }
@@ -67,7 +70,7 @@ public static partial class ApiEndpoints
         }).RequireAuthorization("Admin");
 
         teachers.MapDelete("/courses/{courseId:int}", async (string teacherId, int courseId,
-            AppDbContext db) =>
+            AppDbContext db, ClaimsPrincipal current) =>
         {
             var item = await db.TeacherCourseQualifications.FindAsync(teacherId, courseId);
             if (item is null) return Results.NotFound();
@@ -75,12 +78,15 @@ public static partial class ApiEndpoints
                 x.CurricularUnit.CourseModule.CourseId == courseId))
                 return CatalogConflict("Remova antes as habilitações de UCs deste curso");
             db.TeacherCourseQualifications.Remove(item);
+            AuditTrail.Add(db, "TeacherQualification", $"{teacherId}:course:{courseId}", "Removida", UserId(current),
+                new { TeacherId = teacherId, CourseId = courseId }, null);
             await db.SaveChangesAsync();
             return Results.NoContent();
         }).RequireAuthorization("Admin");
 
         teachers.MapPost("/courses/{courseId:int}/curricular-units/{unitId:int}",
-            async (string teacherId, int courseId, int unitId, UserManager<AppUser> users, AppDbContext db) =>
+            async (string teacherId, int courseId, int unitId, UserManager<AppUser> users, AppDbContext db,
+                ClaimsPrincipal current) =>
         {
             if (await FindTeacher(users, teacherId) is null) return Results.NotFound();
             if (!await db.Courses.AnyAsync(x => x.Id == courseId) ||
@@ -91,6 +97,8 @@ public static partial class ApiEndpoints
             if (await db.TeacherUnitQualifications.AnyAsync(x => x.TeacherId == teacherId && x.CurricularUnitId == unitId))
                 return CatalogConflict("Professor já habilitado para esta UC");
             db.TeacherUnitQualifications.Add(new() { TeacherId = teacherId, CurricularUnitId = unitId });
+            AuditTrail.Add(db, "TeacherQualification", $"{teacherId}:unit:{unitId}", "Habilitada", UserId(current),
+                null, new { TeacherId = teacherId, CurricularUnitId = unitId });
             try { await db.SaveChangesAsync(); }
             catch (DbUpdateException ex) when (IsUniqueViolation(ex))
             { return CatalogConflict("Professor já habilitado para esta UC"); }
@@ -99,18 +107,20 @@ public static partial class ApiEndpoints
         }).RequireAuthorization("Admin");
 
         teachers.MapDelete("/courses/{courseId:int}/curricular-units/{unitId:int}",
-            async (string teacherId, int courseId, int unitId, AppDbContext db) =>
+            async (string teacherId, int courseId, int unitId, AppDbContext db, ClaimsPrincipal current) =>
         {
             var item = await db.TeacherUnitQualifications.FirstOrDefaultAsync(x => x.TeacherId == teacherId &&
                 x.CurricularUnitId == unitId && x.CurricularUnit.CourseModule.CourseId == courseId);
             if (item is null) return Results.NotFound();
             db.TeacherUnitQualifications.Remove(item);
+            AuditTrail.Add(db, "TeacherQualification", $"{teacherId}:unit:{unitId}", "Removida", UserId(current),
+                new { TeacherId = teacherId, CurricularUnitId = unitId }, null);
             await db.SaveChangesAsync();
             return Results.NoContent();
         }).RequireAuthorization("Admin");
 
         teachers.MapPost("/capabilities/{capabilityId:int}", async (string teacherId, int capabilityId,
-            UserManager<AppUser> users, AppDbContext db) =>
+            UserManager<AppUser> users, AppDbContext db, ClaimsPrincipal current) =>
         {
             if (await FindTeacher(users, teacherId) is null) return Results.NotFound();
             if (!await db.CurricularCapabilities.AnyAsync(x => x.Id == capabilityId)) return Results.NotFound();
@@ -118,6 +128,8 @@ public static partial class ApiEndpoints
                 x.CurricularCapabilityId == capabilityId))
                 return CatalogConflict("Professor já vinculado a esta capacidade");
             db.TeacherCapabilityQualifications.Add(new() { TeacherId = teacherId, CurricularCapabilityId = capabilityId });
+            AuditTrail.Add(db, "TeacherQualification", $"{teacherId}:capability:{capabilityId}", "Habilitada",
+                UserId(current), null, new { TeacherId = teacherId, CurricularCapabilityId = capabilityId });
             try { await db.SaveChangesAsync(); }
             catch (DbUpdateException ex) when (IsUniqueViolation(ex))
             { return CatalogConflict("Professor já vinculado a esta capacidade"); }
@@ -126,11 +138,13 @@ public static partial class ApiEndpoints
         }).RequireAuthorization("Admin");
 
         teachers.MapDelete("/capabilities/{capabilityId:int}", async (string teacherId,
-            int capabilityId, AppDbContext db) =>
+            int capabilityId, AppDbContext db, ClaimsPrincipal current) =>
         {
             var item = await db.TeacherCapabilityQualifications.FindAsync(teacherId, capabilityId);
             if (item is null) return Results.NotFound();
             db.TeacherCapabilityQualifications.Remove(item);
+            AuditTrail.Add(db, "TeacherQualification", $"{teacherId}:capability:{capabilityId}", "Removida",
+                UserId(current), new { TeacherId = teacherId, CurricularCapabilityId = capabilityId }, null);
             await db.SaveChangesAsync();
             return Results.NoContent();
         }).RequireAuthorization("Admin");

@@ -27,6 +27,7 @@ public static partial class ApiEndpoints
         MapPedagogicalBookingOptions(app);
         MapLoans(app);
         MapOccupationManagement(app);
+        MapAudit(app);
     }
 
     private static string UserId(ClaimsPrincipal user)
@@ -169,22 +170,36 @@ public static partial class ApiEndpoints
             var room = (await AllRooms(db)).FirstOrDefault(r => r.Id == id);
             return room is null ? Results.NotFound() : Results.Ok(RoomView(room));
         });
-        api.MapPost("/rooms", async (RoomInput input, AppDbContext db) =>
+        api.MapPost("/rooms", async (RoomInput input, AppDbContext db, ClaimsPrincipal current) =>
         {
             var validation = await ValidateRoom(db, input);
             if (validation is not null) return Error(validation);
             var room = CreateRoom(input);
+            await using var createTx = await db.Database.BeginTransactionAsync();
             db.Rooms.Add(room);
             await db.SaveChangesAsync();
+            AuditTrail.Add(db, "Room", room.Id.ToString(), "Criado", UserId(current), null,
+                new { room.Name, room.Location, room.Kind, room.Seats, room.Desks,
+                    room.HasProjector, room.HasTeacherComputer, room.HasInternet, room.Active,
+                    ComputerGroups = room.ComputerGroups.Select(g => new { g.Quantity, g.RamGb, g.Tier,
+                        Software = g.Software.Select(s => new { s.SoftwareId, s.InstalledQuantity }).ToArray() }).ToArray() });
+            await db.SaveChangesAsync();
+            await createTx.CommitAsync();
             return Results.Created($"/api/rooms/{room.Id}", new { room.Id, room.Name });
         }).RequireAuthorization("Admin");
-        api.MapPut("/rooms/{id:int}", async (int id, RoomInput input, AppDbContext db) =>
+        api.MapPut("/rooms/{id:int}", async (int id, RoomInput input, AppDbContext db,
+            ClaimsPrincipal current) =>
         {
             var validation = await ValidateRoom(db, input);
             if (validation is not null) return Error(validation);
             var existing = await db.Rooms.Include(r => r.ComputerGroups)
                 .ThenInclude(g => g.Software).FirstOrDefaultAsync(r => r.Id == id);
             if (existing is null) return Results.NotFound();
+            var before = new { existing.Name, existing.Location, existing.Purpose, existing.Kind,
+                existing.Seats, existing.Desks, existing.HasProjector, existing.HasTeacherComputer,
+                existing.HasInternet, existing.Active,
+                ComputerGroups = existing.ComputerGroups.Select(g => new { g.Quantity, g.RamGb, g.Tier,
+                    Software = g.Software.Select(s => new { s.SoftwareId, s.InstalledQuantity }).ToArray() }).ToArray() };
             existing.Name = input.Name.Trim(); existing.Location = input.Location.Trim();
             existing.Purpose = input.Purpose?.Trim() ?? "";
             existing.Kind = input.Kind; existing.Seats = input.Seats; existing.Desks = input.Desks;
@@ -192,6 +207,23 @@ public static partial class ApiEndpoints
             existing.HasTeacherComputer = input.HasTeacherComputer;
             existing.HasInternet = input.HasInternet; existing.Active = input.Active;
             UpdateComputerGroups(existing.ComputerGroups, input.ComputerGroups);
+            AuditTrail.Add(db, "Room", existing.Id.ToString(), "Alterado", UserId(current), before,
+                new { existing.Name, existing.Location, existing.Purpose, existing.Kind,
+                    existing.Seats, existing.Desks, existing.HasProjector, existing.HasTeacherComputer,
+                    existing.HasInternet, existing.Active,
+                    ComputerGroups = existing.ComputerGroups.Select(g => new { g.Quantity, g.RamGb, g.Tier,
+                        Software = g.Software.Select(s => new { s.SoftwareId, s.InstalledQuantity }).ToArray() }).ToArray() });
+            if (before.Active && !existing.Active)
+            {
+                var affected = await db.Occupations.AsNoTracking()
+                    .Where(o => o.RoomId == id && o.CancelledAtUtc == null &&
+                        o.StartsAt >= DateTime.Now && o.TeacherId != null)
+                    .Select(o => o.TeacherId!).Distinct().ToListAsync();
+                foreach (var teacherId in affected)
+                    AuditTrail.Notify(db, teacherId, UserId(current), "Ambiente desativado",
+                        $"O ambiente {existing.Name} foi desativado. Revise suas ocupações futuras; nenhuma reserva foi cancelada automaticamente.",
+                        "Room", existing.Id);
+            }
             await db.SaveChangesAsync();
             return Results.NoContent();
         }).RequireAuthorization("Admin");

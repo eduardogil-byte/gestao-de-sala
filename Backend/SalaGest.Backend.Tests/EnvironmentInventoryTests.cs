@@ -38,6 +38,15 @@ public sealed class EnvironmentInventoryTests
             $"/api/rooms/{host.RoomId}/resources", input)).StatusCode);
         Assert.Equal(HttpStatusCode.Conflict, (await host.Client.PostAsJsonAsync(
             $"/api/rooms/{host.RoomId}/resources", input with { Name = " Torno " })).StatusCode);
+        using (var scope = host.App.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+            var resource = await db.RoomResources.SingleAsync(r => r.RoomId == host.RoomId);
+            var audit = Assert.Single(await db.AuditEntries.Where(a => a.EntityType == "Resource" &&
+                a.EntityId == resource.Id.ToString()).ToListAsync());
+            Assert.Equal("Criado", audit.Action);
+            Assert.Equal("inventory-test", audit.ActorId);
+        }
 
         host.AsTeacher();
         Assert.Equal(HttpStatusCode.Forbidden, (await host.Client.PostAsJsonAsync(
@@ -111,6 +120,49 @@ public sealed class EnvironmentInventoryTests
         using var afterRoomEdit = System.Text.Json.JsonDocument.Parse(await (await host.Client.GetAsync(
             $"/api/rooms/{host.RoomId}/inventory")).Content.ReadAsStringAsync());
         Assert.Equal(3, afterRoomEdit.RootElement.GetProperty("computerGroups").GetArrayLength());
+        using var scope = host.App.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+        var changes = await db.AuditEntries.AsNoTracking().Where(a => a.EntityType == "ComputerGroup" &&
+            a.EntityId == first.Id.ToString()).OrderBy(a => a.Id).ToListAsync();
+        Assert.Equal(new[] { "Criado", "SoftwaresAlterados", "Alterado" },
+            changes.Select(a => a.Action).ToArray());
+        Assert.Contains("16", changes[2].BeforeJson);
+        Assert.Contains("32", changes[2].AfterJson);
+        Assert.Single(await db.AuditEntries.Where(a => a.EntityType == "Room" &&
+            a.EntityId == host.RoomId.ToString()).ToListAsync());
+    }
+
+    [Fact]
+    public async Task DeactivatingRoomNotifiesAffectedTeacherOnceWithoutCancellingOccupation()
+    {
+        await using var host = await InventoryHost.CreateAsync();
+        int occupationId;
+        using (var scope = host.App.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+            db.Users.Add(new AppUser { Id = "affected", UserName = "affected", DisplayName = "Instrutor" });
+            var startsAt = DateTime.Now.AddDays(10);
+            var occupation = new RoomOccupation { RoomId = host.RoomId, TeacherId = "affected",
+                StartsAt = startsAt, EndsAt = startsAt.AddHours(4), Kind = OccupationKind.Aula };
+            db.Occupations.Add(occupation);
+            await db.SaveChangesAsync();
+            occupationId = occupation.Id;
+        }
+        host.AsAdmin();
+        var update = new RoomInput("Oficina", "Bloco A", RoomKind.Comum, 20, 10,
+            false, false, false, false, new List<ComputerGroupInput>());
+        Assert.Equal(HttpStatusCode.NoContent,
+            (await host.Client.PutAsJsonAsync($"/api/rooms/{host.RoomId}", update)).StatusCode);
+        Assert.Equal(HttpStatusCode.NoContent,
+            (await host.Client.PutAsJsonAsync($"/api/rooms/{host.RoomId}", update)).StatusCode);
+        using var check = host.App.Services.CreateScope();
+        var dbCheck = check.ServiceProvider.GetRequiredService<AppDbContext>();
+        var notice = Assert.Single(await dbCheck.Notifications.Where(n => n.RelatedType == "Room" &&
+            n.RelatedId == host.RoomId).ToListAsync());
+        Assert.Equal("affected", notice.UserId);
+        Assert.Single(await dbCheck.AuditEntries.Where(a => a.EntityType == "Room" &&
+            a.EntityId == host.RoomId.ToString()).ToListAsync());
+        Assert.Null((await dbCheck.Occupations.SingleAsync(o => o.Id == occupationId)).CancelledAtUtc);
     }
 
     private sealed record GroupViewResponse(int Id, int RoomId, string Description, int Quantity, int RamGb);

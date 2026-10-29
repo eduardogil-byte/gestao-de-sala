@@ -65,6 +65,16 @@ public sealed class PedagogicalBookingTests
         Assert.Equal(1, await db.Occupations.CountAsync(x => x.RoomId == host.CompatibleRoomId &&
             x.StartsAt == new DateTime(2027, 3, 8, 8, 0, 0)));
         Assert.Equal(1, await db.Loans.CountAsync(x => x.Status == LoanStatus.Aprovado));
+        var audit = await db.AuditEntries.AsNoTracking().Where(a => a.EntityType == "Booking" &&
+            a.EntityId == bookingId.ToString()).OrderBy(a => a.Id).ToListAsync();
+        Assert.Equal(new[] { "Criada", "Confirmada" }, audit.Select(a => a.Action).ToArray());
+        Assert.All(audit, entry => Assert.Equal("teacher", entry.ActorId));
+        Assert.Contains("ApprovedRoomId", audit[1].AfterJson);
+        Assert.Empty(await db.Notifications.Where(n => n.RelatedType == "Booking" &&
+            n.RelatedId == bookingId).ToListAsync()); // confirmação própria já foi mostrada na tela
+        host.AsOtherTeacher();
+        Assert.Equal(HttpStatusCode.Forbidden,
+            (await host.Client.GetAsync($"/api/audit/Booking/{bookingId}")).StatusCode);
     }
 
     [Fact]
