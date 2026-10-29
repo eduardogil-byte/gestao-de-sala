@@ -84,6 +84,10 @@ export type Assignment = {
   id: number;
   classGroupId: number;
   teacherId: string;
+  semesterId: number;
+  curricularUnitId: number | null;
+  weekday: number | null;
+  endedAtUtc: string | null;
   disciplineName: string;
   meetingsPerWeek: number;
   preferredShiftId: number | null;
@@ -155,6 +159,7 @@ export type AgendaOccupation = Occupation & {
   actualTeacherName: string | null;
   actualClassGroupName: string | null;
   courseName: string | null;
+  curricularUnitId: number | null;
   curricularUnitName: string | null;
   curricularCapabilityDescription: string | null;
   bookingStatus: string | null;

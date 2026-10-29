@@ -19,6 +19,7 @@ import { Access } from "./pages/Access";
 import { Dashboard } from "./pages/Dashboard";
 import { Agenda } from "./pages/Agenda";
 import { RoomTimeline } from "./pages/RoomTimeline";
+import { InstructorAgenda } from "./pages/InstructorAgenda";
 import { Rooms } from "./pages/Rooms";
 import { Academic } from "./pages/Academic";
 import { PedagogicalCatalog } from "./pages/PedagogicalCatalog";
@@ -37,6 +38,7 @@ type Page =
   | "dashboard"
   | "agenda"
   | "room-timeline"
+  | "instructor-agenda"
   | "rooms"
   | "academic"
   | "pedagogical-catalog"
@@ -49,6 +51,7 @@ const nav: [Page, string, typeof LayoutDashboard][] = [
   ["dashboard", "Visão geral", LayoutDashboard],
   ["agenda", "Agenda", CalendarDays],
   ["room-timeline", "Cronograma de Ambientes", CalendarDays],
+  ["instructor-agenda", "Minha Agenda", CalendarDays],
   ["rooms", "Ambientes", DoorOpen],
   ["academic", "Turmas e disciplinas", GraduationCap],
   ["pedagogical-catalog", "Catálogo Pedagógico", Layers3],
@@ -154,7 +157,7 @@ function Workspace({ user, onLogout }: { user: User; onLogout: () => void }) {
                   className={`w-full flex items-center gap-3 rounded-xl px-4 py-3 text-[13px] text-left font-medium transition ${page === id ? "bg-skybrand-600 text-white shadow-lg shadow-sky-900/20" : "text-slate-300 hover:bg-white/10 hover:text-white"}`}
                 >
                   <Icon size={19} />
-                  {label}
+                  {id === "instructor-agenda" && admin ? "Agenda dos Instrutores" : label}
                 </button>
               ))}
           </nav>
@@ -190,7 +193,7 @@ function Workspace({ user, onLogout }: { user: User; onLogout: () => void }) {
                 Plataforma institucional
               </p>
               <p className="text-sm font-semibold text-slate-700 mt-1">
-                {current?.[1] || "Painel"}
+                {page === "instructor-agenda" && admin ? "Agenda dos Instrutores" : current?.[1] || "Painel"}
               </p>
             </div>
           </div>
@@ -261,6 +264,8 @@ function Workspace({ user, onLogout }: { user: User; onLogout: () => void }) {
             />
           ) : page === "room-timeline" ? (
             <RoomTimeline user={user} openBookings={() => open("bookings")} />
+          ) : page === "instructor-agenda" ? (
+            <InstructorAgenda user={user} />
           ) : page === "rooms" ? (
             <Rooms user={user} />
           ) : page === "academic" && admin ? (
