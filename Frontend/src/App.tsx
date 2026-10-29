@@ -18,6 +18,7 @@ import {
 import { Access } from "./pages/Access";
 import { Dashboard } from "./pages/Dashboard";
 import { Agenda } from "./pages/Agenda";
+import { RoomTimeline } from "./pages/RoomTimeline";
 import { Rooms } from "./pages/Rooms";
 import { Academic } from "./pages/Academic";
 import { PedagogicalCatalog } from "./pages/PedagogicalCatalog";
@@ -35,6 +36,7 @@ import type { User, Occupation } from "./types";
 type Page =
   | "dashboard"
   | "agenda"
+  | "room-timeline"
   | "rooms"
   | "academic"
   | "pedagogical-catalog"
@@ -46,6 +48,7 @@ type Page =
 const nav: [Page, string, typeof LayoutDashboard][] = [
   ["dashboard", "Visão geral", LayoutDashboard],
   ["agenda", "Agenda", CalendarDays],
+  ["room-timeline", "Cronograma de Ambientes", CalendarDays],
   ["rooms", "Ambientes", DoorOpen],
   ["academic", "Turmas e disciplinas", GraduationCap],
   ["pedagogical-catalog", "Catálogo Pedagógico", Layers3],
@@ -256,6 +259,8 @@ function Workspace({ user, onLogout }: { user: User; onLogout: () => void }) {
               occupations={occupations}
               reloadAgenda={reloadAgenda}
             />
+          ) : page === "room-timeline" ? (
+            <RoomTimeline user={user} openBookings={() => open("bookings")} />
           ) : page === "rooms" ? (
             <Rooms user={user} />
           ) : page === "academic" && admin ? (

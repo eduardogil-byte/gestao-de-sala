@@ -143,6 +143,23 @@ export type Occupation = {
   bookingRequestId: number | null;
   loanId?: number | null;
 };
+export type AgendaOccupation = Occupation & {
+  roomName: string;
+  date: string;
+  shiftId: number | null;
+  shiftName: string | null;
+  calendarKind: string | null;
+  calendarReason: string | null;
+  status: string;
+  source: string;
+  actualTeacherName: string | null;
+  actualClassGroupName: string | null;
+  courseName: string | null;
+  curricularUnitName: string | null;
+  curricularCapabilityDescription: string | null;
+  bookingStatus: string | null;
+  conflicts: string[];
+};
 export type Booking = {
   id: number;
   teacherId: string;
