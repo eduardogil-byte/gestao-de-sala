@@ -13,6 +13,7 @@ public static partial class ApiEndpoints
     private static void MapOccupationManagement(IEndpointRouteBuilder app)
     {
         var api = app.MapGroup("/api/occupations").RequireAuthorization().WithTags("Gerenciar alocações");
+        MapOccupationMoves(api);
 
         api.MapGet("/{id:int}/history", async (int id, ClaimsPrincipal current, AppDbContext db) =>
         {

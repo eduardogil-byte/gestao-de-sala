@@ -160,6 +160,26 @@ export type AgendaOccupation = Occupation & {
   bookingStatus: string | null;
   conflicts: string[];
 };
+export type OccupationMoveSlot = {
+  roomId: number;
+  roomName: string;
+  date: string;
+  shiftId: number | null;
+  shiftName: string | null;
+  startsAt: string;
+  endsAt: string;
+};
+export type OccupationMovePreview = {
+  occupationId: number;
+  origin: OccupationMoveSlot;
+  destination: OccupationMoveSlot;
+  allowed: boolean;
+  blocks: string[];
+  warnings: string[];
+  technicalClassification: string;
+  technicalFindings: { requirement: string; status: string; detail: string }[];
+  affectedOccupationIds: number[];
+};
 export type Booking = {
   id: number;
   teacherId: string;

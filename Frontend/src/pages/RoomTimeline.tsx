@@ -1,10 +1,10 @@
-import { useEffect, useMemo, useState } from "react";
-import { ApiError, read } from "../lib/api";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { ApiError, post, read } from "../lib/api";
 import { useData } from "../lib/data";
 import { agendaPath, datesBetween, indexOccupations, isAgendaOccupation, movePeriod, period, summarize, weekStart, type TimelineView } from "../lib/roomTimeline";
 import { dateBR, localDate, nextDate, resultMessage } from "../lib/utils";
 import { Busy, Card, Field, Modal, Notice, Title } from "../components/UI";
-import type { AgendaOccupation, User } from "../types";
+import type { AgendaOccupation, OccupationMovePreview, User } from "../types";
 
 const calendarLabels: Record<string, string> = {
   Presential: "Presencial", Ead: "EAD", Holiday: "Feriado", Recess: "Recesso",
@@ -24,9 +24,16 @@ function occupationLabel(item: AgendaOccupation) {
     [item.actualTeacherName, item.actualClassGroupName].filter(Boolean).join(" · ") || "Ocupação registrada";
 }
 
-function OccupationButton({ item, onSelect }: { item: AgendaOccupation; onSelect: (item: AgendaOccupation) => void }) {
-  return <button type="button" onClick={() => onSelect(item)}
+function OccupationButton({ item, onSelect, onDragStart, onDragEnd, dragging }: {
+  item: AgendaOccupation; onSelect: (item: AgendaOccupation) => void;
+  onDragStart?: (item: AgendaOccupation, event: React.DragEvent<HTMLButtonElement>) => void;
+  onDragEnd?: () => void; dragging?: boolean;
+}) {
+  return <button type="button" onClick={() => onSelect(item)} draggable={Boolean(onDragStart)}
+    onDragStart={(event) => onDragStart?.(item, event)} onDragEnd={onDragEnd}
+    aria-label={`Detalhes: ${occupationLabel(item)}${onDragStart ? ". Arraste para remanejar." : ""}`}
     className={`block w-full text-left rounded-lg border p-2 text-xs focus:outline-none focus:ring-2 focus:ring-sky-600 ${item.conflicts.length ? "border-rose-300 bg-rose-50 text-rose-900" : "border-sky-200 bg-sky-50 text-sky-900"}`}>
+    {dragging && <span className="block font-semibold mb-1">Movendo esta ocupação</span>}
     <span className="font-semibold">{item.conflicts.length ? "Conflito · " : "Ocupado · "}{occupationLabel(item)}</span>
     {item.curricularUnitName && <span className="block mt-1 text-slate-600">{item.curricularUnitName}</span>}
     {item.calendarKind && item.calendarKind !== "Presential" && <span className="block mt-1 text-amber-800">Dia especial · {calendarLabels[item.calendarKind] ?? "Calendário"}</span>}
@@ -51,12 +58,27 @@ export function RoomTimeline({ user, openBookings }: { user: User; openBookings:
   const [error, setError] = useState("");
   const [selected, setSelected] = useState<AgendaOccupation | null>(null);
   const [selectedDay, setSelectedDay] = useState("");
+  const [revision, setRevision] = useState(0);
+  const [moveItem, setMoveItem] = useState<AgendaOccupation | null>(null);
+  const [moveRoomId, setMoveRoomId] = useState("");
+  const [moveDate, setMoveDate] = useState("");
+  const [moveShiftId, setMoveShiftId] = useState("");
+  const [moveReason, setMoveReason] = useState("");
+  const [movePreview, setMovePreview] = useState<OccupationMovePreview | null>(null);
+  const [moveBusy, setMoveBusy] = useState(false);
+  const [moveError, setMoveError] = useState("");
+  const [moveSuccess, setMoveSuccess] = useState("");
+  const [operationError, setOperationError] = useState("");
+  const [draggingId, setDraggingId] = useState<number | null>(null);
+  const [dragTarget, setDragTarget] = useState("");
+  const previewRequest = useRef(0);
   const semester = data.semesters.find((s) => String(s.id) === semesterId);
   const range = period(view, anchor, semester);
   const rangeKey = range ? `${range.from}|${range.to}` : "";
   const classOptions = admin ? data.classes : data.classes.filter((c) => data.assignments.some((a) => a.classGroupId === c.id && a.teacherId === user.id));
   const query = range && (view !== "semester" || datesBetween(range.from, range.to).length <= 371)
     ? agendaPath(range, { semesterId, roomId, teacherId: admin ? teacherId : "", classGroupId, shiftId, kind }) : "";
+  const queryKey = `${query}|${revision}`;
 
   useEffect(() => {
     let current = true;
@@ -72,7 +94,7 @@ export function RoomTimeline({ user, openBookings }: { user: User; openBookings:
         if (!Array.isArray(rows) || !rows.every(isAgendaOccupation))
           throw new Error("A API retornou dados incompletos. A ocupação não pode ser apresentada com segurança.");
         setItems(rows);
-        setLoadedQuery(query);
+        setLoadedQuery(queryKey);
       }
     }).catch((reason: unknown) => {
       if (!current) return;
@@ -82,7 +104,7 @@ export function RoomTimeline({ user, openBookings }: { user: User; openBookings:
       setError(message);
     }).finally(() => { if (current) setLoading(false); });
     return () => { current = false; };
-  }, [query]);
+  }, [query, revision]);
 
   const { slots: bySlot, days: byDay } = useMemo(() => indexOccupations(items ?? []), [items]);
   const busiestMonth = useMemo(() => {
@@ -132,9 +154,87 @@ export function RoomTimeline({ user, openBookings }: { user: User; openBookings:
     </div>;
   }
 
+  function beginMove(item: AgendaOccupation, target?: { roomId: number; date: string; shiftId: number }) {
+    if (!admin || item.kind === "Bloqueio") return;
+    previewRequest.current++;
+    setSelected(null);
+    setMoveItem(item);
+    setMoveRoomId(String(target?.roomId ?? item.roomId));
+    setMoveDate(target?.date ?? item.date);
+    setMoveShiftId(String(target?.shiftId ?? item.shiftId ?? ""));
+    setMoveReason("");
+    setMovePreview(null);
+    setMoveError("");
+    setOperationError("");
+    setMoveSuccess("");
+    if (target) void requestMovePreview(item, target.roomId, target.date, target.shiftId);
+  }
+  function updateMove(setter: (value: string) => void, value: string) {
+    previewRequest.current++;
+    setter(value);
+    setMovePreview(null);
+    setMoveError("");
+  }
+  async function requestMovePreview(item: AgendaOccupation, room: number, date: string, shift: number) {
+    const requestId = ++previewRequest.current;
+    setMoveBusy(true);
+    setMoveError("");
+    setMovePreview(null);
+    try {
+      const result = await post<OccupationMovePreview>(`/occupations/${item.id}/move-preview`,
+        { roomId: room, date, shiftId: shift });
+      if (requestId === previewRequest.current) setMovePreview(result);
+    } catch (reason) {
+      if (requestId === previewRequest.current) setMoveError(resultMessage(reason));
+    } finally {
+      if (requestId === previewRequest.current) setMoveBusy(false);
+    }
+  }
+  async function confirmMove() {
+    if (!moveItem || !movePreview?.allowed || moveBusy) return;
+    setMoveBusy(true);
+    setMoveError("");
+    try {
+      await post(`/occupations/${moveItem.id}/move`, {
+        roomId: Number(moveRoomId), date: moveDate, shiftId: Number(moveShiftId),
+        expectedRoomId: movePreview.origin.roomId,
+        expectedStartsAt: movePreview.origin.startsAt,
+        expectedEndsAt: movePreview.origin.endsAt,
+        confirm: true, reason: moveReason.trim() || null,
+      });
+      setMoveItem(null);
+      setOperationError("");
+      setMoveSuccess("Ocupação remanejada. O cronograma foi atualizado.");
+      setRevision((value) => value + 1);
+    } catch (reason) {
+      setMoveItem(null);
+      setOperationError(resultMessage(reason));
+      setRevision((value) => value + 1);
+    } finally {
+      setMoveBusy(false);
+    }
+  }
+  const previewMatches = movePreview?.destination.roomId === Number(moveRoomId) &&
+    movePreview.destination.date === moveDate && movePreview.destination.shiftId === Number(moveShiftId);
+  function startDrag(item: AgendaOccupation, event: React.DragEvent<HTMLButtonElement>) {
+    event.dataTransfer.setData("text/plain", String(item.id));
+    event.dataTransfer.effectAllowed = "move";
+    setDraggingId(item.id);
+  }
+  function dropOn(roomId: number, date: string, shiftId: number, event: React.DragEvent<HTMLTableCellElement>) {
+    event.preventDefault();
+    const id = Number(event.dataTransfer.getData("text/plain"));
+    const item = items?.find((row) => row.id === id);
+    setDraggingId(null);
+    setDragTarget("");
+    if (item) beginMove(item, { roomId, date, shiftId });
+  }
+
   return <>
     <Title title="Cronograma de Ambientes" subtitle={`Consulta institucional · ${periodName}`}
       action={<button type="button" className="btn-secondary" onClick={openBookings}>Abrir reservas</button>} />
+    {moveSuccess && <div className="mb-4"><Notice type="success" message={moveSuccess} onClose={() => setMoveSuccess("")} /></div>}
+    {operationError && <div className="mb-4"><Notice message={operationError} onClose={() => setOperationError("")} /></div>}
     <Card className="p-4 mb-5 space-y-4">
       <div className="flex flex-wrap items-center gap-2">
         {(["week", "month", "semester"] as TimelineView[]).map((choice) => <button key={choice} type="button"
@@ -177,7 +277,7 @@ export function RoomTimeline({ user, openBookings }: { user: User; openBookings:
       : view === "semester" ? "Selecione um semestre cadastrado." : "O período está fora do semestre selecionado."} />}
     {error && <Notice message={error} />}
     {loading && <Busy />}
-    {!loading && !error && items && loadedQuery === query && !catalogError && <>
+    {!loading && !error && items && loadedQuery === queryKey && !catalogError && <>
       {items.length === 0 && <div className="mb-4"><Notice type="info" message="Nenhuma ocupação registrada no período e filtros selecionados. Isso não confirma disponibilidade para novas reservas." /></div>}
       {view === "week" && <Card className="overflow-x-auto mb-5">
         <table className="w-full min-w-[930px] text-sm border-collapse">
@@ -187,8 +287,12 @@ export function RoomTimeline({ user, openBookings }: { user: User; openBookings:
             <th scope="row" className="sticky left-0 bg-white p-3 border-b border-r border-slate-200 text-left align-top font-semibold">{room.name}<span className="block text-xs font-normal text-slate-500">{shift.name}</span></th>
             {visibleDates.map((date) => {
               const rows = bySlot.get(`${room.id}|${date}|${shift.id}`) ?? [];
-              return <td key={date} className="border-b border-slate-100 p-2 align-top">
-                {range && date >= range.from && date < range.to ? rows.length ? <div className="space-y-1">{rows.length > 1 && <p className="text-xs font-bold text-rose-700">{rows.length} ocupações simultâneas</p>}{rows.map((item) => <OccupationButton key={item.id} item={item} onSelect={setSelected} />)}</div> :
+              const slotKey = `${room.id}|${date}|${shift.id}`;
+              return <td key={date} onDragOver={(event) => { if (admin && draggingId !== null && range && date >= range.from && date < range.to) { event.preventDefault(); setDragTarget(slotKey); } }}
+                onDragLeave={() => { if (dragTarget === slotKey) setDragTarget(""); }}
+                onDrop={(event) => { if (admin && range && date >= range.from && date < range.to) dropOn(room.id, date, shift.id, event); }}
+                className={`border-b border-slate-100 p-2 align-top ${dragTarget === slotKey ? "bg-sky-100 ring-2 ring-inset ring-sky-500" : ""}`}>
+                {range && date >= range.from && date < range.to ? rows.length ? <div className="space-y-1">{rows.length > 1 && <p className="text-xs font-bold text-rose-700">{rows.length} ocupações simultâneas</p>}{rows.map((item) => <OccupationButton key={item.id} item={item} onSelect={setSelected} onDragStart={admin && item.kind !== "Bloqueio" ? startDrag : undefined} onDragEnd={() => { setDraggingId(null); setDragTarget(""); }} dragging={draggingId === item.id} />)}</div> :
                   <span className="text-xs text-slate-500">Sem registro · aplicabilidade do turno desconhecida</span> : <span className="text-xs text-slate-500">Fora do semestre</span>}
               </td>;
             })}</tr>))}</tbody>
@@ -237,6 +341,41 @@ export function RoomTimeline({ user, openBookings }: { user: User; openBookings:
         ["Calendário", selected.calendarKind ? calendarLabels[selected.calendarKind] ?? "Dia especial" : "Não informado"],
         ["Motivo do calendário", selected.calendarReason ?? "Não informado"],
         ["Conflitos", selected.conflicts.length ? selected.conflicts.map((reason) => conflictLabels[reason] ?? "Inconsistência sinalizada").join(", ") : "Nenhum sinalizado"]
-      ] as [string, string][]).map(([label, value]) => <div key={label}><dt className="font-semibold text-slate-600">{label}</dt><dd className="text-slate-800">{value}</dd></div>)}</dl></Modal>}
+      ] as [string, string][]).map(([label, value]) => <div key={label}><dt className="font-semibold text-slate-600">{label}</dt><dd className="text-slate-800">{value}</dd></div>)}</dl>
+      {admin && selected.kind !== "Bloqueio" && <button type="button" className="btn-primary mt-5" onClick={() => beginMove(selected)}>Mover ocupação</button>}
+    </Modal>}
+    {moveItem && <Modal title="Remanejar ocupação" onClose={() => { if (!moveBusy) { previewRequest.current++; setMoveItem(null); } }}>
+      <div className="space-y-4 text-sm">
+        <p><strong>{moveItem.actualTeacherName ?? "Professor não informado"}</strong>{moveItem.actualClassGroupName ? ` · ${moveItem.actualClassGroupName}` : ""}</p>
+        <p><strong>Origem:</strong> {moveItem.roomName} · {dateBR(moveItem.date)} · {moveItem.shiftName ?? "Turno não identificado"}</p>
+        <div className="grid sm:grid-cols-3 gap-3">
+          <Field label="Novo ambiente"><select className="field" value={moveRoomId} disabled={moveBusy} onChange={(event) => updateMove(setMoveRoomId, event.target.value)}>
+            {data.rooms.map((room) => <option key={room.id} value={room.id}>{room.name}</option>)}
+          </select></Field>
+          <Field label="Nova data"><input type="date" className="field" value={moveDate} disabled={moveBusy} onChange={(event) => updateMove(setMoveDate, event.target.value)} /></Field>
+          <Field label="Novo turno"><select className="field" value={moveShiftId} disabled={moveBusy} onChange={(event) => updateMove(setMoveShiftId, event.target.value)}>
+            <option value="">Selecione</option>{data.shifts.map((shift) => <option key={shift.id} value={shift.id}>{shift.name}</option>)}
+          </select></Field>
+        </div>
+        <Field label="Motivo (opcional)"><input className="field" maxLength={500} value={moveReason} disabled={moveBusy} onChange={(event) => setMoveReason(event.target.value)} /></Field>
+        {moveError && <Notice message={moveError} />}
+        {moveBusy && <p role="status">Processando...</p>}
+        {movePreview && previewMatches && <div className="rounded-xl border border-slate-200 p-4 space-y-2">
+          <p className="font-semibold">Prévia · {movePreview.allowed ? "Movimentação permitida" : "Movimentação impedida"}</p>
+          <p>Destino: {movePreview.destination.roomName} · {dateBR(movePreview.destination.date)} · {movePreview.destination.shiftName}</p>
+          <p>Registros afetados: somente esta ocupação.</p>
+          {movePreview.technicalClassification === "Compatible" && <p>Compatibilidade técnica comprovada.</p>}
+          {movePreview.technicalClassification === "Unknown" && <p>Compatibilidade técnica detalhada não comprovada.</p>}
+          {movePreview.blocks.map((block) => <p key={block} className="text-rose-700">Impedimento: {block}</p>)}
+          {movePreview.warnings.map((warning) => <p key={warning} className="text-amber-800">Atenção: {warning}</p>)}
+          {movePreview.technicalFindings.filter((finding) => finding.status !== "Met").map((finding) => <p key={finding.requirement} className="text-slate-600">{finding.detail}</p>)}
+        </div>}
+        <div className="flex flex-wrap gap-2 justify-end">
+          <button type="button" className="btn-secondary" disabled={moveBusy} onClick={() => { previewRequest.current++; setMoveItem(null); }}>Cancelar</button>
+          <button type="button" className="btn-secondary" disabled={moveBusy || !moveRoomId || !moveDate || !moveShiftId} onClick={() => void requestMovePreview(moveItem, Number(moveRoomId), moveDate, Number(moveShiftId))}>Consultar prévia</button>
+          <button type="button" className="btn-primary" disabled={moveBusy || !movePreview?.allowed || !previewMatches} onClick={() => void confirmMove()}>Confirmar movimentação</button>
+        </div>
+      </div>
+    </Modal>}
   </>;
 }
