@@ -43,13 +43,13 @@ function OccupationButton({ item, onSelect, onDragStart, onDragEnd, dragging }: 
   </button>;
 }
 
-export function RoomTimeline({ user, openBookings }: { user: User; openBookings: () => void }) {
+export function RoomTimeline({ user, openBookings, initialFilter }: { user: User; openBookings: () => void; initialFilter?: { semesterId: number; roomId: number; anchor: string } | null }) {
   const { data, error: catalogError } = useData();
   const admin = user.roles.includes("Admin");
-  const [view, setView] = useState<TimelineView>("week");
-  const [anchor, setAnchor] = useState(localDate(new Date()));
-  const [semesterId, setSemesterId] = useState("");
-  const [roomId, setRoomId] = useState("");
+  const [view, setView] = useState<TimelineView>(initialFilter ? "semester" : "week");
+  const [anchor, setAnchor] = useState(initialFilter?.anchor ?? localDate(new Date()));
+  const [semesterId, setSemesterId] = useState(initialFilter ? String(initialFilter.semesterId) : "");
+  const [roomId, setRoomId] = useState(initialFilter ? String(initialFilter.roomId) : "");
   const [teacherId, setTeacherId] = useState("");
   const [classGroupId, setClassGroupId] = useState("");
   const [shiftId, setShiftId] = useState("");

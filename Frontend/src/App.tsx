@@ -68,6 +68,7 @@ function Workspace({ user, onLogout }: { user: User; onLogout: () => void }) {
   const { data, loading, error, reload } = useData();
   const [page, setPage] = useState<Page>("dashboard");
   const [related, setRelated] = useState<{ page: Page; id: number } | null>(null);
+  const [timelineFilter, setTimelineFilter] = useState<{ semesterId: number; roomId: number; anchor: string } | null>(null);
   const [menu, setMenu] = useState(false);
   const [occupations, setOccupations] = useState<Occupation[]>([]);
   const [agendaError, setAgendaError] = useState("");
@@ -113,8 +114,15 @@ function Workspace({ user, onLogout }: { user: User; onLogout: () => void }) {
   }, [reloadAgenda]);
   const open = (p: string) => {
     setRelated(null);
+    setTimelineFilter(null);
     setPage(p as Page);
     setMenu(false);
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  };
+  const openTimeline = (semesterId: number, roomId: number) => {
+    const semester = data.semesters.find((item) => item.id === semesterId);
+    setTimelineFilter({ semesterId, roomId, anchor: semester?.startDate ?? localDate(new Date()) });
+    setPage("room-timeline");
     window.scrollTo({ top: 0, behavior: "smooth" });
   };
   const current = nav.find((n) => n[0] === page);
@@ -260,7 +268,7 @@ function Workspace({ user, onLogout }: { user: User; onLogout: () => void }) {
           {loading ? (
             <Busy />
           ) : page === "dashboard" ? (
-            <Dashboard user={user} navigate={open} occupations={occupations} />
+            <Dashboard user={user} navigate={open} occupations={occupations} openTimeline={openTimeline} />
           ) : page === "agenda" ? (
             <Agenda
               user={user}
@@ -268,7 +276,7 @@ function Workspace({ user, onLogout }: { user: User; onLogout: () => void }) {
               reloadAgenda={reloadAgenda}
             />
           ) : page === "room-timeline" ? (
-            <RoomTimeline user={user} openBookings={() => open("bookings")} />
+            <RoomTimeline user={user} openBookings={() => open("bookings")} initialFilter={timelineFilter} />
           ) : page === "instructor-agenda" ? (
             <InstructorAgenda user={user} />
           ) : page === "rooms" ? (
