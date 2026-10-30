@@ -46,10 +46,16 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : Ident
     {
         base.OnModelCreating(b);
         b.Entity<AppUser>().Property(x => x.DisplayName).HasMaxLength(120);
+        b.Entity<AppUser>().Property(x => x.Cpf).HasMaxLength(11);
+        b.Entity<AppUser>().HasIndex(x => x.Cpf).IsUnique().HasFilter("[Cpf] IS NOT NULL");
         b.Entity<AppUser>().Property(x => x.Education).IsRequired().HasMaxLength(2000);
         b.Entity<AppUser>().Property(x => x.TechnicalSkills).IsRequired().HasMaxLength(2000);
         b.Entity<AppUser>().Property(x => x.ProfessionalKnowledge).IsRequired().HasMaxLength(2000);
         b.Entity<Room>().Property(x => x.Name).HasMaxLength(120);
+        b.Entity<Room>().Property(x => x.Code).HasMaxLength(30);
+        b.Entity<Room>().Property(x => x.NormalizedCode).HasMaxLength(30);
+        b.Entity<Room>().HasIndex(x => x.NormalizedCode).IsUnique()
+            .HasFilter("[NormalizedCode] IS NOT NULL");
         b.Entity<RoomOperatingShift>().HasKey(x => new { x.SemesterId, x.RoomId, x.ShiftId });
         b.Entity<RoomOperatingShift>().HasOne(x => x.Semester).WithMany()
             .HasForeignKey(x => x.SemesterId).OnDelete(DeleteBehavior.Restrict);

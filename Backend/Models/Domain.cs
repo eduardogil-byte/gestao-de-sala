@@ -4,6 +4,7 @@ namespace SalaGest.Api.Models;
 
 public sealed class AppUser : IdentityUser
 {
+    public string? Cpf { get; set; }
     public string DisplayName { get; set; } = "";
     public string Education { get; set; } = "";
     public string TechnicalSkills { get; set; } = "";
@@ -23,6 +24,8 @@ public enum OccupationKind { Aula = 1, Avulsa = 2, Bloqueio = 3 }
 public sealed class Room
 {
     public int Id { get; set; }
+    public string? Code { get; set; }
+    public string? NormalizedCode { get; set; }
     public string Name { get; set; } = "";
     public string Location { get; set; } = "";
     public string Purpose { get; set; } = "";

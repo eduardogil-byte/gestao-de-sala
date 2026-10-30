@@ -136,7 +136,7 @@ export function Rooms({ user }: { user: User }) {
   const list = data.rooms.filter(
     (r) =>
       (!kind || r.kind === kind) &&
-      `${r.name} ${r.location}`.toLowerCase().includes(search.toLowerCase()),
+      `${r.name} ${r.location} ${r.code ?? ""}`.toLowerCase().includes(search.toLowerCase()),
   );
   return (
     <>
@@ -212,6 +212,7 @@ export function Rooms({ user }: { user: User }) {
                 <h3 className="text-lg font-bold text-slate-800 mt-4">
                   {r.name}
                 </h3>
+                <p className="text-xs text-slate-500 mt-1">ID {r.id}{r.code ? ` · Código ${r.code}` : " · Código não informado"}</p>
                 <div className="text-xs text-slate-500 flex items-center gap-1.5 mt-1">
                   <MapPin size={13} />
                   {r.location || "Localização não informada"} •{" "}

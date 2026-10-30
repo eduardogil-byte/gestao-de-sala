@@ -8,6 +8,7 @@ import {
   GraduationCap,
   Handshake,
   LayoutDashboard,
+  FileSpreadsheet,
   Layers3,
   LogOut,
   Menu,
@@ -18,6 +19,7 @@ import {
 import { Access } from "./pages/Access";
 import { Dashboard } from "./pages/Dashboard";
 import { RoomOpportunities } from "./pages/RoomOpportunities";
+import { InstitutionalImport } from "./pages/InstitutionalImport";
 import { Agenda } from "./pages/Agenda";
 import { RoomTimeline } from "./pages/RoomTimeline";
 import { InstructorAgenda } from "./pages/InstructorAgenda";
@@ -41,6 +43,7 @@ type Page =
   | "agenda"
   | "room-timeline"
   | "opportunities"
+  | "imports"
   | "instructor-agenda"
   | "rooms"
   | "academic"
@@ -56,6 +59,7 @@ const nav: [Page, string, typeof LayoutDashboard][] = [
   ["agenda", "Agenda", CalendarDays],
   ["room-timeline", "Cronograma de Ambientes", CalendarDays],
   ["opportunities", "Oportunidades de Ambientes", DoorOpen],
+  ["imports", "Importar Dados", FileSpreadsheet],
   ["instructor-agenda", "Minha Agenda", CalendarDays],
   ["rooms", "Ambientes", DoorOpen],
   ["academic", "Turmas e disciplinas", GraduationCap],
@@ -171,7 +175,7 @@ function Workspace({ user, onLogout }: { user: User; onLogout: () => void }) {
           <nav className="space-y-1">
             {nav
               .filter(
-                (item) => admin || !["academic", "schedules", "opportunities"].includes(item[0]),
+                (item) => admin || !["academic", "schedules", "opportunities", "imports"].includes(item[0]),
               )
               .map(([id, label, Icon]) => (
                 <button
@@ -289,6 +293,8 @@ function Workspace({ user, onLogout }: { user: User; onLogout: () => void }) {
             <RoomTimeline user={user} openBookings={() => open("bookings")} initialFilter={timelineFilter} />
           ) : page === "opportunities" && admin ? (
             <RoomOpportunities initial={opportunityFilter} onTimeline={openTimeline} />
+          ) : page === "imports" && admin ? (
+            <InstitutionalImport />
           ) : page === "instructor-agenda" ? (
             <InstructorAgenda user={user} />
           ) : page === "rooms" ? (

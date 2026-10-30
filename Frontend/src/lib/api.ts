@@ -18,7 +18,7 @@ export class ApiError extends Error {
 export async function api<T>(path: string, init: RequestInit = {}): Promise<T> {
   const token = tokenStore.get();
   const headers = new Headers(init.headers);
-  if (init.body && !headers.has("Content-Type"))
+  if (init.body && !(init.body instanceof FormData) && !headers.has("Content-Type"))
     headers.set("Content-Type", "application/json");
   if (token) headers.set("Authorization", `Bearer ${token}`);
   let res: Response;
@@ -72,6 +72,21 @@ export const post = <T>(path: string, data?: unknown) =>
 export const put = <T>(path: string, data: unknown) =>
   api<T>(path, { method: "PUT", body: JSON.stringify(data) });
 export const remove = <T>(path: string) => api<T>(path, { method: "DELETE" });
+export const upload = <T>(path: string, data: FormData) =>
+  api<T>(path, { method: "POST", body: data });
+export async function downloadFile(path: string, filename: string) {
+  const token = tokenStore.get();
+  const response = await fetch(`/api${path}`, {
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
+  });
+  if (!response.ok) throw new ApiError("Não foi possível baixar o modelo.", response.status);
+  const url = URL.createObjectURL(await response.blob());
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = filename;
+  link.click();
+  URL.revokeObjectURL(url);
+}
 export async function signIn(email: string, password: string): Promise<User> {
   const result = await post<{ accessToken: string }>("/auth/login", {
     email,

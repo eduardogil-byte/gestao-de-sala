@@ -55,6 +55,7 @@ export type ComputerGroup = {
 };
 export type Room = {
   id: number;
+  code?: string | null;
   name: string;
   location: string;
   purpose?: string | null;

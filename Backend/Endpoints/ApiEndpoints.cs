@@ -30,6 +30,7 @@ public static partial class ApiEndpoints
         MapOccupationManagement(app);
         MapOccupancyIndicators(app);
         MapRoomOpportunities(app);
+        MapInstitutionalImport(app);
         MapAudit(app);
     }
 
@@ -55,6 +56,7 @@ public static partial class ApiEndpoints
     private static object RoomView(Room r) => new
     {
         r.Id,
+        r.Code,
         r.Name,
         r.Location,
         r.Purpose,
