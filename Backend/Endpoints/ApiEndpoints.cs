@@ -28,6 +28,7 @@ public static partial class ApiEndpoints
         MapPedagogicalBookingOptions(app);
         MapLoans(app);
         MapOccupationManagement(app);
+        MapOccupancyIndicators(app);
         MapAudit(app);
     }
 

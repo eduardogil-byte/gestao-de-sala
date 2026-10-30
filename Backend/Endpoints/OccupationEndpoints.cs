@@ -308,7 +308,13 @@ public static partial class ApiEndpoints
             var shifts = await db.Shifts.AsNoTracking().ToListAsync();
             if (shiftId.HasValue && shifts.All(s => s.Id != shiftId)) return Results.NotFound();
             var occ = await db.Occupations.AsNoTracking()
-                .Where(o => o.CancelledAtUtc == null && o.StartsAt < end && o.EndsAt > start)
+                .Where(o => o.CancelledAtUtc == null && o.StartsAt < end && o.EndsAt > start &&
+                    (o.BookingRequestId == null || db.Bookings.Any(b => b.Id == o.BookingRequestId &&
+                        b.Status == BookingStatus.Aprovada)) &&
+                    (o.WeeklyClassId == null || db.WeeklyClasses.Any(w => w.Id == o.WeeklyClassId &&
+                        w.Schedule.Status == ScheduleStatus.Publicada)) &&
+                    (o.PlanProposalId == null || db.PlanProposals.Any(p => p.Id == o.PlanProposalId &&
+                        p.Status == PlanProposalStatus.Publicada)))
                 .ToListAsync();
             var ids = occ.Select(o => o.Id).ToArray();
             var loans = await db.Loans.AsNoTracking().Include(l => l.BookingRequest)
@@ -320,8 +326,7 @@ public static partial class ApiEndpoints
                 var actualClass = loan is null ? o.ClassGroupId : loan.BookingRequest.ClassGroupId;
                 return (shiftId is null || shifts.Any(s => s.Id == shiftId &&
                         s.StartsAt == TimeOnly.FromDateTime(o.StartsAt) && s.EndsAt == TimeOnly.FromDateTime(o.EndsAt))) &&
-                    (classGroupId == null || actualClass == classGroupId) &&
-                    (loan is not null || o.DayStatus == ClassDayStatus.Letivo);
+                    (classGroupId == null || actualClass == classGroupId);
             }).ToList();
             var dailyCounts = visible.GroupBy(o => DateOnly.FromDateTime(o.StartsAt))
                 .ToDictionary(g => g.Key, g => g.Select(o => o.RoomId).Distinct().Count());
@@ -339,8 +344,10 @@ public static partial class ApiEndpoints
                 return new
                 {
                     RoomId = roomId,
-                    Occurrences = uses.Count,
-                    Hours = uses.Sum(o => (o.EndsAt - o.StartsAt).TotalHours)
+                    Occurrences = uses.Select(o => (o.StartsAt, o.EndsAt)).Distinct().Count(),
+                    Hours = OccupancyIndicators.UnionHours(uses.Where(o => shifts.Count(s =>
+                        s.StartsAt == TimeOnly.FromDateTime(o.StartsAt) &&
+                        s.EndsAt == TimeOnly.FromDateTime(o.EndsAt)) == 1))
                 };
             }).OrderByDescending(r => r.Hours).ToList();
             return Results.Ok(new

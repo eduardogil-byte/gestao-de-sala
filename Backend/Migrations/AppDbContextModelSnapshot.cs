@@ -1177,6 +1177,32 @@ namespace SalaGest.Api.Migrations
                     b.ToTable("Occupations");
                 });
 
+            modelBuilder.Entity("SalaGest.Api.Models.RoomOperatingShift", b =>
+                {
+                    b.Property<int>("SemesterId")
+                        .HasColumnType("int");
+
+                    b.Property<int>("RoomId")
+                        .HasColumnType("int");
+
+                    b.Property<int>("ShiftId")
+                        .HasColumnType("int");
+
+                    b.Property<int>("WeekdaysMask")
+                        .HasColumnType("int");
+
+                    b.HasKey("SemesterId", "RoomId", "ShiftId");
+
+                    b.HasIndex("RoomId");
+
+                    b.HasIndex("ShiftId");
+
+                    b.ToTable("RoomOperatingShifts", t =>
+                        {
+                            t.HasCheckConstraint("CK_RoomOperatingShifts_WeekdaysMask", "[WeekdaysMask] BETWEEN 1 AND 127");
+                        });
+                });
+
             modelBuilder.Entity("SalaGest.Api.Models.RoomResource", b =>
                 {
                     b.Property<int>("Id")
@@ -1955,6 +1981,33 @@ namespace SalaGest.Api.Migrations
                         .IsRequired();
 
                     b.Navigation("Room");
+                });
+
+            modelBuilder.Entity("SalaGest.Api.Models.RoomOperatingShift", b =>
+                {
+                    b.HasOne("SalaGest.Api.Models.Room", "Room")
+                        .WithMany()
+                        .HasForeignKey("RoomId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("SalaGest.Api.Models.Semester", "Semester")
+                        .WithMany()
+                        .HasForeignKey("SemesterId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("SalaGest.Api.Models.SchoolShift", "Shift")
+                        .WithMany()
+                        .HasForeignKey("ShiftId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("Room");
+
+                    b.Navigation("Semester");
+
+                    b.Navigation("Shift");
                 });
 
             modelBuilder.Entity("SalaGest.Api.Models.RoomResource", b =>

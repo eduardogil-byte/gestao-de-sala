@@ -7,6 +7,7 @@ namespace SalaGest.Api.Data;
 public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : IdentityDbContext<AppUser>(options)
 {
     public DbSet<Room> Rooms => Set<Room>();
+    public DbSet<RoomOperatingShift> RoomOperatingShifts => Set<RoomOperatingShift>();
     public DbSet<RoomResource> RoomResources => Set<RoomResource>();
     public DbSet<ComputerGroup> ComputerGroups => Set<ComputerGroup>();
     public DbSet<Software> SoftwareCatalog => Set<Software>();
@@ -49,6 +50,15 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : Ident
         b.Entity<AppUser>().Property(x => x.TechnicalSkills).IsRequired().HasMaxLength(2000);
         b.Entity<AppUser>().Property(x => x.ProfessionalKnowledge).IsRequired().HasMaxLength(2000);
         b.Entity<Room>().Property(x => x.Name).HasMaxLength(120);
+        b.Entity<RoomOperatingShift>().HasKey(x => new { x.SemesterId, x.RoomId, x.ShiftId });
+        b.Entity<RoomOperatingShift>().HasOne(x => x.Semester).WithMany()
+            .HasForeignKey(x => x.SemesterId).OnDelete(DeleteBehavior.Restrict);
+        b.Entity<RoomOperatingShift>().HasOne(x => x.Room).WithMany()
+            .HasForeignKey(x => x.RoomId).OnDelete(DeleteBehavior.Restrict);
+        b.Entity<RoomOperatingShift>().HasOne(x => x.Shift).WithMany()
+            .HasForeignKey(x => x.ShiftId).OnDelete(DeleteBehavior.Restrict);
+        b.Entity<RoomOperatingShift>().ToTable(t => t.HasCheckConstraint(
+            "CK_RoomOperatingShifts_WeekdaysMask", "[WeekdaysMask] BETWEEN 1 AND 127"));
         b.Entity<Room>().Property(x => x.Location).HasMaxLength(160);
         b.Entity<Room>().Property(x => x.Purpose).HasMaxLength(350);
         b.Entity<ComputerGroup>().Property(x => x.Description).HasMaxLength(120);
