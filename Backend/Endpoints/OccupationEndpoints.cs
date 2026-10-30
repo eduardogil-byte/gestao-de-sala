@@ -14,6 +14,7 @@ public static partial class ApiEndpoints
     {
         var api = app.MapGroup("/api/occupations").RequireAuthorization().WithTags("Gerenciar alocações");
         MapOccupationMoves(api);
+        MapOccupationReversals(api);
 
         api.MapGet("/{id:int}/history", async (int id, ClaimsPrincipal current, AppDbContext db) =>
         {
@@ -21,12 +22,22 @@ public static partial class ApiEndpoints
             if (occ is null) return Results.NotFound();
             if (occ.TeacherId != UserId(current) && !current.IsInRole("Admin")) return Results.Forbid();
             var changes = await db.OccupationChanges.AsNoTracking()
-                .Where(c => c.RoomOccupationId == id).OrderByDescending(c => c.ChangedAtUtc).ToListAsync();
+                .Where(c => c.RoomOccupationId == id).OrderByDescending(c => c.Id).ToListAsync();
+            var latest = changes.FirstOrDefault();
+            var reference = latest?.ReferenceChangeId is int referenceId
+                ? changes.FirstOrDefault(c => c.Id == referenceId) : latest;
             var actorIds = changes.Select(c => c.ChangedById).Distinct().ToArray();
             var names = await db.Users.AsNoTracking().Where(u => actorIds.Contains(u.Id))
                 .Select(u => new { u.Id, u.DisplayName }).ToDictionaryAsync(u => u.Id, u => u.DisplayName);
             return Results.Ok(changes.Select(c => new { c.Id, c.RoomOccupationId, c.ChangedById,
                 ActorName = names.GetValueOrDefault(c.ChangedById, "Usuário"), c.Action, c.Details,
+                CanUndo = current.IsInRole("Admin") && occ.CancelledAtUtc is null &&
+                    c.Id == reference?.Id && c.FromRoomId is not null &&
+                    (latest?.Action is "Remanejada" or "Refeita") &&
+                    occ.RoomId == c.ToRoomId && occ.StartsAt == c.ToStartsAt && occ.EndsAt == c.ToEndsAt,
+                CanRedo = current.IsInRole("Admin") && occ.CancelledAtUtc is null &&
+                    c.Id == reference?.Id && c.FromRoomId is not null && latest?.Action == "Desfeita" &&
+                    occ.RoomId == c.FromRoomId && occ.StartsAt == c.FromStartsAt && occ.EndsAt == c.FromEndsAt,
                 ChangedAtUtc = DateTime.SpecifyKind(c.ChangedAtUtc, DateTimeKind.Utc) }));
         });
 

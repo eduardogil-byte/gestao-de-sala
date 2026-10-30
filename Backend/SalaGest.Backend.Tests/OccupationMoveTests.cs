@@ -22,6 +22,140 @@ namespace SalaGest.Backend.Tests;
 public sealed class OccupationMoveTests
 {
     [Fact]
+    public async Task UndoRedoPreserveOccurrenceAndHistoryAndRejectDuplicateConfirmation()
+    {
+        await using var host = await Host.CreateAsync();
+        var move = await host.Preview(host.RecurringFirstId, host.RoomBId, new(2027, 3, 1), host.MorningId);
+        Assert.Equal(HttpStatusCode.OK, (await host.Confirm(host.RecurringFirstId, move,
+            host.RoomBId, new(2027, 3, 1), host.MorningId)).StatusCode);
+        using var scope = host.App.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+        var original = await db.OccupationChanges.SingleAsync(c => c.RoomOccupationId == host.RecurringFirstId);
+        Assert.Equal(host.RoomAId, original.FromRoomId);
+        Assert.Equal(host.RoomBId, original.ToRoomId);
+        var undo = await host.Client.GetFromJsonAsync<System.Text.Json.JsonElement>(
+            $"/api/occupations/{host.RecurringFirstId}/moves/{original.Id}/undo/preview");
+        Assert.True(undo.GetProperty("allowed").GetBoolean());
+        Assert.Equal(HttpStatusCode.OK, (await Reverse(host, host.RecurringFirstId, original.Id, "undo", undo)).StatusCode);
+        Assert.Equal(HttpStatusCode.Conflict, (await Reverse(host, host.RecurringFirstId, original.Id, "undo", undo)).StatusCode);
+        await host.AssertOccupation(host.RecurringFirstId, host.RoomAId, new(2027, 3, 1, 8, 0, 0));
+        await host.AssertOccupation(host.RecurringSecondId, host.RoomAId, new(2027, 3, 8, 8, 0, 0));
+        var redo = await host.Client.GetFromJsonAsync<System.Text.Json.JsonElement>(
+            $"/api/occupations/{host.RecurringFirstId}/moves/{original.Id}/redo/preview");
+        Assert.True(redo.GetProperty("allowed").GetBoolean());
+        Assert.Equal(HttpStatusCode.OK, (await Reverse(host, host.RecurringFirstId, original.Id, "redo", redo)).StatusCode);
+        Assert.Equal(HttpStatusCode.Conflict, (await Reverse(host, host.RecurringFirstId, original.Id, "redo", redo)).StatusCode);
+        await host.AssertOccupation(host.RecurringFirstId, host.RoomBId, new(2027, 3, 1, 8, 0, 0));
+        var changes = await db.OccupationChanges.AsNoTracking().Where(c => c.RoomOccupationId == host.RecurringFirstId)
+            .OrderBy(c => c.Id).ToListAsync();
+        Assert.Equal(new[] { "Remanejada", "Desfeita", "Refeita" }, changes.Select(c => c.Action));
+        Assert.All(changes.Skip(1), c => Assert.Equal(original.Id, c.ReferenceChangeId));
+        Assert.Equal(3, await db.Notifications.CountAsync(n => n.RelatedType == "Occupation" &&
+            n.RelatedId == host.RecurringFirstId));
+    }
+
+    [Fact]
+    public async Task UndoRevalidatesOccupiedOriginAndOldMoveCannotBeReversed()
+    {
+        await using var host = await Host.CreateAsync();
+        var first = await host.Preview(host.ManualId, host.RoomBId, new(2027, 3, 4), host.AfternoonId);
+        Assert.Equal(HttpStatusCode.OK, (await host.Confirm(host.ManualId, first,
+            host.RoomBId, new(2027, 3, 4), host.AfternoonId)).StatusCode);
+        using var scope = host.App.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+        var original = await db.OccupationChanges.SingleAsync(c => c.RoomOccupationId == host.ManualId);
+        var next = await host.Preview(host.ManualId, host.RoomCId, new(2027, 3, 4), host.AfternoonId);
+        Assert.Equal(HttpStatusCode.OK, (await host.Confirm(host.ManualId, next,
+            host.RoomCId, new(2027, 3, 4), host.AfternoonId)).StatusCode);
+        var old = await host.Client.GetAsync($"/api/occupations/{host.ManualId}/moves/{original.Id}/undo/preview");
+        Assert.Equal(HttpStatusCode.Conflict, old.StatusCode);
+        await host.AssertOccupation(host.ManualId, host.RoomCId, new(2027, 3, 4, 13, 0, 0));
+    }
+
+    [Fact]
+    public async Task UndoBlockedWhenOriginWasOccupiedAndTeacherCannotReverse()
+    {
+        await using var host = await Host.CreateAsync();
+        var move = await host.Preview(host.ManualId, host.RoomBId, new(2027, 3, 2), host.MorningId);
+        Assert.Equal(HttpStatusCode.OK, (await host.Confirm(host.ManualId, move,
+            host.RoomBId, new(2027, 3, 2), host.MorningId)).StatusCode);
+        using var scope = host.App.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+        var original = await db.OccupationChanges.SingleAsync(c => c.RoomOccupationId == host.ManualId);
+        db.Occupations.Add(new RoomOccupation { RoomId = host.RoomAId,
+            StartsAt = new(2027, 3, 2, 8, 0, 0), EndsAt = new(2027, 3, 2, 12, 0, 0),
+            Kind = OccupationKind.Avulsa, TeacherId = "teacher1" });
+        await db.SaveChangesAsync();
+        var preview = await host.Client.GetFromJsonAsync<System.Text.Json.JsonElement>(
+            $"/api/occupations/{host.ManualId}/moves/{original.Id}/undo/preview");
+        Assert.False(preview.GetProperty("allowed").GetBoolean());
+        Assert.Contains("sala", preview.GetProperty("blocks").ToString());
+        Assert.Equal(HttpStatusCode.Conflict, (await Reverse(host, host.ManualId, original.Id, "undo", preview)).StatusCode);
+        await host.AssertOccupation(host.ManualId, host.RoomBId, new(2027, 3, 2, 8, 0, 0));
+        host.AsTeacher();
+        Assert.Equal(HttpStatusCode.Forbidden, (await host.Client.GetAsync(
+            $"/api/occupations/{host.ManualId}/moves/{original.Id}/undo/preview")).StatusCode);
+    }
+
+    [Fact]
+    public async Task NewMoveAfterUndoInvalidatesRedo()
+    {
+        await using var host = await Host.CreateAsync();
+        var first = await host.Preview(host.ManualId, host.RoomBId, new(2027, 3, 4), host.AfternoonId);
+        Assert.Equal(HttpStatusCode.OK, (await host.Confirm(host.ManualId, first,
+            host.RoomBId, new(2027, 3, 4), host.AfternoonId)).StatusCode);
+        using var scope = host.App.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+        var original = await db.OccupationChanges.SingleAsync(c => c.RoomOccupationId == host.ManualId);
+        var undo = await host.Client.GetFromJsonAsync<System.Text.Json.JsonElement>(
+            $"/api/occupations/{host.ManualId}/moves/{original.Id}/undo/preview");
+        Assert.Equal(HttpStatusCode.OK, (await Reverse(host, host.ManualId, original.Id, "undo", undo)).StatusCode);
+        var next = await host.Preview(host.ManualId, host.RoomBId, new(2027, 3, 5), host.AfternoonId);
+        Assert.Equal(HttpStatusCode.OK, (await host.Confirm(host.ManualId, next,
+            host.RoomBId, new(2027, 3, 5), host.AfternoonId)).StatusCode);
+        Assert.Equal(HttpStatusCode.Conflict, (await host.Client.GetAsync(
+            $"/api/occupations/{host.ManualId}/moves/{original.Id}/redo/preview")).StatusCode);
+    }
+
+    [Fact]
+    public async Task RedoRevalidatesDestinationAndStalePreviewCannotConfirm()
+    {
+        await using var host = await Host.CreateAsync();
+        var move = await host.Preview(host.ManualId, host.RoomBId, new(2027, 3, 4), host.AfternoonId);
+        Assert.Equal(HttpStatusCode.OK, (await host.Confirm(host.ManualId, move,
+            host.RoomBId, new(2027, 3, 4), host.AfternoonId)).StatusCode);
+        using var scope = host.App.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+        var original = await db.OccupationChanges.SingleAsync(c => c.RoomOccupationId == host.ManualId);
+        var undo = await host.Client.GetFromJsonAsync<System.Text.Json.JsonElement>(
+            $"/api/occupations/{host.ManualId}/moves/{original.Id}/undo/preview");
+        Assert.Equal(HttpStatusCode.OK, (await Reverse(host, host.ManualId, original.Id, "undo", undo)).StatusCode);
+        var redo = await host.Client.GetFromJsonAsync<System.Text.Json.JsonElement>(
+            $"/api/occupations/{host.ManualId}/moves/{original.Id}/redo/preview");
+        db.Occupations.Add(new RoomOccupation { RoomId = host.RoomBId,
+            StartsAt = new(2027, 3, 4, 13, 0, 0), EndsAt = new(2027, 3, 4, 17, 0, 0),
+            Kind = OccupationKind.Avulsa, TeacherId = "teacher1" });
+        await db.SaveChangesAsync();
+        Assert.Equal(HttpStatusCode.Conflict, (await Reverse(host, host.ManualId, original.Id, "redo", redo)).StatusCode);
+        await host.AssertOccupation(host.ManualId, host.RoomAId, new(2027, 3, 2, 8, 0, 0));
+        Assert.Equal(2, await db.OccupationChanges.CountAsync(c => c.RoomOccupationId == host.ManualId));
+        Assert.Equal(2, await db.Notifications.CountAsync(n => n.RelatedType == "Occupation" &&
+            n.RelatedId == host.ManualId));
+    }
+
+    private static Task<HttpResponseMessage> Reverse(Host host, int occupationId, int changeId,
+        string action, System.Text.Json.JsonElement preview)
+    {
+        var origin = preview.GetProperty("origin");
+        return host.Client.PostAsJsonAsync($"/api/occupations/{occupationId}/moves/{changeId}/{action}", new
+        {
+            confirm = true, expectedLastChangeId = preview.GetProperty("expectedLastChangeId").GetInt32(),
+            expectedRoomId = origin.GetProperty("roomId").GetInt32(),
+            expectedStartsAt = origin.GetProperty("startsAt").GetDateTime(),
+            expectedEndsAt = origin.GetProperty("endsAt").GetDateTime()
+        });
+    }
+    [Fact]
     public async Task PreviewDoesNotWriteAndConfirmationMovesOnlyOneRecurringOccurrenceWithAudit()
     {
         await using var host = await Host.CreateAsync();

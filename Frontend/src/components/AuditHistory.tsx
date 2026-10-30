@@ -10,6 +10,7 @@ type AuditRow = {
 };
 type OccupationRow = {
   id: number; action: string; actorName: string; changedAtUtc: string; details: string;
+  canUndo?: boolean; canRedo?: boolean;
 };
 
 const labels: Record<string, string> = {
@@ -29,7 +30,7 @@ const labels: Record<string, string> = {
   ApprovedAtUtc: "Aprovado em", EndedAtUtc: "Encerrado em", Reason: "Motivo",
 };
 
-export function AuditHistory({ type, id }: { type: "Occupation" | "Booking" | "Loan" | "Assignment" | "Room"; id: number }) {
+export function AuditHistory({ type, id, onReverse }: { type: "Occupation" | "Booking" | "Loan" | "Assignment" | "Room"; id: number; onReverse?: (changeId: number, action: "undo" | "redo") => void }) {
   const { data } = useData();
   const [rows, setRows] = useState<(AuditRow | OccupationRow)[]>([]);
   const [loading, setLoading] = useState(true);
@@ -76,6 +77,9 @@ export function AuditHistory({ type, id }: { type: "Occupation" | "Booking" | "L
     {"beforeJson" in row ? <>
       <div className="grid sm:grid-cols-2 gap-3 mt-2"><div><h4 className="font-semibold mb-1">Antes</h4>{snapshot(row.beforeJson, "Sem valores anteriores")}</div><div><h4 className="font-semibold mb-1">Depois</h4>{snapshot(row.afterJson, "Sem valores posteriores")}</div></div>
       {row.reason && <p className="mt-2">Motivo: {row.reason}</p>}
-    </> : <p className="mt-2">{row.details}</p>}
+    </> : <><p className="mt-2">{row.details}</p>
+      {onReverse && row.canUndo && <button type="button" className="btn-secondary mt-2" onClick={() => onReverse(row.id, "undo")}>Desfazer movimentação</button>}
+      {onReverse && row.canRedo && <button type="button" className="btn-secondary mt-2" onClick={() => onReverse(row.id, "redo")}>Refazer movimentação</button>}
+    </>}
   </li>)}</ol>;
 }

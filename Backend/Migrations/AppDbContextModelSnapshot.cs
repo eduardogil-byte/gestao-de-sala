@@ -920,8 +920,29 @@ namespace SalaGest.Api.Migrations
                         .IsRequired()
                         .HasColumnType("nvarchar(max)");
 
+                    b.Property<DateTime?>("FromEndsAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<int?>("FromRoomId")
+                        .HasColumnType("int");
+
+                    b.Property<DateTime?>("FromStartsAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<int?>("ReferenceChangeId")
+                        .HasColumnType("int");
+
                     b.Property<int>("RoomOccupationId")
                         .HasColumnType("int");
+
+                    b.Property<DateTime?>("ToEndsAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<int?>("ToRoomId")
+                        .HasColumnType("int");
+
+                    b.Property<DateTime?>("ToStartsAt")
+                        .HasColumnType("datetime2");
 
                     b.HasKey("Id");
 

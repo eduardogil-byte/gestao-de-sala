@@ -19,6 +19,7 @@ const sourceLabels: Record<string, string> = {
   Booking: "Reserva", Schedule: "Grade", Block: "Bloqueio", Manual: "Registro manual",
 };
 const dayLabels: Record<string, string> = { Letivo: "Letivo", Ead: "EAD", NaoLetivo: "Não letivo" };
+type ReversalPreview = OccupationMovePreview & { expectedLastChangeId: number; referenceChangeId: number };
 
 function occupationLabel(item: AgendaOccupation) {
   return item.kind === "Bloqueio" ? "Bloqueio" :
@@ -69,6 +70,10 @@ export function RoomTimeline({ user, openBookings }: { user: User; openBookings:
   const [moveBusy, setMoveBusy] = useState(false);
   const [moveError, setMoveError] = useState("");
   const [moveSuccess, setMoveSuccess] = useState("");
+  const [reversal, setReversal] = useState<{ item: AgendaOccupation; changeId: number; action: "undo" | "redo" } | null>(null);
+  const [reversalPreview, setReversalPreview] = useState<ReversalPreview | null>(null);
+  const [reversalBusy, setReversalBusy] = useState(false);
+  const [reversalError, setReversalError] = useState("");
   const [operationError, setOperationError] = useState("");
   const [draggingId, setDraggingId] = useState<number | null>(null);
   const [dragTarget, setDragTarget] = useState("");
@@ -215,6 +220,36 @@ export function RoomTimeline({ user, openBookings }: { user: User; openBookings:
       setMoveBusy(false);
     }
   }
+  async function beginReversal(item: AgendaOccupation, changeId: number, action: "undo" | "redo") {
+    if (!admin) return;
+    setSelected(null);
+    setReversal({ item, changeId, action });
+    setReversalPreview(null);
+    setReversalError("");
+    setReversalBusy(true);
+    try {
+      const preview = await read<ReversalPreview>(`/occupations/${item.id}/moves/${changeId}/${action}/preview`);
+      setReversalPreview(preview);
+    } catch (reason) { setReversalError(resultMessage(reason)); }
+    finally { setReversalBusy(false); }
+  }
+  async function confirmReversal() {
+    if (!reversal || !reversalPreview?.allowed || reversalBusy) return;
+    setReversalBusy(true);
+    setReversalError("");
+    try {
+      await post(`/occupations/${reversal.item.id}/moves/${reversal.changeId}/${reversal.action}`, {
+        confirm: true, expectedLastChangeId: reversalPreview.expectedLastChangeId,
+        expectedRoomId: reversalPreview.origin.roomId,
+        expectedStartsAt: reversalPreview.origin.startsAt,
+        expectedEndsAt: reversalPreview.origin.endsAt,
+      });
+      setMoveSuccess(reversal.action === "undo" ? "Movimentação desfeita." : "Movimentação refeita.");
+      setReversal(null);
+      setRevision((value) => value + 1);
+    } catch (reason) { setReversalError(resultMessage(reason)); }
+    finally { setReversalBusy(false); }
+  }
   const previewMatches = movePreview?.destination.roomId === Number(moveRoomId) &&
     movePreview.destination.date === moveDate && movePreview.destination.shiftId === Number(moveShiftId);
   function startDrag(item: AgendaOccupation, event: React.DragEvent<HTMLButtonElement>) {
@@ -343,8 +378,28 @@ export function RoomTimeline({ user, openBookings }: { user: User; openBookings:
         ["Motivo do calendário", selected.calendarReason ?? "Não informado"],
         ["Conflitos", selected.conflicts.length ? selected.conflicts.map((reason) => conflictLabels[reason] ?? "Inconsistência sinalizada").join(", ") : "Nenhum sinalizado"]
       ] as [string, string][]).map(([label, value]) => <div key={label}><dt className="font-semibold text-slate-600">{label}</dt><dd className="text-slate-800">{value}</dd></div>)}</dl>
-      {(admin || selected.originalTeacherId === user.id) && <div className="mt-5 border-t border-slate-200 pt-4"><h3 className="font-semibold mb-2">Histórico de alterações</h3><AuditHistory type="Occupation" id={selected.id} /></div>}
+      {(admin || selected.originalTeacherId === user.id) && <div className="mt-5 border-t border-slate-200 pt-4"><h3 className="font-semibold mb-2">Histórico de alterações</h3><AuditHistory type="Occupation" id={selected.id} onReverse={admin ? (changeId, action) => void beginReversal(selected, changeId, action) : undefined} /></div>}
       {admin && selected.kind !== "Bloqueio" && <button type="button" className="btn-primary mt-5" onClick={() => beginMove(selected)}>Mover ocupação</button>}
+    </Modal>}
+    {reversal && <Modal title={reversal.action === "undo" ? "Desfazer movimentação" : "Refazer movimentação"} onClose={() => { if (!reversalBusy) setReversal(null); }}>
+      <div className="space-y-3 text-sm">
+        <p>Ocupação {reversal.item.id} · movimentação {reversal.changeId}</p>
+        {reversalBusy && <p role="status">Processando...</p>}
+        {reversalError && <Notice message={reversalError} />}
+        {reversalPreview && <>
+          <p>Atual: {reversalPreview.origin.roomName} · {dateBR(reversalPreview.origin.date)} · {reversalPreview.origin.shiftName}</p>
+          <p>Destino: {reversalPreview.destination.roomName} · {dateBR(reversalPreview.destination.date)} · {reversalPreview.destination.shiftName}</p>
+          <p>{reversalPreview.allowed ? "Movimentação permitida" : "Movimentação impedida"}</p>
+          {reversalPreview.blocks.map((block) => <p key={block} className="text-rose-700">{block}</p>)}
+          {reversalPreview.warnings.map((warning) => <p key={warning} className="text-amber-800">{warning}</p>)}
+        </>}
+        <div className="flex gap-2 justify-end">
+          <button type="button" className="btn-secondary" disabled={reversalBusy} onClick={() => setReversal(null)}>Cancelar</button>
+          <button type="button" className="btn-primary" disabled={reversalBusy || !reversalPreview?.allowed} onClick={() => void confirmReversal()}>
+            {reversal.action === "undo" ? "Confirmar desfazer" : "Confirmar refazer"}
+          </button>
+        </div>
+      </div>
     </Modal>}
     {moveItem && <Modal title="Remanejar ocupação" onClose={() => { if (!moveBusy) { previewRequest.current++; setMoveItem(null); } }}>
       <div className="space-y-4 text-sm">

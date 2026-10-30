@@ -48,6 +48,12 @@ public static partial class ApiEndpoints
                     RoomOccupationId = occupation.Id,
                     ChangedById = UserId(current),
                     Action = "Remanejada",
+                    FromRoomId = assessment.Origin.RoomId,
+                    FromStartsAt = assessment.Origin.StartsAt,
+                    FromEndsAt = assessment.Origin.EndsAt,
+                    ToRoomId = assessment.Destination.RoomId,
+                    ToStartsAt = assessment.Destination.StartsAt,
+                    ToEndsAt = assessment.Destination.EndsAt,
                     Details = $"{assessment.Origin.RoomName} ({assessment.Origin.RoomId}), " +
                         $"{assessment.Origin.StartsAt:dd/MM/yyyy HH:mm}-{assessment.Origin.EndsAt:HH:mm} -> " +
                         $"{assessment.Destination.RoomName} ({assessment.Destination.RoomId}), " +
