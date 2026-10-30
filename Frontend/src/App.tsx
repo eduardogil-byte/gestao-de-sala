@@ -25,6 +25,7 @@ import { Academic } from "./pages/Academic";
 import { PedagogicalCatalog } from "./pages/PedagogicalCatalog";
 import { Teachers } from "./pages/Teachers";
 import { Schedules } from "./pages/Schedules";
+import { SemesterPlanning } from "./pages/SemesterPlanning";
 import { Bookings } from "./pages/Bookings";
 import { Loans } from "./pages/Loans";
 import { Notifications } from "./pages/Notifications";
@@ -44,6 +45,7 @@ type Page =
   | "pedagogical-catalog"
   | "teachers"
   | "schedules"
+  | "semester-planning"
   | "bookings"
   | "loans"
   | "notifications";
@@ -57,6 +59,7 @@ const nav: [Page, string, typeof LayoutDashboard][] = [
   ["pedagogical-catalog", "Catálogo Pedagógico", Layers3],
   ["teachers", "Professores", Users],
   ["bookings", "Reservas", ClipboardList],
+  ["semester-planning", "Planejamento Semestral", CalendarDays],
   ["loans", "Empréstimos", Handshake],
   ["notifications", "Notificações", Bell],
 ];
@@ -278,6 +281,8 @@ function Workspace({ user, onLogout }: { user: User; onLogout: () => void }) {
             <Teachers user={user} />
           ) : page === "schedules" && admin ? (
             <Schedules user={user} reloadAgenda={reloadAgenda} />
+          ) : page === "semester-planning" ? (
+            <SemesterPlanning user={user} reloadAgenda={reloadAgenda} />
           ) : page === "bookings" ? (
             <Bookings user={user} reloadAgenda={reloadAgenda}
               focusId={related?.page === "bookings" ? related.id : null} />
@@ -287,6 +292,7 @@ function Workspace({ user, onLogout }: { user: User; onLogout: () => void }) {
           ) : page === "notifications" ? (
             <Notifications openRelated={(type, id) => {
               const target = ({ Occupation: "room-timeline", Booking: "bookings", Loan: "loans",
+                SemesterPlan: "semester-planning", PlanProposal: "semester-planning",
                 Assignment: "instructor-agenda", Room: "rooms" } as Record<string, Page>)[type];
               if (target) { setRelated({ page: target, id }); setPage(target); }
             }} />

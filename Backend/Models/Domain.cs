@@ -252,6 +252,7 @@ public sealed class RoomOccupation
     public int? ClassGroupId { get; set; }
     public int? WeeklyClassId { get; set; }
     public int? BookingRequestId { get; set; }
+    public int? PlanProposalId { get; set; }
     public string? Description { get; set; }
 }
 

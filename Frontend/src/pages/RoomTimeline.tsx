@@ -16,7 +16,7 @@ const conflictLabels: Record<string, string> = {
   Loan: "Empréstimo", BookingStatus: "Estado da reserva",
 };
 const sourceLabels: Record<string, string> = {
-  Booking: "Reserva", Schedule: "Grade", Block: "Bloqueio", Manual: "Registro manual",
+  Booking: "Reserva", Schedule: "Grade", Planning: "Planejamento publicado", Block: "Bloqueio", Manual: "Registro manual",
 };
 const dayLabels: Record<string, string> = { Letivo: "Letivo", Ead: "EAD", NaoLetivo: "Não letivo" };
 type ReversalPreview = OccupationMovePreview & { expectedLastChangeId: number; referenceChangeId: number };

@@ -17,7 +17,7 @@ const conflictNames: Record<string, string> = {
   BookingStatus: "Estado da reserva",
 };
 const sourceNames: Record<string, string> = {
-  Booking: "Reserva", Schedule: "Grade publicada", Manual: "Registro manual", Block: "Bloqueio",
+  Booking: "Reserva", Schedule: "Grade publicada", Planning: "Planejamento publicado", Manual: "Registro manual", Block: "Bloqueio",
 };
 const occupationStatusNames: Record<string, string> = { Confirmed: "Confirmada", Blocked: "Bloqueada" };
 const weekDays = ["Domingo", "Segunda", "Terça", "Quarta", "Quinta", "Sexta", "Sábado"];

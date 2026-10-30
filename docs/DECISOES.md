@@ -14,6 +14,7 @@ Este documento separa **regras confirmadas**, **propostas do coordenador** e **d
 | DC-07 | Uma turma pode ter mais de um docente, e uma sala pode variar conforme aula/professor. | Não fixar turma→sala ou turma→professor em relação 1:1. |
 | DC-08 | Para a fase inicial, a reserva é por turno inteiro. | Não implementar granularidade por hora sem nova decisão. |
 | DC-09 | Preferir C#/ASP.NET Core, EF Core/SQL Server, React/TypeScript/Tailwind; mudanças pequenas. | Reutilizar backend/frontend atuais; evitar arquitetura nova. |
+| DC-10 | Reservas cotidianas continuam diretas; propostas semestrais são submetidas por professores e aprovadas/publicadas por Admin. A aprovação não ocupa sala. | Separar estados das propostas da ocupação efetiva; publicar somente após revalidação integral. |
 
 ## Implementações técnicas relatadas, não decisões institucionais
 - SG-07: catálogo Curso→Módulo→UC, administrador escreve, autenticados leem.
@@ -32,7 +33,7 @@ Este documento separa **regras confirmadas**, **propostas do coordenador** e **d
 | D-05 | Calendário | Datas oficiais e calendários particulares por turma? |
 | D-06 | CPF e LGPD | É indispensável? Quem consulta/exporta? Exige avaliação do DPO. |
 | D-07 | Abrangência | Uma ou várias unidades? Integração institucional futura? |
-| D-08 | Planejamento semestral | Quem propõe, quem aprova e quem publica; como notificar? |
+| D-08 | Perfis futuros do planejamento | A separação definitiva entre gestor e coordenador permanece pendente; SG-22 usa Admin. |
 | D-09 | Blocos | Uma oferta pode usar vários ambientes em períodos distintos? |
 | D-10 | Horários | Necessidade futura de início/fim dentro do turno? |
 | D-11 | EAD e reservas existentes | Marcar aula como EAD libera a sala? Até decisão institucional, SG-12 não cancela, altera nem libera reservas automaticamente. |

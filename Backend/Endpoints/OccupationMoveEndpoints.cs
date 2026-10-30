@@ -116,6 +116,17 @@ public static partial class ApiEndpoints
 
         BookingRequest? booking = null;
         WeeklyClass? weekly = null;
+        PlanProposal? planProposal = null;
+        if (occupation.PlanProposalId is int planProposalId)
+        {
+            planProposal = await db.PlanProposals.AsNoTracking().Include(p => p.Assignment)
+                .ThenInclude(a => a.ClassGroup).Include(p => p.Assignment)
+                .ThenInclude(a => a.Software).FirstOrDefaultAsync(p => p.Id == planProposalId);
+            if (planProposal is null || planProposal.Status != PlanProposalStatus.Publicada ||
+                planProposal.Assignment.TeacherId != occupation.TeacherId ||
+                planProposal.Assignment.ClassGroupId != occupation.ClassGroupId)
+                blocks.Add("Vínculo com planejamento publicado inválido");
+        }
         if (occupation.BookingRequestId is int bookingId)
         {
             booking = await db.Bookings.AsNoTracking().Include(b => b.Software)
@@ -185,10 +196,11 @@ public static partial class ApiEndpoints
 
         if (room is not null)
         {
-            if (booking?.CurricularCapabilityId is int capabilityId)
+            if ((booking?.CurricularCapabilityId ?? planProposal?.CurricularCapabilityId) is int capabilityId)
             {
                 var requirement = await RequirementQuery(db).FirstOrDefaultAsync(r => r.CurricularCapabilityId == capabilityId);
-                var technical = EnvironmentCompatibility.Evaluate(requirement, room, booking.Students, input.Date);
+                var technical = EnvironmentCompatibility.Evaluate(requirement, room,
+                    booking?.Students ?? planProposal!.Assignment.ClassGroup.Students, input.Date);
                 technicalClassification = technical.Classification;
                 technicalFindings.AddRange(technical.Findings);
                 if (technical.Classification != "Compatible")
@@ -198,6 +210,7 @@ public static partial class ApiEndpoints
             {
                 RoomNeed? need = booking is not null ? Need(booking) :
                     weekly is not null ? Need(weekly.Assignment) :
+                    planProposal is not null ? Need(planProposal.Assignment) :
                     classGroup is not null ? new RoomNeed(Math.Max(1, classGroup.Students), false,
                         false, false, HardwareTier.Basico, Array.Empty<int>(), 0, false) : null;
                 if (need is not null)

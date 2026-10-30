@@ -15,7 +15,7 @@
 3. O professor escolhe datas, dias da semana, período e sala; o sistema mostra as opções **ordenadas por adequação**, incluindo opções ocupadas ou inadequadas com explicação explícita. Mostrar alternativas não é autorização para confirmar um conflito.
 4. Antes de confirmar, verificar disponibilidade efetiva, número de alunos, recursos e compatibilidade técnica. **Jamais aceitar duas ocupações confirmadas para mesmo ambiente/data/turno.** Proteger também contra operações simultâneas no backend/banco.
 5. Na recorrência, indicar datas indisponíveis, responsável e turma; solicitar confirmação explícita para reservar somente as datas livres. Mostrar as ocorrências propostas e a última data efetiva.
-6. Reservas cotidianas válidas podem ser feitas diretamente pelo professor; coordenação atua na resolução de conflitos. A política de **publicação do plano semestral** ainda precisa ser acordada à parte.
+6. Reservas cotidianas válidas podem ser feitas diretamente pelo professor, sem aprovação administrativa obrigatória. Aprovação e publicação pertencem ao planejamento semestral (SG-22); somente a publicação cria ocupações ainda não confirmadas. Reservas confirmadas mantêm prioridade diante de propostas conflitantes.
 7. O titular de uma reserva válida mantém prioridade. A coordenação poderá remanejar quando necessário, com histórico e sem alteração silenciosa de outras aulas.
 8. Ocorrências podem receber situação Letivo, EAD ou Não letivo/recesso. Não presumir automaticamente que EAD libera um ambiente já alocado; isso depende das regras de reserva e da decisão institucional.
 

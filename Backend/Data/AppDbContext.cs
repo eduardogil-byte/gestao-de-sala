@@ -26,6 +26,8 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : Ident
     public DbSet<UserNotification> Notifications => Set<UserNotification>();
     public DbSet<OccupationChange> OccupationChanges => Set<OccupationChange>();
     public DbSet<AuditEntry> AuditEntries => Set<AuditEntry>();
+    public DbSet<SemesterPlan> SemesterPlans => Set<SemesterPlan>();
+    public DbSet<PlanProposal> PlanProposals => Set<PlanProposal>();
     public DbSet<Course> Courses => Set<Course>();
     public DbSet<CourseModule> CourseModules => Set<CourseModule>();
     public DbSet<CurricularUnit> CurricularUnits => Set<CurricularUnit>();
@@ -106,6 +108,27 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : Ident
         b.Entity<BookingSoftware>().HasKey(x => new { x.BookingRequestId, x.SoftwareId });
         b.Entity<TeacherAvailability>().HasIndex(x => new { x.TeacherId, x.Weekday, x.ShiftId }).IsUnique();
         b.Entity<RoomOccupation>().HasIndex(x => new { x.RoomId, x.StartsAt, x.EndsAt });
+        b.Entity<RoomOccupation>().HasOne<PlanProposal>().WithMany().HasForeignKey(x => x.PlanProposalId)
+            .OnDelete(DeleteBehavior.Restrict);
+        b.Entity<RoomOccupation>().HasIndex(x => new { x.PlanProposalId, x.StartsAt }).IsUnique()
+            .HasFilter("[PlanProposalId] IS NOT NULL");
+        b.Entity<SemesterPlan>().HasOne(x => x.Semester).WithMany().HasForeignKey(x => x.SemesterId)
+            .OnDelete(DeleteBehavior.Restrict);
+        b.Entity<SemesterPlan>().HasIndex(x => x.SemesterId).IsUnique();
+        b.Entity<PlanProposal>().HasOne(x => x.SemesterPlan).WithMany(x => x.Proposals)
+            .HasForeignKey(x => x.SemesterPlanId).OnDelete(DeleteBehavior.Restrict);
+        b.Entity<PlanProposal>().HasOne(x => x.Assignment).WithMany().HasForeignKey(x => x.AssignmentId)
+            .OnDelete(DeleteBehavior.Restrict);
+        b.Entity<PlanProposal>().HasOne(x => x.CurricularCapability).WithMany()
+            .HasForeignKey(x => x.CurricularCapabilityId).OnDelete(DeleteBehavior.Restrict);
+        b.Entity<PlanProposal>().HasOne(x => x.Room).WithMany().HasForeignKey(x => x.RoomId)
+            .OnDelete(DeleteBehavior.Restrict);
+        b.Entity<PlanProposal>().HasOne(x => x.Shift).WithMany().HasForeignKey(x => x.ShiftId)
+            .OnDelete(DeleteBehavior.Restrict);
+        b.Entity<PlanProposal>().Property(x => x.CreatedById).HasMaxLength(450);
+        b.Entity<PlanProposal>().Property(x => x.DecidedById).HasMaxLength(450);
+        b.Entity<PlanProposal>().Property(x => x.RejectionReason).HasMaxLength(500);
+        b.Entity<PlanProposal>().HasIndex(x => new { x.SemesterPlanId, x.Status });
         b.Entity<RoomOccupation>().HasIndex(x => new { x.TeacherId, x.StartsAt, x.EndsAt });
         b.Entity<RoomLoan>().HasIndex(x => x.RoomOccupationId);
         b.Entity<UserNotification>().HasIndex(x => new { x.UserId, x.CreatedAtUtc });

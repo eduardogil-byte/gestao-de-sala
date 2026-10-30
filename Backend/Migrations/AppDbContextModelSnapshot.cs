@@ -951,6 +951,72 @@ namespace SalaGest.Api.Migrations
                     b.ToTable("OccupationChanges");
                 });
 
+            modelBuilder.Entity("SalaGest.Api.Models.PlanProposal", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<int>("AssignmentId")
+                        .HasColumnType("int");
+
+                    b.Property<DateTime>("CreatedAtUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("CreatedById")
+                        .IsRequired()
+                        .HasMaxLength(450)
+                        .HasColumnType("nvarchar(450)");
+
+                    b.Property<int?>("CurricularCapabilityId")
+                        .HasColumnType("int");
+
+                    b.Property<DateTime?>("DecidedAtUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("DecidedById")
+                        .HasMaxLength(450)
+                        .HasColumnType("nvarchar(450)");
+
+                    b.Property<DateOnly>("EndDate")
+                        .HasColumnType("date");
+
+                    b.Property<string>("RejectionReason")
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)");
+
+                    b.Property<int>("RoomId")
+                        .HasColumnType("int");
+
+                    b.Property<int>("SemesterPlanId")
+                        .HasColumnType("int");
+
+                    b.Property<int>("ShiftId")
+                        .HasColumnType("int");
+
+                    b.Property<DateOnly>("StartDate")
+                        .HasColumnType("date");
+
+                    b.Property<int>("Status")
+                        .HasColumnType("int");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("AssignmentId");
+
+                    b.HasIndex("CurricularCapabilityId");
+
+                    b.HasIndex("RoomId");
+
+                    b.HasIndex("ShiftId");
+
+                    b.HasIndex("SemesterPlanId", "Status");
+
+                    b.ToTable("PlanProposals");
+                });
+
             modelBuilder.Entity("SalaGest.Api.Models.Room", b =>
                 {
                     b.Property<int>("Id")
@@ -1083,6 +1149,9 @@ namespace SalaGest.Api.Migrations
                     b.Property<int>("Kind")
                         .HasColumnType("int");
 
+                    b.Property<int?>("PlanProposalId")
+                        .HasColumnType("int");
+
                     b.Property<int>("RoomId")
                         .HasColumnType("int");
 
@@ -1096,6 +1165,10 @@ namespace SalaGest.Api.Migrations
                         .HasColumnType("int");
 
                     b.HasKey("Id");
+
+                    b.HasIndex("PlanProposalId", "StartsAt")
+                        .IsUnique()
+                        .HasFilter("[PlanProposalId] IS NOT NULL");
 
                     b.HasIndex("RoomId", "StartsAt", "EndsAt");
 
@@ -1250,6 +1323,40 @@ namespace SalaGest.Api.Migrations
                     b.HasKey("Id");
 
                     b.ToTable("Semesters");
+                });
+
+            modelBuilder.Entity("SalaGest.Api.Models.SemesterPlan", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<DateTime>("CreatedAtUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<bool>("Published")
+                        .HasColumnType("bit");
+
+                    b.Property<DateTime?>("PublishedAtUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("PublishedById")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<int>("Revision")
+                        .HasColumnType("int");
+
+                    b.Property<int>("SemesterId")
+                        .HasColumnType("int");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("SemesterId")
+                        .IsUnique();
+
+                    b.ToTable("SemesterPlans");
                 });
 
             modelBuilder.Entity("SalaGest.Api.Models.Software", b =>
@@ -1765,6 +1872,48 @@ namespace SalaGest.Api.Migrations
                     b.Navigation("Software");
                 });
 
+            modelBuilder.Entity("SalaGest.Api.Models.PlanProposal", b =>
+                {
+                    b.HasOne("SalaGest.Api.Models.TeachingAssignment", "Assignment")
+                        .WithMany()
+                        .HasForeignKey("AssignmentId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("SalaGest.Api.Models.CurricularCapability", "CurricularCapability")
+                        .WithMany()
+                        .HasForeignKey("CurricularCapabilityId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.HasOne("SalaGest.Api.Models.Room", "Room")
+                        .WithMany()
+                        .HasForeignKey("RoomId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("SalaGest.Api.Models.SemesterPlan", "SemesterPlan")
+                        .WithMany("Proposals")
+                        .HasForeignKey("SemesterPlanId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("SalaGest.Api.Models.SchoolShift", "Shift")
+                        .WithMany()
+                        .HasForeignKey("ShiftId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("Assignment");
+
+                    b.Navigation("CurricularCapability");
+
+                    b.Navigation("Room");
+
+                    b.Navigation("SemesterPlan");
+
+                    b.Navigation("Shift");
+                });
+
             modelBuilder.Entity("SalaGest.Api.Models.RoomLoan", b =>
                 {
                     b.HasOne("SalaGest.Api.Models.BookingRequest", "BookingRequest")
@@ -1794,6 +1943,11 @@ namespace SalaGest.Api.Migrations
 
             modelBuilder.Entity("SalaGest.Api.Models.RoomOccupation", b =>
                 {
+                    b.HasOne("SalaGest.Api.Models.PlanProposal", null)
+                        .WithMany()
+                        .HasForeignKey("PlanProposalId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
                     b.HasOne("SalaGest.Api.Models.Room", "Room")
                         .WithMany()
                         .HasForeignKey("RoomId")
@@ -1815,6 +1969,17 @@ namespace SalaGest.Api.Migrations
                 });
 
             modelBuilder.Entity("SalaGest.Api.Models.Schedule", b =>
+                {
+                    b.HasOne("SalaGest.Api.Models.Semester", "Semester")
+                        .WithMany()
+                        .HasForeignKey("SemesterId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("Semester");
+                });
+
+            modelBuilder.Entity("SalaGest.Api.Models.SemesterPlan", b =>
                 {
                     b.HasOne("SalaGest.Api.Models.Semester", "Semester")
                         .WithMany()
@@ -2016,6 +2181,11 @@ namespace SalaGest.Api.Migrations
             modelBuilder.Entity("SalaGest.Api.Models.Schedule", b =>
                 {
                     b.Navigation("WeeklyClasses");
+                });
+
+            modelBuilder.Entity("SalaGest.Api.Models.SemesterPlan", b =>
+                {
+                    b.Navigation("Proposals");
                 });
 
             modelBuilder.Entity("SalaGest.Api.Models.TeachingAssignment", b =>

@@ -33,6 +33,7 @@ public sealed class AgendaOccupation
     public string? CurricularCapabilityDescription { get; init; }
     public int? WeeklyClassId { get; init; }
     public int? BookingRequestId { get; init; }
+    public int? PlanProposalId { get; init; }
     public int? EffectiveBookingRequestId { get; init; }
     public BookingStatus? BookingStatus { get; init; }
     public bool IsBorrowed { get; init; }

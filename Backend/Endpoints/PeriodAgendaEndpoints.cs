@@ -62,7 +62,7 @@ public static partial class ApiEndpoints
                 .OrderBy(o => o.StartsAt).ThenBy(o => o.Id)
                 .Select(o => new { o.Id, o.RoomId, RoomName = o.Room.Name, o.StartsAt, o.EndsAt,
                     o.Kind, o.DayStatus, o.Description, o.TeacherId, o.ClassGroupId,
-                    o.WeeklyClassId, o.BookingRequestId }).Take(10001).ToListAsync();
+                    o.WeeklyClassId, o.BookingRequestId, o.PlanProposalId }).Take(10001).ToListAsync();
             if (occupations.Count > 10000)
                 return Error("O período contém mais de 10000 ocupações; consulte intervalos menores");
             var occupationIds = occupations.Select(o => o.Id).ToArray();
@@ -88,6 +88,14 @@ public static partial class ApiEndpoints
                 .Select(w => new { w.Id, w.Assignment.CurricularUnitId,
                     UnitName = w.Assignment.CurricularUnit == null ? null : w.Assignment.CurricularUnit.Name })
                 .ToDictionaryAsync(w => w.Id);
+            var planIds = occupations.Where(o => o.PlanProposalId.HasValue)
+                .Select(o => o.PlanProposalId!.Value).Distinct().ToArray();
+            var plans = await db.PlanProposals.AsNoTracking().Where(p => planIds.Contains(p.Id))
+                .Select(p => new { p.Id, p.Assignment.CurricularUnitId,
+                    UnitName = p.Assignment.CurricularUnit == null ? null : p.Assignment.CurricularUnit.Name,
+                    p.CurricularCapabilityId,
+                    CapabilityDescription = p.CurricularCapability == null ? null : p.CurricularCapability.Description })
+                .ToDictionaryAsync(p => p.Id);
             var classIds = occupations.Where(o => o.ClassGroupId.HasValue).Select(o => o.ClassGroupId!.Value)
                 .Concat(loans.Where(l => l.ClassGroupId.HasValue).Select(l => l.ClassGroupId!.Value))
                 .Distinct().ToArray();
@@ -139,6 +147,7 @@ public static partial class ApiEndpoints
                 var bookingId = loan?.BookingRequestId ?? o.BookingRequestId;
                 var booking = bookingId is int bid ? bookings.GetValueOrDefault(bid) : null;
                 var lesson = o.WeeklyClassId is int wid ? weekly.GetValueOrDefault(wid) : null;
+                var plan = o.PlanProposalId is int pid ? plans.GetValueOrDefault(pid) : null;
                 var classGroup = actualClass is int cid ? classes.GetValueOrDefault(cid) : null;
                 var date = DateOnly.FromDateTime(o.StartsAt);
                 var calendar = CalendarFor(actualClass, date, admin ||
@@ -154,7 +163,7 @@ public static partial class ApiEndpoints
                     CalendarKind = calendar?.Kind, CalendarReason = calendar?.Reason,
                     Status = o.Kind == OccupationKind.Bloqueio ? "Blocked" : "Confirmed",
                     Source = o.BookingRequestId != null ? "Booking" : o.WeeklyClassId != null ? "Schedule" :
-                        o.Kind == OccupationKind.Bloqueio ? "Block" : "Manual",
+                        o.PlanProposalId != null ? "Planning" : o.Kind == OccupationKind.Bloqueio ? "Block" : "Manual",
                     Description = o.Description,
                     OriginalTeacherId = o.TeacherId, ActualTeacherId = actualTeacher,
                     ActualTeacherName = visibleDetails && actualTeacher is not null
@@ -163,11 +172,12 @@ public static partial class ApiEndpoints
                     ActualClassGroupName = visibleDetails ? classGroup?.Name : null,
                     CourseId = visibleDetails ? classGroup?.CourseId : null,
                     CourseName = visibleDetails ? classGroup?.Course?.Name : null,
-                    CurricularUnitId = visibleDetails ? booking?.CurricularUnitId ?? lesson?.CurricularUnitId : null,
-                    CurricularUnitName = visibleDetails ? booking?.UnitName ?? lesson?.UnitName : null,
-                    CurricularCapabilityId = visibleDetails ? booking?.CurricularCapabilityId : null,
-                    CurricularCapabilityDescription = visibleDetails ? booking?.CapabilityDescription : null,
+                    CurricularUnitId = visibleDetails ? booking?.CurricularUnitId ?? lesson?.CurricularUnitId ?? plan?.CurricularUnitId : null,
+                    CurricularUnitName = visibleDetails ? booking?.UnitName ?? lesson?.UnitName ?? plan?.UnitName : null,
+                    CurricularCapabilityId = visibleDetails ? booking?.CurricularCapabilityId ?? plan?.CurricularCapabilityId : null,
+                    CurricularCapabilityDescription = visibleDetails ? booking?.CapabilityDescription ?? plan?.CapabilityDescription : null,
                     WeeklyClassId = o.WeeklyClassId, BookingRequestId = o.BookingRequestId,
+                    PlanProposalId = o.PlanProposalId,
                     EffectiveBookingRequestId = bookingId, BookingStatus = booking?.Status,
                     IsBorrowed = loan is not null, LoanId = loan?.Id, LoanDisposition = loan?.OwnerDisposition
                 };
