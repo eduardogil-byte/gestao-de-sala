@@ -7,6 +7,15 @@ namespace SalaGest.Api.Services;
 
 public static class OccupancyIndicators
 {
+    public static IQueryable<RoomOccupation> EffectiveOccupations(AppDbContext db) =>
+        db.Occupations.AsNoTracking().Where(o => o.CancelledAtUtc == null &&
+            (o.BookingRequestId == null || db.Bookings.Any(b => b.Id == o.BookingRequestId &&
+                b.Status == BookingStatus.Aprovada)) &&
+            (o.WeeklyClassId == null || db.WeeklyClasses.Any(w => w.Id == o.WeeklyClassId &&
+                w.Schedule.Status == ScheduleStatus.Publicada)) &&
+            (o.PlanProposalId == null || db.PlanProposals.Any(p => p.Id == o.PlanProposalId &&
+                p.Status == PlanProposalStatus.Publicada)));
+
     private sealed record Occupied(int Id, int RoomId, DateOnly Date, int From, int To, int? ShiftId);
     private sealed record Span(int From, int To);
 
@@ -32,16 +41,10 @@ public static class OccupancyIndicators
                 e.EndDate >= semester.StartDate).ToListAsync();
         var start = semester.StartDate.ToDateTime(TimeOnly.MinValue);
         var end = semester.EndDate.AddDays(1).ToDateTime(TimeOnly.MinValue);
-        var rows = await db.Occupations.AsNoTracking()
-            .Where(o => o.CancelledAtUtc == null && o.StartsAt >= start && o.StartsAt < end &&
+        var rows = await EffectiveOccupations(db)
+            .Where(o => o.StartsAt >= start && o.StartsAt < end &&
                 o.EndsAt > o.StartsAt &&
-                (roomId == null || o.RoomId == roomId) &&
-                (o.BookingRequestId == null || db.Bookings.Any(b => b.Id == o.BookingRequestId &&
-                    b.Status == BookingStatus.Aprovada)) &&
-                (o.WeeklyClassId == null || db.WeeklyClasses.Any(w => w.Id == o.WeeklyClassId &&
-                    w.Schedule.Status == ScheduleStatus.Publicada)) &&
-                (o.PlanProposalId == null || db.PlanProposals.Any(p => p.Id == o.PlanProposalId &&
-                    p.Status == PlanProposalStatus.Publicada)))
+                (roomId == null || o.RoomId == roomId))
             .Select(o => new { o.Id, o.RoomId, o.StartsAt, o.EndsAt })
             .Take(100001).ToListAsync();
         if (rows.Count > 100000)

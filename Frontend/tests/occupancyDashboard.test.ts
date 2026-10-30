@@ -131,7 +131,7 @@ test("indicadores gerenciais aparecem só para Admin; visão do professor perman
   const server = await createServer({ configFile: false, server: { middlewareMode: true, hmr: false }, appType: "custom" });
   try {
     const { Dashboard } = await server.ssrLoadModule("/src/pages/Dashboard.tsx");
-    const props = { navigate: () => {}, openTimeline: () => {}, occupations: [] };
+    const props = { navigate: () => {}, openTimeline: () => {}, openOpportunity: () => {}, occupations: [] };
     const admin = renderToStaticMarkup(createElement(Dashboard, {
       ...props, user: { id: "a", displayName: "Admin", email: "", roles: ["Admin"] },
     }));

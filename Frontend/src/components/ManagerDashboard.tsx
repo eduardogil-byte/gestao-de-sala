@@ -60,7 +60,7 @@ function RoomLine({ room, onTimeline }: { room: RoomIndicator; onTimeline: (room
   </div>;
 }
 
-export function OccupancyView({ report, onTimeline }: { report: SemesterIndicators; onTimeline: (roomId: number, shiftId?: number) => void }) {
+export function OccupancyView({ report, onTimeline, onOpportunity }: { report: SemesterIndicators; onTimeline: (roomId: number) => void; onOpportunity?: (roomId: number) => void }) {
   const rooms = orderedRooms(report.rooms);
   const shifts = shiftDistribution(report);
   const maxShiftHours = Math.max(1, ...shifts.map((shift) => shift.occupied));
@@ -105,6 +105,7 @@ export function OccupancyView({ report, onTimeline }: { report: SemesterIndicato
           <p className="text-slate-600 mt-1">Disponíveis: {hours(room.availableHours)}</p>
           <p className="text-slate-600">Turnos com horas livres comprovadas: {room.shifts.filter((s) => s.availableHours !== null && s.availableHours > 0).map((s) => s.shiftName).join(", ") || "sem dados"}</p>
           <button type="button" className="text-skybrand-700 underline mt-1" onClick={() => onTimeline(room.roomId)}>Ver cronograma</button>
+          {onOpportunity && <button type="button" className="text-skybrand-700 underline mt-1 ml-4" onClick={() => onOpportunity(room.roomId)}>Analisar oportunidades</button>}
         </div>) : <p className="text-sm text-slate-600 mt-4">Nenhuma oportunidade classificada.</p>}
       </Card>
     </div>
@@ -127,7 +128,7 @@ export function ComparisonView({ first, second, firstName, secondName }: Semeste
   </Card>;
 }
 
-export function ManagerDashboard({ onTimeline }: { onTimeline: (semesterId: number, roomId: number) => void }) {
+export function ManagerDashboard({ onTimeline, onOpportunity }: { onTimeline: (semesterId: number, roomId: number) => void; onOpportunity: (semesterId: number, roomId: number) => void }) {
   const { data } = useData();
   const [semesterId, setSemesterId] = useState("");
   const [roomId, setRoomId] = useState("");
@@ -184,7 +185,7 @@ export function ManagerDashboard({ onTimeline }: { onTimeline: (semesterId: numb
     {!data.semesters.length && <Notice message="Nenhum semestre cadastrado para consultar." />}
     {error && <Notice type="error" message={error} />}
     {loading && <Busy />}
-    {report && loadedKey === key && !loading && !error && <OccupancyView report={report} onTimeline={(selectedRoom) => onTimeline(Number(semesterId), selectedRoom)} />}
+    {report && loadedKey === key && !loading && !error && <OccupancyView report={report} onTimeline={(selectedRoom) => onTimeline(Number(semesterId), selectedRoom)} onOpportunity={(selectedRoom) => onOpportunity(Number(semesterId), selectedRoom)} />}
     <Card className="p-5"><Field label="Comparar com outro semestre"><select className="field" value={secondId} onChange={(e) => setSecondId(e.target.value)}>
       <option value="">Selecione</option>{data.semesters.filter((s) => String(s.id) !== semesterId).map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
     </select></Field></Card>

@@ -43,16 +43,16 @@ function OccupationButton({ item, onSelect, onDragStart, onDragEnd, dragging }: 
   </button>;
 }
 
-export function RoomTimeline({ user, openBookings, initialFilter }: { user: User; openBookings: () => void; initialFilter?: { semesterId: number; roomId: number; anchor: string } | null }) {
+export function RoomTimeline({ user, openBookings, initialFilter }: { user: User; openBookings: () => void; initialFilter?: { semesterId: number; roomId: number; anchor: string; shiftId?: number } | null }) {
   const { data, error: catalogError } = useData();
   const admin = user.roles.includes("Admin");
-  const [view, setView] = useState<TimelineView>(initialFilter ? "semester" : "week");
+  const [view, setView] = useState<TimelineView>(initialFilter?.shiftId ? "month" : initialFilter ? "semester" : "week");
   const [anchor, setAnchor] = useState(initialFilter?.anchor ?? localDate(new Date()));
   const [semesterId, setSemesterId] = useState(initialFilter ? String(initialFilter.semesterId) : "");
   const [roomId, setRoomId] = useState(initialFilter ? String(initialFilter.roomId) : "");
   const [teacherId, setTeacherId] = useState("");
   const [classGroupId, setClassGroupId] = useState("");
-  const [shiftId, setShiftId] = useState("");
+  const [shiftId, setShiftId] = useState(initialFilter?.shiftId ? String(initialFilter.shiftId) : "");
   const [kind, setKind] = useState("");
   const [items, setItems] = useState<AgendaOccupation[] | null>(null);
   const [loadedQuery, setLoadedQuery] = useState("");

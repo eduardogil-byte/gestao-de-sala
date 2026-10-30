@@ -20,11 +20,13 @@ export function Dashboard({
   navigate,
   occupations,
   openTimeline,
+  openOpportunity,
 }: {
   user: User;
   navigate: (page: string) => void;
   occupations: Occupation[];
   openTimeline: (semesterId: number, roomId: number) => void;
+  openOpportunity: (semesterId: number, roomId: number) => void;
 }) {
   const { data } = useData();
   const admin = user.roles.includes("Admin");
@@ -213,7 +215,7 @@ export function Dashboard({
           </Card>
         </div>
       </div>
-      {admin ? <ManagerDashboard onTimeline={openTimeline} /> : <UsagePanel />}
+      {admin ? <ManagerDashboard onTimeline={openTimeline} onOpportunity={openOpportunity} /> : <UsagePanel />}
     </>
   );
 }

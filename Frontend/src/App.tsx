@@ -17,6 +17,7 @@ import {
 } from "lucide-react";
 import { Access } from "./pages/Access";
 import { Dashboard } from "./pages/Dashboard";
+import { RoomOpportunities } from "./pages/RoomOpportunities";
 import { Agenda } from "./pages/Agenda";
 import { RoomTimeline } from "./pages/RoomTimeline";
 import { InstructorAgenda } from "./pages/InstructorAgenda";
@@ -39,6 +40,7 @@ type Page =
   | "dashboard"
   | "agenda"
   | "room-timeline"
+  | "opportunities"
   | "instructor-agenda"
   | "rooms"
   | "academic"
@@ -53,6 +55,7 @@ const nav: [Page, string, typeof LayoutDashboard][] = [
   ["dashboard", "Visão geral", LayoutDashboard],
   ["agenda", "Agenda", CalendarDays],
   ["room-timeline", "Cronograma de Ambientes", CalendarDays],
+  ["opportunities", "Oportunidades de Ambientes", DoorOpen],
   ["instructor-agenda", "Minha Agenda", CalendarDays],
   ["rooms", "Ambientes", DoorOpen],
   ["academic", "Turmas e disciplinas", GraduationCap],
@@ -68,7 +71,8 @@ function Workspace({ user, onLogout }: { user: User; onLogout: () => void }) {
   const { data, loading, error, reload } = useData();
   const [page, setPage] = useState<Page>("dashboard");
   const [related, setRelated] = useState<{ page: Page; id: number } | null>(null);
-  const [timelineFilter, setTimelineFilter] = useState<{ semesterId: number; roomId: number; anchor: string } | null>(null);
+  const [timelineFilter, setTimelineFilter] = useState<{ semesterId: number; roomId: number; anchor: string; shiftId?: number } | null>(null);
+  const [opportunityFilter, setOpportunityFilter] = useState<{ semesterId: number; roomId: number } | null>(null);
   const [menu, setMenu] = useState(false);
   const [occupations, setOccupations] = useState<Occupation[]>([]);
   const [agendaError, setAgendaError] = useState("");
@@ -115,14 +119,20 @@ function Workspace({ user, onLogout }: { user: User; onLogout: () => void }) {
   const open = (p: string) => {
     setRelated(null);
     setTimelineFilter(null);
+    setOpportunityFilter(null);
     setPage(p as Page);
     setMenu(false);
     window.scrollTo({ top: 0, behavior: "smooth" });
   };
-  const openTimeline = (semesterId: number, roomId: number) => {
+  const openTimeline = (semesterId: number, roomId: number, anchor?: string, shiftId?: number) => {
     const semester = data.semesters.find((item) => item.id === semesterId);
-    setTimelineFilter({ semesterId, roomId, anchor: semester?.startDate ?? localDate(new Date()) });
+    setTimelineFilter({ semesterId, roomId, anchor: anchor ?? semester?.startDate ?? localDate(new Date()), shiftId });
     setPage("room-timeline");
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  };
+  const openOpportunity = (semesterId: number, roomId: number) => {
+    setOpportunityFilter({ semesterId, roomId });
+    setPage("opportunities");
     window.scrollTo({ top: 0, behavior: "smooth" });
   };
   const current = nav.find((n) => n[0] === page);
@@ -161,7 +171,7 @@ function Workspace({ user, onLogout }: { user: User; onLogout: () => void }) {
           <nav className="space-y-1">
             {nav
               .filter(
-                (item) => admin || !["academic", "schedules"].includes(item[0]),
+                (item) => admin || !["academic", "schedules", "opportunities"].includes(item[0]),
               )
               .map(([id, label, Icon]) => (
                 <button
@@ -268,7 +278,7 @@ function Workspace({ user, onLogout }: { user: User; onLogout: () => void }) {
           {loading ? (
             <Busy />
           ) : page === "dashboard" ? (
-            <Dashboard user={user} navigate={open} occupations={occupations} openTimeline={openTimeline} />
+            <Dashboard user={user} navigate={open} occupations={occupations} openTimeline={openTimeline} openOpportunity={openOpportunity} />
           ) : page === "agenda" ? (
             <Agenda
               user={user}
@@ -277,6 +287,8 @@ function Workspace({ user, onLogout }: { user: User; onLogout: () => void }) {
             />
           ) : page === "room-timeline" ? (
             <RoomTimeline user={user} openBookings={() => open("bookings")} initialFilter={timelineFilter} />
+          ) : page === "opportunities" && admin ? (
+            <RoomOpportunities initial={opportunityFilter} onTimeline={openTimeline} />
           ) : page === "instructor-agenda" ? (
             <InstructorAgenda user={user} />
           ) : page === "rooms" ? (

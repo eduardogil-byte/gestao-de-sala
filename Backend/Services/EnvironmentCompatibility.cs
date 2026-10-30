@@ -6,7 +6,7 @@ namespace SalaGest.Api.Services;
 public static class EnvironmentCompatibility
 {
     public static EnvironmentCompatibilityResponse Evaluate(CapabilityEnvironmentRequirement? requirement,
-        Room room, int? students, DateOnly today)
+        Room room, int? students, DateOnly today, bool oneComputerPerStudent = false)
     {
         var findings = new List<RequirementFinding>();
         if (requirement is null || (requirement.RoomKind is null && !requirement.RequiresProjector &&
@@ -45,7 +45,8 @@ public static class EnvironmentCompatibility
                     $"{required.Name}: {available} operacionais; necessários {required.Quantity}";
                 findings.Add(new($"resource:{required.Type}:{required.Name}", status, detail));
             }
-            EvaluateComputers(requirement, room, today, findings);
+            EvaluateComputers(requirement, room, today, findings,
+                oneComputerPerStudent ? students : null);
         }
         if (students is int count)
             findings.Add(new("seats", room.Seats >= count ? "Met" : "UnmetCritical",
@@ -56,10 +57,11 @@ public static class EnvironmentCompatibility
     }
 
     private static void EvaluateComputers(CapabilityEnvironmentRequirement requirement, Room room,
-        DateOnly today, List<RequirementFinding> findings)
+        DateOnly today, List<RequirementFinding> findings, int? studentsNeedingComputers)
     {
         if (requirement.RequiredComputers is not int needed && requirement.Software.Count == 0) return;
-        var requiredComputers = requirement.RequiredComputers ?? 1;
+        var requiredComputers = Math.Max(requirement.RequiredComputers ?? 1,
+            studentsNeedingComputers ?? 0);
         var confirmed = 0;
         var possible = 0;
         var unknown = false;
