@@ -128,7 +128,7 @@ export function ComparisonView({ first, second, firstName, secondName }: Semeste
   </Card>;
 }
 
-export function ManagerDashboard({ onTimeline, onOpportunity }: { onTimeline: (semesterId: number, roomId: number) => void; onOpportunity: (semesterId: number, roomId: number) => void }) {
+export function ManagerDashboard({ onTimeline, onOpportunity, onExport }: { onTimeline: (semesterId: number, roomId: number) => void; onOpportunity: (semesterId: number, roomId: number) => void; onExport: (semesterId: number, secondSemesterId: number | null, roomId: number | null) => void }) {
   const { data } = useData();
   const [semesterId, setSemesterId] = useState("");
   const [roomId, setRoomId] = useState("");
@@ -172,6 +172,7 @@ export function ManagerDashboard({ onTimeline, onOpportunity }: { onTimeline: (s
     return () => { active = false; };
   }, [compareKey, semesterId, secondId, roomId]);
   return <div className="mt-6 space-y-5">
+    <div className="flex justify-end"><button type="button" className="btn-secondary" disabled={!semesterId} onClick={() => onExport(Number(semesterId), secondId ? Number(secondId) : null, roomId ? Number(roomId) : null)}>Exportar indicadores e relatórios</button></div>
     <div><h2 className="text-xl font-bold text-slate-800">Dashboard gerencial de ocupação</h2>
       <p className="text-sm text-slate-600 mt-1">Indicadores oficiais da SG-23 para ocupações registradas no semestre.</p></div>
     <Card className="p-5 grid sm:grid-cols-2 gap-3">

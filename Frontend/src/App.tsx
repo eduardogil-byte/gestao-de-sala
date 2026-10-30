@@ -20,6 +20,7 @@ import { Access } from "./pages/Access";
 import { Dashboard } from "./pages/Dashboard";
 import { RoomOpportunities } from "./pages/RoomOpportunities";
 import { InstitutionalImport } from "./pages/InstitutionalImport";
+import { ExportData } from "./pages/ExportData";
 import { Agenda } from "./pages/Agenda";
 import { RoomTimeline } from "./pages/RoomTimeline";
 import { InstructorAgenda } from "./pages/InstructorAgenda";
@@ -44,6 +45,7 @@ type Page =
   | "room-timeline"
   | "opportunities"
   | "imports"
+  | "exports"
   | "instructor-agenda"
   | "rooms"
   | "academic"
@@ -60,6 +62,7 @@ const nav: [Page, string, typeof LayoutDashboard][] = [
   ["room-timeline", "Cronograma de Ambientes", CalendarDays],
   ["opportunities", "Oportunidades de Ambientes", DoorOpen],
   ["imports", "Importar Dados", FileSpreadsheet],
+  ["exports", "Exportar Dados", FileSpreadsheet],
   ["instructor-agenda", "Minha Agenda", CalendarDays],
   ["rooms", "Ambientes", DoorOpen],
   ["academic", "Turmas e disciplinas", GraduationCap],
@@ -77,6 +80,7 @@ function Workspace({ user, onLogout }: { user: User; onLogout: () => void }) {
   const [related, setRelated] = useState<{ page: Page; id: number } | null>(null);
   const [timelineFilter, setTimelineFilter] = useState<{ semesterId: number; roomId: number; anchor: string; shiftId?: number } | null>(null);
   const [opportunityFilter, setOpportunityFilter] = useState<{ semesterId: number; roomId: number } | null>(null);
+  const [exportFilter, setExportFilter] = useState<{ semesterId: number; secondSemesterId: number | null; roomId: number | null } | null>(null);
   const [menu, setMenu] = useState(false);
   const [occupations, setOccupations] = useState<Occupation[]>([]);
   const [agendaError, setAgendaError] = useState("");
@@ -124,6 +128,7 @@ function Workspace({ user, onLogout }: { user: User; onLogout: () => void }) {
     setRelated(null);
     setTimelineFilter(null);
     setOpportunityFilter(null);
+    setExportFilter(null);
     setPage(p as Page);
     setMenu(false);
     window.scrollTo({ top: 0, behavior: "smooth" });
@@ -137,6 +142,11 @@ function Workspace({ user, onLogout }: { user: User; onLogout: () => void }) {
   const openOpportunity = (semesterId: number, roomId: number) => {
     setOpportunityFilter({ semesterId, roomId });
     setPage("opportunities");
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  };
+  const openDashboardExport = (semesterId: number, secondSemesterId: number | null, roomId: number | null) => {
+    setExportFilter({ semesterId, secondSemesterId, roomId });
+    setPage("exports");
     window.scrollTo({ top: 0, behavior: "smooth" });
   };
   const current = nav.find((n) => n[0] === page);
@@ -175,7 +185,7 @@ function Workspace({ user, onLogout }: { user: User; onLogout: () => void }) {
           <nav className="space-y-1">
             {nav
               .filter(
-                (item) => admin || !["academic", "schedules", "opportunities", "imports"].includes(item[0]),
+                (item) => admin || !["academic", "schedules", "opportunities", "imports", "exports"].includes(item[0]),
               )
               .map(([id, label, Icon]) => (
                 <button
@@ -282,7 +292,7 @@ function Workspace({ user, onLogout }: { user: User; onLogout: () => void }) {
           {loading ? (
             <Busy />
           ) : page === "dashboard" ? (
-            <Dashboard user={user} navigate={open} occupations={occupations} openTimeline={openTimeline} openOpportunity={openOpportunity} />
+            <Dashboard user={user} navigate={open} occupations={occupations} openTimeline={openTimeline} openOpportunity={openOpportunity} onExport={openDashboardExport} />
           ) : page === "agenda" ? (
             <Agenda
               user={user}
@@ -295,6 +305,8 @@ function Workspace({ user, onLogout }: { user: User; onLogout: () => void }) {
             <RoomOpportunities initial={opportunityFilter} onTimeline={openTimeline} />
           ) : page === "imports" && admin ? (
             <InstitutionalImport />
+          ) : page === "exports" && admin ? (
+            <ExportData initial={exportFilter} />
           ) : page === "instructor-agenda" ? (
             <InstructorAgenda user={user} />
           ) : page === "rooms" ? (

@@ -34,6 +34,7 @@ builder.Services.AddIdentityCore<AppUser>(options =>
 builder.Services.AddAuthorization(options =>
     options.AddPolicy("Admin", policy => policy.RequireRole("Admin")));
 builder.Services.AddScoped<ScheduleGenerator>();
+builder.Services.AddScoped<ExcelReportService>();
 
 var origins = builder.Configuration.GetSection("Cors:FrontendOrigins").Get<string[]>()
     ?? new[] { "http://localhost:5173" };

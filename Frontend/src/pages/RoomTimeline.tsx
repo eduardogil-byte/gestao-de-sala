@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { ApiError, post, read } from "../lib/api";
+import { ApiError, downloadFile, post, read } from "../lib/api";
 import { useData } from "../lib/data";
 import { agendaPath, datesBetween, indexOccupations, isAgendaOccupation, movePeriod, period, summarize, weekStart, type TimelineView } from "../lib/roomTimeline";
 import { dateBR, localDate, nextDate, resultMessage } from "../lib/utils";
@@ -58,6 +58,8 @@ export function RoomTimeline({ user, openBookings, initialFilter }: { user: User
   const [loadedQuery, setLoadedQuery] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [exportBusy, setExportBusy] = useState(false);
+  const [exportError, setExportError] = useState("");
   const [selected, setSelected] = useState<AgendaOccupation | null>(null);
   const [selectedDay, setSelectedDay] = useState("");
   const [revision, setRevision] = useState(0);
@@ -265,10 +267,28 @@ export function RoomTimeline({ user, openBookings, initialFilter }: { user: User
     setDragTarget("");
     if (item) beginMove(item, { roomId, date, shiftId });
   }
+  async function exportCurrentPeriod() {
+    if (!admin || !range || exportBusy) return;
+    const params = new URLSearchParams();
+    if (view === "semester" && semesterId) params.set("semesterId", semesterId);
+    else {
+      params.set("from", range.from);
+      params.set("to", nextDate(range.to, -1));
+    }
+    if (roomId) params.set("roomId", roomId);
+    if (shiftId) params.set("shiftId", shiftId);
+    setExportBusy(true); setExportError("");
+    try { await downloadFile(`/exports/Ocupacoes?${params.toString()}`); }
+    catch (reason) { setExportError(resultMessage(reason)); }
+    finally { setExportBusy(false); }
+  }
 
   return <>
     <Title title="Cronograma de Ambientes" subtitle={`Consulta institucional · ${periodName}`}
-      action={<button type="button" className="btn-secondary" onClick={openBookings}>Abrir reservas</button>} />
+      action={<div className="flex flex-wrap gap-2"><button type="button" className="btn-secondary" onClick={openBookings}>Abrir reservas</button>
+        {admin && <button type="button" className="btn-secondary" disabled={!range || exportBusy} onClick={() => void exportCurrentPeriod()}>{exportBusy ? "Gerando Excel..." : "Exportar ocupações"}</button>}</div>} />
+    {exportError && <div className="mb-4"><Notice type="error" message={exportError} onClose={() => setExportError("")} /></div>}
+    {admin && (teacherId || classGroupId || kind) && <p className="mb-4 text-sm text-amber-800" role="status">A exportação preserva período, ambiente e turno. Os filtros de professor, turma e tipo não são aplicados ao arquivo.</p>}
     {moveSuccess && <div className="mb-4"><Notice type="success" message={moveSuccess} onClose={() => setMoveSuccess("")} /></div>}
     {operationError && <div className="mb-4"><Notice message={operationError} onClose={() => setOperationError("")} /></div>}
     <Card className="p-4 mb-5 space-y-4">

@@ -74,18 +74,23 @@ export const put = <T>(path: string, data: unknown) =>
 export const remove = <T>(path: string) => api<T>(path, { method: "DELETE" });
 export const upload = <T>(path: string, data: FormData) =>
   api<T>(path, { method: "POST", body: data });
-export async function downloadFile(path: string, filename: string) {
+export async function downloadFile(path: string, filename = "relatorio.xlsx") {
   const token = tokenStore.get();
   const response = await fetch(`/api${path}`, {
     headers: token ? { Authorization: `Bearer ${token}` } : {},
   });
-  if (!response.ok) throw new ApiError("Não foi possível baixar o modelo.", response.status);
+  if (!response.ok) {
+    const body = await response.json().catch(() => null) as { error?: string } | null;
+    if (response.status === 401 && token) window.dispatchEvent(new Event("salagest:unauthorized"));
+    throw new ApiError(body?.error || `Falha ao gerar o arquivo (${response.status}).`, response.status);
+  }
   const url = URL.createObjectURL(await response.blob());
   const link = document.createElement("a");
   link.href = url;
-  link.download = filename;
+  const disposition = response.headers.get("Content-Disposition");
+  link.download = disposition?.match(/filename="?([^";]+)"?/i)?.[1] ?? filename;
   link.click();
-  URL.revokeObjectURL(url);
+  window.setTimeout(() => URL.revokeObjectURL(url), 0);
 }
 export async function signIn(email: string, password: string): Promise<User> {
   const result = await post<{ accessToken: string }>("/auth/login", {
