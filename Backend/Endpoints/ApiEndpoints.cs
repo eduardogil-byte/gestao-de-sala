@@ -121,10 +121,16 @@ public static partial class ApiEndpoints
                 Roles = await manager.GetRolesAsync(user)
             });
         }).RequireAuthorization().WithTags("Autenticação");
-        app.MapGet("/api/teachers", async (UserManager<AppUser> manager) =>
+        app.MapGet("/api/teachers", async (ClaimsPrincipal current, UserManager<AppUser> manager) =>
         {
             var teachers = await manager.GetUsersInRoleAsync("Professor");
-            return Results.Ok(teachers.Select(u => new { u.Id, u.DisplayName, u.Email }));
+            var isAdmin = current.IsInRole("Admin");
+            return Results.Ok(teachers.Select(u => new
+            {
+                u.Id,
+                u.DisplayName,
+                Email = isAdmin ? u.Email : null
+            }));
         }).RequireAuthorization().WithTags("Professores");
     }
 

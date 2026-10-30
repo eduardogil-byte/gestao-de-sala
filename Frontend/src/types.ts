@@ -4,7 +4,7 @@ export type User = {
   email: string;
   roles: string[];
 };
-export type Teacher = { id: string; displayName: string; email: string };
+export type Teacher = { id: string; displayName: string; email: string | null };
 export type Shift = {
   id: number;
   name: string;

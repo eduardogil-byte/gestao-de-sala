@@ -1,0 +1,7 @@
+# SQL Server backup and database files (must stay outside source control).
+*.bak
+*.trn
+*.mdf
+*.ndf
+*.ldf
+*.tsbuildinfo
