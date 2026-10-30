@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import { useEffect, useId, useRef, type ReactNode } from "react";
 import {
   AlertCircle,
   CheckCircle2,
@@ -90,6 +90,7 @@ export function Badge({ status }: { status: string }) {
       className={`pill ${positive ? "bg-emerald-50 text-emerald-700" : negative ? "bg-red-50 text-red-700" : "bg-amber-50 text-amber-700"}`}
     >
       <span
+        aria-hidden="true"
         className={`w-1.5 h-1.5 rounded-full ${positive ? "bg-emerald-500" : negative ? "bg-red-500" : "bg-amber-500"}`}
       />
       {statusText(status)}
@@ -108,14 +109,15 @@ export function Notice({
   const success = type === "success";
   return (
     <div
-      role="alert"
+      role={type === "error" ? "alert" : "status"}
+      aria-live={type === "error" ? "assertive" : "polite"}
       className={`flex items-start gap-3 p-3.5 rounded-xl border text-sm ${success ? "border-emerald-200 bg-emerald-50 text-emerald-800" : type === "info" ? "border-blue-200 bg-blue-50 text-blue-800" : "border-rose-200 bg-rose-50 text-rose-800"}`}
     >
-      {success ? <CheckCircle2 size={18} /> : <AlertCircle size={18} />}
+      {success ? <CheckCircle2 aria-hidden="true" size={18} /> : <AlertCircle aria-hidden="true" size={18} />}
       <div className="flex-1">{message}</div>
       {onClose && (
-        <button aria-label="Fechar aviso" onClick={onClose}>
-          <X size={17} />
+        <button type="button" aria-label="Fechar aviso" onClick={onClose}>
+          <X aria-hidden="true" size={17} />
         </button>
       )}
     </div>
@@ -140,8 +142,8 @@ export function Empty({
 }
 export function Busy() {
   return (
-    <div className="flex items-center justify-center py-16 text-slate-500 gap-2">
-      <LoaderCircle size={22} className="animate-spin" />
+    <div role="status" aria-live="polite" aria-atomic="true" className="flex items-center justify-center py-16 text-slate-600 gap-2">
+      <LoaderCircle aria-hidden="true" size={22} className="animate-spin" />
       Carregando dados...
     </div>
   );
@@ -157,6 +159,57 @@ export function Modal({
   onClose: () => void;
   width?: string;
 }) {
+  const dialogRef = useRef<HTMLDivElement>(null);
+  const onCloseRef = useRef(onClose);
+  const titleId = useId();
+  onCloseRef.current = onClose;
+
+  useEffect(() => {
+    const previousFocus = document.activeElement instanceof HTMLElement
+      ? document.activeElement
+      : null;
+    const dialog = dialogRef.current;
+    const focusable = () => Array.from(dialog?.querySelectorAll<HTMLElement>(
+      'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])',
+    ) ?? []).filter((element) => element.getClientRects().length > 0);
+    const firstField = dialog?.querySelector<HTMLElement>(
+      'input:not([disabled]), select:not([disabled]), textarea:not([disabled])',
+    );
+    (firstField ?? focusable()[0] ?? dialog)?.focus();
+
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        onCloseRef.current();
+        return;
+      }
+      if (event.key !== "Tab") return;
+      const items = focusable();
+      if (items.length === 0) {
+        event.preventDefault();
+        dialog?.focus();
+        return;
+      }
+      const first = items[0];
+      const last = items[items.length - 1];
+      if (!dialog?.contains(document.activeElement)) {
+        event.preventDefault();
+        (event.shiftKey ? last : first).focus();
+      } else if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first.focus();
+      }
+    };
+    document.addEventListener("keydown", onKeyDown);
+    return () => {
+      document.removeEventListener("keydown", onKeyDown);
+      if (previousFocus?.isConnected) previousFocus.focus();
+    };
+  }, []);
+
   return (
     <div
       className="fixed inset-0 z-50 bg-slate-900/50 backdrop-blur-[2px] p-4 overflow-y-auto flex items-start md:items-center justify-center"
@@ -165,19 +218,22 @@ export function Modal({
       }}
     >
       <div
+        ref={dialogRef}
         role="dialog"
         aria-modal="true"
-        aria-label={title}
+        aria-labelledby={titleId}
+        tabIndex={-1}
         className={`bg-white rounded-2xl shadow-2xl w-full ${width} my-8`}
       >
         <div className="flex justify-between items-center border-b border-slate-100 px-6 py-4">
-          <h2 className="text-lg font-semibold">{title}</h2>
+          <h2 id={titleId} className="text-lg font-semibold">{title}</h2>
           <button
+            type="button"
             aria-label="Fechar"
             onClick={onClose}
             className="p-2 rounded-lg hover:bg-slate-100"
           >
-            <X size={19} />
+            <X aria-hidden="true" size={19} />
           </button>
         </div>
         <div className="p-6">{children}</div>
@@ -193,8 +249,8 @@ export function SubmitButton({
   children: ReactNode;
 }) {
   return (
-    <button type="submit" className="btn-primary" disabled={busy}>
-      {busy && <LoaderCircle size={16} className="animate-spin" />}
+    <button type="submit" className="btn-primary" disabled={busy} aria-busy={busy}>
+      {busy && <LoaderCircle aria-hidden="true" size={16} className="animate-spin" />}
       {children}
     </button>
   );

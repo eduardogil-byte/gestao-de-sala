@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   Bell,
   CalendarDays,
@@ -37,43 +37,22 @@ import { Notifications } from "./pages/Notifications";
 import { DataProvider, useData } from "./lib/data";
 import { post, read, tokenStore } from "./lib/api";
 import { localDate, nextDate, resultMessage } from "./lib/utils";
+import { getNavigationSections, type NavigationItem, type Page } from "./lib/navigation";
 import { Busy, Notice } from "./components/UI";
 import type { User, Occupation } from "./types";
 
-type Page =
-  | "dashboard"
-  | "agenda"
-  | "room-timeline"
-  | "opportunities"
-  | "imports"
-  | "exports"
-  | "instructor-agenda"
-  | "rooms"
-  | "academic"
-  | "pedagogical-catalog"
-  | "teachers"
-  | "schedules"
-  | "semester-planning"
-  | "bookings"
-  | "loans"
-  | "notifications";
-const nav: [Page, string, typeof LayoutDashboard][] = [
-  ["dashboard", "Visão geral", LayoutDashboard],
-  ["agenda", "Agenda", CalendarDays],
-  ["room-timeline", "Cronograma de Ambientes", CalendarDays],
-  ["opportunities", "Oportunidades de Ambientes", DoorOpen],
-  ["imports", "Importar Dados", FileSpreadsheet],
-  ["exports", "Exportar Dados", FileSpreadsheet],
-  ["instructor-agenda", "Minha Agenda", CalendarDays],
-  ["rooms", "Ambientes", DoorOpen],
-  ["academic", "Turmas e disciplinas", GraduationCap],
-  ["pedagogical-catalog", "Catálogo Pedagógico", Layers3],
-  ["teachers", "Professores", Users],
-  ["bookings", "Reservas", ClipboardList],
-  ["semester-planning", "Planejamento Semestral", CalendarDays],
-  ["loans", "Empréstimos", Handshake],
-  ["notifications", "Notificações", Bell],
-];
+const navIcons = {
+  dashboard: LayoutDashboard,
+  calendar: CalendarDays,
+  door: DoorOpen,
+  spreadsheet: FileSpreadsheet,
+  catalog: Layers3,
+  people: Users,
+  booking: ClipboardList,
+  loan: Handshake,
+  bell: Bell,
+  course: GraduationCap,
+} satisfies Record<NavigationItem["icon"], typeof LayoutDashboard>;
 
 function Workspace({ user, onLogout, institutionalNotice = "", institutionalError = "" }: { user: User; onLogout: () => void; institutionalNotice?: string; institutionalError?: string }) {
   const { data, loading, error, reload } = useData();
@@ -83,6 +62,8 @@ function Workspace({ user, onLogout, institutionalNotice = "", institutionalErro
   const [opportunityFilter, setOpportunityFilter] = useState<{ semesterId: number; roomId: number } | null>(null);
   const [exportFilter, setExportFilter] = useState<{ semesterId: number; secondSemesterId: number | null; roomId: number | null } | null>(null);
   const [menu, setMenu] = useState(false);
+  const menuButtonRef = useRef<HTMLButtonElement>(null);
+  const menuRef = useRef<HTMLElement>(null);
   const [occupations, setOccupations] = useState<Occupation[]>([]);
   const [agendaError, setAgendaError] = useState("");
   const [unread, setUnread] = useState(0);
@@ -140,6 +121,37 @@ function Workspace({ user, onLogout, institutionalNotice = "", institutionalErro
     }
   }
   const admin = user.roles.includes("Admin");
+  useEffect(() => {
+    if (!menu) return;
+    const menuElement = menuRef.current;
+    const focusable = () => Array.from(menuElement?.querySelectorAll<HTMLElement>(
+      'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])',
+    ) ?? []).filter((element) => element.getClientRects().length > 0);
+    menuElement?.querySelector<HTMLElement>("[aria-current='page']")?.focus();
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setMenu(false);
+        return;
+      }
+      if (event.key !== "Tab") return;
+      const items = focusable();
+      if (items.length === 0) return;
+      const first = items[0];
+      const last = items[items.length - 1];
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first.focus();
+      }
+    };
+    document.addEventListener("keydown", onKeyDown);
+    return () => {
+      document.removeEventListener("keydown", onKeyDown);
+      menuButtonRef.current?.focus();
+    };
+  }, [menu]);
   const reloadAgenda = useCallback(async () => {
     try {
       const from = localDate(new Date());
@@ -180,17 +192,22 @@ function Workspace({ user, onLogout, institutionalNotice = "", institutionalErro
     setPage("exports");
     window.scrollTo({ top: 0, behavior: "smooth" });
   };
-  const current = nav.find((n) => n[0] === page);
+  const navigation = getNavigationSections(admin);
+  const current = navigation.flatMap((section) => section.items).find((item) => item.page === page);
   return (
     <div className="min-h-screen bg-[#f7f9fc] flex">
       {menu && (
         <div
+          aria-hidden="true"
           className="fixed inset-0 bg-slate-900/60 z-30 lg:hidden"
           onClick={() => setMenu(false)}
         />
       )}
       <aside
-        className={`fixed top-0 bottom-0 left-0 z-40 w-[255px] bg-navy-900 text-white flex flex-col transition-transform lg:translate-x-0 ${menu ? "translate-x-0" : "-translate-x-full"}`}
+        id="primary-navigation"
+        ref={menuRef}
+        aria-label="Menu principal"
+        className={`fixed top-0 bottom-0 left-0 z-40 w-[255px] bg-navy-900 text-white flex flex-col transition-transform lg:translate-x-0 ${menu ? "visible translate-x-0" : "invisible -translate-x-full lg:visible"}`}
       >
         <div className="h-[83px] flex items-center justify-between px-6 border-b border-white/10">
           <div className="flex items-center gap-2.5">
@@ -202,6 +219,7 @@ function Workspace({ user, onLogout, institutionalNotice = "", institutionalErro
             </span>
           </div>
           <button
+            type="button"
             aria-label="Fechar menu"
             className="lg:hidden"
             onClick={() => setMenu(false)}
@@ -213,21 +231,32 @@ function Workspace({ user, onLogout, institutionalNotice = "", institutionalErro
           <p className="text-[11px] font-semibold tracking-[.15em] text-slate-400 px-4 mb-3 uppercase">
             Menu principal
           </p>
-          <nav className="space-y-1">
-            {nav
-              .filter(
-                (item) => admin || !["academic", "schedules", "opportunities", "imports", "exports"].includes(item[0]),
-              )
-              .map(([id, label, Icon]) => (
-                <button
-                  key={id}
-                  onClick={() => open(id)}
-                  className={`w-full flex items-center gap-3 rounded-xl px-4 py-3 text-[13px] text-left font-medium transition ${page === id ? "bg-skybrand-600 text-white shadow-lg shadow-sky-900/20" : "text-slate-300 hover:bg-white/10 hover:text-white"}`}
-                >
-                  <Icon size={19} />
-                  {id === "instructor-agenda" && admin ? "Agenda dos Instrutores" : label}
-                </button>
-              ))}
+          <nav aria-label="Navegação principal" className="space-y-5">
+            {navigation.map((section) => (
+              <section key={section.title} aria-label={section.title}>
+                <p className="text-[11px] font-semibold tracking-[.12em] text-slate-400 px-4 mb-2 uppercase">
+                  {section.title}
+                </p>
+                <div className="space-y-1">
+                  {section.items.map((item) => {
+                    const Icon = navIcons[item.icon];
+                    const active = page === item.page;
+                    return (
+                      <button
+                        type="button"
+                        key={item.page}
+                        aria-current={active ? "page" : undefined}
+                        onClick={() => open(item.page)}
+                        className={`w-full flex items-center gap-3 rounded-xl px-4 py-3 text-[13px] text-left font-medium transition ${active ? "bg-skybrand-600 text-white shadow-lg shadow-sky-900/20" : "text-slate-300 hover:bg-white/10 hover:text-white"}`}
+                      >
+                        <Icon aria-hidden="true" size={19} />
+                        {item.teacherLabel && !admin ? item.teacherLabel : item.label}
+                      </button>
+                    );
+                  })}
+                </div>
+              </section>
+            ))}
           </nav>
         </div>
         <div className="px-4 pb-5">
@@ -268,10 +297,14 @@ function Workspace({ user, onLogout, institutionalNotice = "", institutionalErro
       </aside>
       <div className="flex-1 min-w-0 lg:pl-[255px]">
         <header className="h-[83px] bg-white border-b border-slate-200/80 px-5 md:px-9 flex items-center justify-between gap-3 sticky top-0 z-20">
-          <div className="flex items-center gap-3">
+          <div className="flex min-w-0 items-center gap-3">
             <button
+              type="button"
+              ref={menuButtonRef}
               className="lg:hidden p-2 text-slate-600"
               aria-label="Abrir menu"
+              aria-expanded={menu}
+              aria-controls="primary-navigation"
               onClick={() => setMenu(true)}
             >
               <Menu size={23} />
@@ -280,8 +313,8 @@ function Workspace({ user, onLogout, institutionalNotice = "", institutionalErro
               <p className="text-[11px] uppercase font-bold tracking-wide text-slate-400">
                 Plataforma institucional
               </p>
-              <p className="text-sm font-semibold text-slate-700 mt-1">
-                {page === "instructor-agenda" && admin ? "Agenda dos Instrutores" : current?.[1] || "Painel"}
+              <p className="text-sm font-semibold text-slate-700 mt-1 truncate max-w-[42vw] sm:max-w-none">
+                {(current?.teacherLabel && !admin ? current.teacherLabel : current?.label) || "Painel"}
               </p>
             </div>
           </div>
