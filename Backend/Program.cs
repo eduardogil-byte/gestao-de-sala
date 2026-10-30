@@ -1,5 +1,7 @@
 using System.Text.Json.Serialization;
 using Microsoft.AspNetCore.Authentication;
+using Microsoft.AspNetCore.Authentication.Cookies;
+using Microsoft.AspNetCore.Authentication.OpenIdConnect;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.OpenApi.Models;
@@ -10,13 +12,78 @@ using SalaGest.Api.Services;
 
 var builder = WebApplication.CreateBuilder(args);
 
+var institutionalSso = builder.Configuration.GetSection("Authentication:InstitutionalSso")
+    .Get<InstitutionalSsoOptions>() ?? new InstitutionalSsoOptions();
+if (institutionalSso.Enabled) institutionalSso.Validate(builder.Environment.IsDevelopment());
+builder.Services.Configure<InstitutionalSsoOptions>(
+    builder.Configuration.GetSection("Authentication:InstitutionalSso"));
+builder.Services.AddSingleton<InstitutionalLoginTickets>();
+
 builder.Services.AddDbContext<AppDbContext>(options =>
     options.UseSqlServer(builder.Configuration.GetConnectionString("DefaultConnection")
         ?? throw new InvalidOperationException("ConnectionStrings:DefaultConnection não configurada"),
         sql => sql.UseCompatibilityLevel(120)));
 
-builder.Services.AddAuthentication(IdentityConstants.BearerScheme)
+var authentication = builder.Services.AddAuthentication(IdentityConstants.BearerScheme)
     .AddBearerToken(IdentityConstants.BearerScheme);
+if (institutionalSso.Enabled)
+{
+    authentication.AddCookie(IdentityConstants.ExternalScheme, options =>
+    {
+        options.Cookie.Name = "SalaGest.External";
+        options.Cookie.HttpOnly = true;
+        options.Cookie.SecurePolicy = CookieSecurePolicy.Always;
+        options.Cookie.SameSite = SameSiteMode.None;
+        options.ExpireTimeSpan = TimeSpan.FromMinutes(5);
+        options.SlidingExpiration = false;
+    }).AddOpenIdConnect("InstitutionalOidc", options =>
+    {
+        options.Authority = institutionalSso.Authority;
+        options.ClientId = institutionalSso.ClientId;
+        options.ClientSecret = institutionalSso.ClientSecret;
+        options.SignInScheme = IdentityConstants.ExternalScheme;
+        options.CallbackPath = institutionalSso.CallbackPath;
+        options.RequireHttpsMetadata = true;
+        options.ResponseType = "code";
+        options.UsePkce = true;
+        options.SaveTokens = false;
+        options.GetClaimsFromUserInfoEndpoint = false;
+        options.MapInboundClaims = false;
+        options.Scope.Clear();
+        options.Scope.Add("openid");
+        options.TokenValidationParameters.ValidateIssuer = true;
+        options.TokenValidationParameters.ValidateAudience = true;
+        options.TokenValidationParameters.ValidAudience = institutionalSso.ClientId;
+        options.TokenValidationParameters.NameClaimType = "name";
+        options.Events = new OpenIdConnectEvents
+        {
+            OnTokenValidated = context =>
+            {
+                var issuer = context.SecurityToken.Issuer;
+                var subject = context.Principal?.FindFirst("sub")?.Value;
+                if (string.IsNullOrWhiteSpace(issuer) || string.IsNullOrWhiteSpace(subject))
+                {
+                    context.Fail("A identidade institucional não contém issuer e subject válidos.");
+                    return Task.CompletedTask;
+                }
+                if (context.Principal?.Identity is not System.Security.Claims.ClaimsIdentity identity)
+                {
+                    context.Fail("A identidade institucional não pôde ser validada.");
+                    return Task.CompletedTask;
+                }
+                identity.AddClaim(new System.Security.Claims.Claim("salagest:validated-issuer", issuer));
+                return Task.CompletedTask;
+            },
+            OnRemoteFailure = context =>
+            {
+                context.HandleResponse();
+                context.Response.Redirect(Microsoft.AspNetCore.WebUtilities.QueryHelpers.AddQueryString(
+                    institutionalSso.FrontendCallbackUrl!, "ssoError", "provider"));
+                return Task.CompletedTask;
+            },
+        };
+    });
+}
 builder.Services.AddIdentityCore<AppUser>(options =>
     {
         options.User.RequireUniqueEmail = true;

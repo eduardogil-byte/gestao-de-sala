@@ -1,5 +1,5 @@
 import { PasswordInput } from "../components/PasswordInput";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   ArrowRight,
   CalendarDays,
@@ -9,18 +9,24 @@ import {
   Layers3,
 } from "lucide-react";
 import type { User } from "../types";
-import { register, signIn } from "../lib/api";
+import { read, register, signIn } from "../lib/api";
 import { resultMessage } from "../lib/utils";
 import { Field, Notice } from "../components/UI";
 
-export function Access({ onLogin }: { onLogin: (user: User) => void }) {
+export function Access({ onLogin, initialMessage = "" }: { onLogin: (user: User) => void; initialMessage?: string }) {
   const [mode, setMode] = useState<"login" | "register">("login");
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
-  const [message, setMessage] = useState("");
+  const [message, setMessage] = useState(initialMessage);
   const [busy, setBusy] = useState(false);
+  const [ssoEnabled, setSsoEnabled] = useState(false);
+  useEffect(() => {
+    void read<{ enabled: boolean }>("/auth/institutional/config")
+      .then((config) => setSsoEnabled(config.enabled === true))
+      .catch(() => setSsoEnabled(false));
+  }, []);
   async function submit(e: React.FormEvent) {
     e.preventDefault();
     setBusy(true);
@@ -148,6 +154,12 @@ export function Access({ onLogin }: { onLogin: (user: User) => void }) {
               <ArrowRight size={17} />
             </button>
           </form>
+          {mode === "login" && ssoEnabled && <div className="mt-4">
+            <button type="button" disabled={busy} className="btn-secondary w-full !py-3"
+              onClick={() => { setBusy(true); window.location.assign("/api/auth/institutional/login"); }}>
+              Entrar com conta institucional
+            </button>
+          </div>}
           <div className="mt-6 text-center text-sm text-slate-500">
             {mode === "login"
               ? "É professor e ainda não tem conta?"

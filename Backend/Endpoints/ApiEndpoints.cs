@@ -32,6 +32,7 @@ public static partial class ApiEndpoints
         MapRoomOpportunities(app);
         MapInstitutionalImport(app);
         MapInstitutionalExports(app);
+        MapInstitutionalAuthentication(app);
         MapAudit(app);
     }
 

@@ -8,6 +8,7 @@ import {
   GraduationCap,
   Handshake,
   LayoutDashboard,
+  Link2,
   FileSpreadsheet,
   Layers3,
   LogOut,
@@ -34,7 +35,7 @@ import { Bookings } from "./pages/Bookings";
 import { Loans } from "./pages/Loans";
 import { Notifications } from "./pages/Notifications";
 import { DataProvider, useData } from "./lib/data";
-import { read, tokenStore } from "./lib/api";
+import { post, read, tokenStore } from "./lib/api";
 import { localDate, nextDate, resultMessage } from "./lib/utils";
 import { Busy, Notice } from "./components/UI";
 import type { User, Occupation } from "./types";
@@ -74,7 +75,7 @@ const nav: [Page, string, typeof LayoutDashboard][] = [
   ["notifications", "Notificações", Bell],
 ];
 
-function Workspace({ user, onLogout }: { user: User; onLogout: () => void }) {
+function Workspace({ user, onLogout, institutionalNotice = "", institutionalError = "" }: { user: User; onLogout: () => void; institutionalNotice?: string; institutionalError?: string }) {
   const { data, loading, error, reload } = useData();
   const [page, setPage] = useState<Page>("dashboard");
   const [related, setRelated] = useState<{ page: Page; id: number } | null>(null);
@@ -85,6 +86,11 @@ function Workspace({ user, onLogout }: { user: User; onLogout: () => void }) {
   const [occupations, setOccupations] = useState<Occupation[]>([]);
   const [agendaError, setAgendaError] = useState("");
   const [unread, setUnread] = useState(0);
+  const [ssoEnabled, setSsoEnabled] = useState(false);
+  const [linkBusy, setLinkBusy] = useState(false);
+  const [linking, setLinking] = useState(false);
+  const [linkPassword, setLinkPassword] = useState("");
+  const [linkError, setLinkError] = useState("");
   useEffect(() => {
     let active = true;
     const refresh = async () => {
@@ -108,6 +114,31 @@ function Workspace({ user, onLogout }: { user: User; onLogout: () => void }) {
       window.removeEventListener("focus", refresh);
     };
   }, []);
+  useEffect(() => {
+    let active = true;
+    void read<{ enabled: boolean }>("/auth/institutional/config")
+      .then((config) => { if (active) setSsoEnabled(config.enabled === true); })
+      .catch(() => { if (active) setSsoEnabled(false); });
+    return () => { active = false; };
+  }, []);
+  async function beginInstitutionalLink() {
+    if (linkBusy || !linkPassword) return;
+    setLinkBusy(true); setLinkError("");
+    try {
+      const { ticket } = await post<{ ticket: string }>("/auth/institutional/link/start", { password: linkPassword });
+      setLinkPassword("");
+      const form = document.createElement("form");
+      form.method = "post";
+      form.action = "/api/auth/institutional/link";
+      const input = document.createElement("input");
+      input.type = "hidden"; input.name = "ticket"; input.value = ticket;
+      form.append(input); document.body.append(form); form.submit();
+    } catch (reason) {
+      setLinkError(resultMessage(reason));
+      setLinkPassword("");
+      setLinkBusy(false);
+    }
+  }
   const admin = user.roles.includes("Admin");
   const reloadAgenda = useCallback(async () => {
     try {
@@ -212,6 +243,26 @@ function Workspace({ user, onLogout }: { user: User; onLogout: () => void }) {
               <LogOut size={14} />
               Sair da conta
             </button>
+            {ssoEnabled && !linking && <button type="button"
+              className="mt-3 flex items-center text-xs font-semibold gap-2 text-slate-300 hover:text-white"
+              onClick={() => { setLinkError(""); setLinking(true); }}>
+              <Link2 size={14} />Vincular conta institucional
+            </button>}
+            {ssoEnabled && linking && <div className="mt-3 space-y-2">
+              <label className="block text-xs text-slate-300" htmlFor="institutional-link-password">Confirme sua senha local</label>
+              <input id="institutional-link-password" type="password" autoComplete="current-password"
+                className="w-full rounded-lg px-2 py-2 text-sm text-slate-900" value={linkPassword}
+                onChange={(event) => setLinkPassword(event.target.value)} disabled={linkBusy} />
+              <div className="flex gap-2">
+                <button type="button" className="text-xs underline text-slate-300" disabled={linkBusy}
+                  onClick={() => { setLinking(false); setLinkPassword(""); setLinkError(""); }}>Cancelar</button>
+                <button type="button" className="text-xs font-semibold text-white underline disabled:opacity-60"
+                  disabled={linkBusy || !linkPassword} onClick={() => void beginInstitutionalLink()}>
+                  {linkBusy ? "Abrindo provedor..." : "Continuar"}
+                </button>
+              </div>
+            </div>}
+            {linkError && <p role="alert" className="mt-2 text-xs text-rose-200">{linkError}</p>}
           </div>
         </div>
       </aside>
@@ -279,6 +330,8 @@ function Workspace({ user, onLogout }: { user: User; onLogout: () => void }) {
           </div>
         </header>
         <main className="max-w-[1500px] mx-auto p-5 md:p-8 lg:p-9">
+          {institutionalNotice && <div className="mb-5"><Notice type="success" message={institutionalNotice} /></div>}
+          {institutionalError && <div className="mb-5"><Notice type="error" message={institutionalError} /></div>}
           {error && (
             <div className="mb-5">
               <Notice type="error" message={error} />
@@ -346,23 +399,64 @@ function Workspace({ user, onLogout }: { user: User; onLogout: () => void }) {
 export default function App() {
   const [user, setUser] = useState<User | null>(null);
   const [starting, setStarting] = useState(true);
+  const [authMessage, setAuthMessage] = useState("");
+  const [institutionalNotice, setInstitutionalNotice] = useState("");
   const logout = useCallback(() => {
     tokenStore.clear();
     setUser(null);
   }, []);
+  const acceptLogin = useCallback((profile: User) => {
+    setAuthMessage("");
+    setUser(profile);
+  }, []);
   useEffect(() => {
-    const onInvalid = () => logout();
+    let active = true;
+    const onInvalid = () => {
+      logout();
+      setAuthMessage("Sua sessão expirou ou foi invalidada. Entre novamente.");
+    };
     window.addEventListener("salagest:unauthorized", onInvalid);
-    if (!tokenStore.get()) {
-      setStarting(false);
-    } else {
-      read<User>("/me")
-        .then(setUser)
-        .catch(() => logout())
-        .finally(() => setStarting(false));
+    const params = new URLSearchParams(window.location.search);
+    const fragment = new URLSearchParams(window.location.hash.replace(/^#/, ""));
+    const code = fragment.get("ssoCode") ?? params.get("ssoCode");
+    const ssoError = params.get("ssoError");
+    const linked = params.get("ssoLinked") === "1";
+    if (code || ssoError || linked) {
+      params.delete("ssoCode"); params.delete("ssoError"); params.delete("ssoLinked");
+      fragment.delete("ssoCode");
+      const query = params.toString();
+      window.history.replaceState({}, document.title,
+        `${window.location.pathname}${query ? `?${query}` : ""}${fragment.size ? `#${fragment}` : ""}`);
     }
-    return () => window.removeEventListener("salagest:unauthorized", onInvalid);
-  }, [logout]);
+    if (ssoError) {
+      setAuthMessage(({ provider: "O provedor institucional não concluiu a autenticação.",
+        identity: "O provedor não retornou uma identidade válida.",
+        unlinked: "A identidade foi autenticada, mas não está vinculada a uma conta autorizada do SalaGest. Procure a administração.",
+        link: "Não foi possível vincular a identidade. Ela pode já estar associada a outra conta; procure a administração." } as Record<string, string>)[ssoError] ?? "Não foi possível concluir a autenticação institucional.");
+    }
+    if (linked) setInstitutionalNotice("Conta institucional vinculada a este usuário do SalaGest.");
+    const establishUser = async () => {
+      try {
+        if (code) {
+          const result = await post<{ accessToken: string }>("/auth/institutional/exchange", { code });
+          if (!result?.accessToken) throw new Error("O SalaGest não retornou uma sessão válida.");
+          tokenStore.set(result.accessToken);
+        }
+        const current = tokenStore.get();
+        if (current) {
+          const profile = await read<User>("/me");
+          if (active) acceptLogin(profile);
+        }
+      } catch (reason) {
+        tokenStore.clear();
+        if (active && code) setAuthMessage(resultMessage(reason));
+        else if (active) logout();
+      } finally { if (active) setStarting(false); }
+    };
+    if (code || tokenStore.get()) void establishUser();
+    else setStarting(false);
+    return () => { active = false; window.removeEventListener("salagest:unauthorized", onInvalid); };
+  }, [acceptLogin, logout]);
   if (starting)
     return (
       <div className="min-h-screen flex items-center justify-center">
@@ -371,9 +465,9 @@ export default function App() {
     );
   return user ? (
     <DataProvider>
-      <Workspace user={user} onLogout={logout} />
+      <Workspace user={user} onLogout={logout} institutionalNotice={institutionalNotice} institutionalError={authMessage} />
     </DataProvider>
   ) : (
-    <Access onLogin={setUser} />
+    <Access onLogin={acceptLogin} initialMessage={authMessage} />
   );
 }
