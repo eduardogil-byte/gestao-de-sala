@@ -5,7 +5,7 @@ import { agendaPath, datesBetween, indexOccupations, isAgendaOccupation, movePer
 import { dateBR, localDate, nextDate, resultMessage } from "../lib/utils";
 import { Busy, Card, Field, Modal, Notice, Title } from "../components/UI";
 import { AuditHistory } from "../components/AuditHistory";
-import type { AgendaOccupation, OccupationMovePreview, User } from "../types";
+import type { AgendaOccupation, OccupationBlockMovePreview, OccupationMovePreview, User } from "../types";
 
 const calendarLabels: Record<string, string> = {
   Presential: "Presencial", Ead: "EAD", Holiday: "Feriado", Recess: "Recesso",
@@ -72,6 +72,13 @@ export function RoomTimeline({ user, openBookings, initialFilter }: { user: User
   const [moveBusy, setMoveBusy] = useState(false);
   const [moveError, setMoveError] = useState("");
   const [moveSuccess, setMoveSuccess] = useState("");
+  const [blockItem, setBlockItem] = useState<AgendaOccupation | null>(null);
+  const [blockRoomId, setBlockRoomId] = useState("");
+  const [blockStartDate, setBlockStartDate] = useState("");
+  const [blockReason, setBlockReason] = useState("");
+  const [blockPreview, setBlockPreview] = useState<OccupationBlockMovePreview | null>(null);
+  const [blockBusy, setBlockBusy] = useState(false);
+  const [blockError, setBlockError] = useState("");
   const [reversal, setReversal] = useState<{ item: AgendaOccupation; changeId: number; action: "undo" | "redo" } | null>(null);
   const [reversalPreview, setReversalPreview] = useState<ReversalPreview | null>(null);
   const [reversalBusy, setReversalBusy] = useState(false);
@@ -221,6 +228,45 @@ export function RoomTimeline({ user, openBookings, initialFilter }: { user: User
     } finally {
       setMoveBusy(false);
     }
+  }
+  function beginBlockMove(item: AgendaOccupation) {
+    if (!admin || item.kind === "Bloqueio" || !item.planProposalId) return;
+    setSelected(null);
+    setBlockItem(item);
+    setBlockRoomId(String(item.roomId));
+    setBlockStartDate(item.date);
+    setBlockReason("");
+    setBlockPreview(null);
+    setBlockError("");
+  }
+  async function requestBlockPreview() {
+    if (!blockItem || !blockRoomId || !blockStartDate || blockBusy) return;
+    setBlockBusy(true); setBlockError(""); setBlockPreview(null);
+    try {
+      const result = await post<OccupationBlockMovePreview>(
+        `/occupations/${blockItem.id}/block-move-preview`,
+        { roomId: Number(blockRoomId), startDate: blockStartDate });
+      setBlockPreview(result);
+    } catch (reason) { setBlockError(resultMessage(reason)); }
+    finally { setBlockBusy(false); }
+  }
+  async function confirmBlockMove() {
+    if (!blockItem || !blockPreview?.allowed || blockBusy ||
+        blockPreview.destinationRoomId !== Number(blockRoomId) ||
+        blockPreview.requestedStartDate !== blockStartDate) return;
+    setBlockBusy(true); setBlockError("");
+    try {
+      await post(`/occupations/${blockItem.id}/block-move`, {
+        roomId: Number(blockRoomId), startDate: blockStartDate,
+        expectedSignature: blockPreview.signature, confirm: true,
+        reason: blockReason.trim() || null,
+      });
+      setBlockItem(null); setOperationError("");
+      setMoveSuccess("Bloco pedagógico remanejado. Todas as ocorrências foram atualizadas.");
+      setRevision((value) => value + 1);
+    } catch (reason) {
+      setBlockError(resultMessage(reason)); setRevision((value) => value + 1);
+    } finally { setBlockBusy(false); }
   }
   async function beginReversal(item: AgendaOccupation, changeId: number, action: "undo" | "redo") {
     if (!admin) return;
@@ -399,7 +445,10 @@ export function RoomTimeline({ user, openBookings, initialFilter }: { user: User
         ["Conflitos", selected.conflicts.length ? selected.conflicts.map((reason) => conflictLabels[reason] ?? "Inconsistência sinalizada").join(", ") : "Nenhum sinalizado"]
       ] as [string, string][]).map(([label, value]) => <div key={label}><dt className="font-semibold text-slate-600">{label}</dt><dd className="text-slate-800">{value}</dd></div>)}</dl>
       {(admin || selected.originalTeacherId === user.id) && <div className="mt-5 border-t border-slate-200 pt-4"><h3 className="font-semibold mb-2">Histórico de alterações</h3><AuditHistory type="Occupation" id={selected.id} onReverse={admin ? (changeId, action) => void beginReversal(selected, changeId, action) : undefined} /></div>}
-      {admin && selected.kind !== "Bloqueio" && <button type="button" className="btn-primary mt-5" onClick={() => beginMove(selected)}>Mover ocupação</button>}
+      {admin && selected.kind !== "Bloqueio" && <div className="mt-5 flex flex-wrap gap-2">
+        <button type="button" className="btn-secondary" onClick={() => beginMove(selected)}>Mover ocupação</button>
+        {selected.planProposalId != null && <button type="button" className="btn-primary" onClick={() => beginBlockMove(selected)}>Mover bloco completo</button>}
+      </div>}
     </Modal>}
     {reversal && <Modal title={reversal.action === "undo" ? "Desfazer movimentação" : "Refazer movimentação"} onClose={() => { if (!reversalBusy) setReversal(null); }}>
       <div className="space-y-3 text-sm">
@@ -421,7 +470,48 @@ export function RoomTimeline({ user, openBookings, initialFilter }: { user: User
         </div>
       </div>
     </Modal>}
-    {moveItem && <Modal title="Remanejar ocupação" onClose={() => { if (!moveBusy) { previewRequest.current++; setMoveItem(null); } }}>
+    {blockItem && <Modal title="Mover bloco pedagógico" onClose={() => { if (!blockBusy) setBlockItem(null); }}>
+      <div className="space-y-4 text-sm">
+        <p><strong>{blockItem.actualTeacherName ?? "Professor não informado"}</strong>{blockItem.actualClassGroupName ? ` · ${blockItem.actualClassGroupName}` : ""}</p>
+        <p>{blockItem.courseName ?? "Curso"} · {blockItem.curricularUnitName ?? "UC não identificada"} · {blockItem.shiftName ?? "Turno não identificado"}</p>
+        <p className="text-slate-600">A análise considera somente a oferta publicada e suas capacidades vinculadas. A prévia não altera dados nem garante reserva.</p>
+        <div className="grid sm:grid-cols-2 gap-3">
+          <Field label="Ambiente de destino"><select className="field" value={blockRoomId} disabled={blockBusy}
+            onChange={(event) => { setBlockRoomId(event.target.value); setBlockPreview(null); }}>
+            {data.rooms.map((room) => <option key={room.id} value={room.id}>{room.name}</option>)}
+          </select></Field>
+          <Field label="Nova data inicial (dia da atribuição)"><input type="date" className="field" value={blockStartDate} disabled={blockBusy}
+            onChange={(event) => { setBlockStartDate(event.target.value); setBlockPreview(null); }} /></Field>
+        </div>
+        <Field label="Motivo (opcional)"><input className="field" maxLength={500} value={blockReason} disabled={blockBusy} onChange={(event) => setBlockReason(event.target.value)} /></Field>
+        {blockError && <Notice message={blockError} />}
+        {blockBusy && <p role="status">Analisando ou confirmando o bloco...</p>}
+        {blockPreview && blockPreview.requestedStartDate === blockStartDate && blockPreview.destinationRoomId === Number(blockRoomId) && <section className="rounded-xl border border-slate-200 p-4 space-y-3" aria-label="Prévia da movimentação do bloco">
+          <h3 className="font-semibold">Prévia · {blockPreview.allowed ? "Movimentação permitida" : "Movimentação impedida"}</h3>
+          <p>Destino: {blockPreview.destinationRoomName} · início solicitado: {dateBR(blockPreview.requestedStartDate)} · {blockPreview.shiftName}</p>
+          <p>{blockPreview.capabilities.reduce((sum, capability) => sum + capability.requiredMeetings, 0)} encontros · {blockPreview.affectedOccupationIds.length} ocorrências afetadas</p>
+          <div className="space-y-3">
+            {blockPreview.capabilities.map((capability) => <article key={capability.capabilityId} className="border-t border-slate-200 pt-3">
+              <h4 className="font-semibold">{capability.order}. {capability.description}</h4>
+              <p>CH pedagógica: {capability.pedagogicalHours} h · encontros: {capability.requiredMeetings} · ocupação física estimada: {capability.physicalHours} h</p>
+              <p>Ambiente(s) atual(is): {capability.previousRoomIds.map((id) => data.rooms.find((room) => room.id === id)?.name ?? `Ambiente ${id}`).join(", ") || "não identificado"}</p>
+              <p>Antes: {capability.previousDates.map(dateBR).join(", ") || "sem datas"}</p>
+              <p>Depois: {capability.newDates.map(dateBR).join(", ") || "nenhuma data calculada"}</p>
+              {capability.technicalFindings.map((finding, index) => <p key={`${finding.requirement}-${index}`}>{finding.status}: {finding.detail}</p>)}
+            </article>)}
+          </div>
+          {blockPreview.blocks.map((block) => <p key={block} role="alert" className="text-rose-700">Impedimento: {block}</p>)}
+          {blockPreview.warnings.map((warning) => <p key={warning} className="text-amber-800">Atenção: {warning}</p>)}
+        </section>}
+        <div className="flex flex-wrap gap-2 justify-end">
+          <button type="button" className="btn-secondary" disabled={blockBusy} onClick={() => setBlockItem(null)}>Cancelar</button>
+          <button type="button" className="btn-secondary" disabled={blockBusy || !blockRoomId || !blockStartDate} onClick={() => void requestBlockPreview()}>Consultar prévia</button>
+          <button type="button" className="btn-primary" disabled={blockBusy || !blockPreview?.allowed || blockPreview.requestedStartDate !== blockStartDate || blockPreview.destinationRoomId !== Number(blockRoomId)} onClick={() => void confirmBlockMove()}>
+            {blockBusy ? "Processando..." : "Confirmar movimentação do bloco"}
+          </button>
+        </div>
+      </div>
+    </Modal>}    {moveItem && <Modal title="Remanejar ocupação" onClose={() => { if (!moveBusy) { previewRequest.current++; setMoveItem(null); } }}>
       <div className="space-y-4 text-sm">
         <p><strong>{moveItem.actualTeacherName ?? "Professor não informado"}</strong>{moveItem.actualClassGroupName ? ` · ${moveItem.actualClassGroupName}` : ""}</p>
         <p><strong>Origem:</strong> {moveItem.roomName} · {dateBR(moveItem.date)} · {moveItem.shiftName ?? "Turno não identificado"}</p>

@@ -8,10 +8,12 @@ public static class ReservationRules
 {
     public static async Task<string?> ConflictAsync(AppDbContext db, int roomId,
         DateTime start, DateTime end, string? teacherId, int? classId,
-        int? exceptOccupationId = null)
+        int? exceptOccupationId = null, IReadOnlyCollection<int>? exceptOccupationIds = null)
     {
+        var excludedIds = exceptOccupationIds?.ToArray();
         var occupied = await db.Occupations.Where(o => o.StartsAt < end && start < o.EndsAt
-            && o.CancelledAtUtc == null && (exceptOccupationId == null || o.Id != exceptOccupationId)).ToListAsync();
+            && o.CancelledAtUtc == null && (exceptOccupationId == null || o.Id != exceptOccupationId) &&
+            (excludedIds == null || !excludedIds.Contains(o.Id))).ToListAsync();
         var ids = occupied.Select(o => o.Id).ToArray();
         var loans = await db.Loans.Include(l => l.BookingRequest)
             .Where(l => l.Status == LoanStatus.Aprovado && ids.Contains(l.RoomOccupationId)).ToListAsync();

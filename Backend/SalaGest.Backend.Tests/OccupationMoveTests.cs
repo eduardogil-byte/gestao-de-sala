@@ -3,6 +3,7 @@ using System.Net.Http.Json;
 using System.Security.Claims;
 using System.Text.Encodings.Web;
 using Microsoft.AspNetCore.Authentication;
+using Microsoft.AspNetCore.DataProtection;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.TestHost;
@@ -524,6 +525,134 @@ public sealed class OccupationMoveTests
         Assert.Contains("Bloqueios", blocked.GetProperty("blocks").ToString());
     }
 
+    [Fact]
+    public async Task PublishedBlockPreviewIsReadOnlyAndConfirmationMovesWholeOfferWithHistory()
+    {
+        await using var host = await Host.CreateAsync();
+        var preview = await host.BlockPreview(host.BlockOccupationId, host.RoomBId, new(2027, 4, 5));
+        Assert.True(preview.GetProperty("allowed").GetBoolean());
+        Assert.Single(preview.GetProperty("capabilities").EnumerateArray());
+        Assert.Equal("2027-04-05", preview.GetProperty("capabilities")[0]
+            .GetProperty("newDates")[0].GetString());
+        await host.AssertOccupation(host.BlockOccupationId, host.RoomAId, new(2027, 3, 29, 8, 0, 0));
+        Assert.Equal(HttpStatusCode.OK,
+            (await host.ConfirmBlock(host.BlockOccupationId, preview, host.RoomBId, new(2027, 4, 5))).StatusCode);
+        await host.AssertOccupation(host.BlockOccupationId, host.RoomBId, new(2027, 4, 5, 8, 0, 0));
+        using var scope = host.App.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+        Assert.Equal(new DateOnly(2027, 4, 5), (await db.PlanProposals.SingleAsync()).StartDate);
+        Assert.Equal("BlocoRemanejado", (await db.OccupationChanges.SingleAsync()).Action);
+        Assert.Single(await db.AuditEntries.Where(a => a.Action == "BlocoRemanejado").ToListAsync());
+        Assert.Single(await db.Notifications.Where(n => n.Subject == "Bloco pedagógico remanejado").ToListAsync());
+    }
+
+    [Fact]
+    public async Task BlockMoveRejectsConflictAndProfessorCannotUseAdministrativeRoute()
+    {
+        await using var host = await Host.CreateAsync();
+        var preview = await host.BlockPreview(host.BlockOccupationId, host.RoomBId, new(2027, 4, 5));
+        using (var scope = host.App.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+            db.Occupations.Add(new RoomOccupation { RoomId = host.RoomBId,
+                StartsAt = new(2027, 4, 5, 8, 0, 0), EndsAt = new(2027, 4, 5, 12, 0, 0),
+                Kind = OccupationKind.Avulsa, TeacherId = "teacher2" });
+            await db.SaveChangesAsync();
+        }
+        var changed = await host.BlockPreview(host.BlockOccupationId, host.RoomBId, new(2027, 4, 5));
+        Assert.False(changed.GetProperty("allowed").GetBoolean());
+        Assert.Equal(HttpStatusCode.Conflict,
+            (await host.ConfirmBlock(host.BlockOccupationId, preview, host.RoomBId, new(2027, 4, 5))).StatusCode);
+        await host.AssertOccupation(host.BlockOccupationId, host.RoomAId, new(2027, 3, 29, 8, 0, 0));
+        host.AsTeacher();
+        Assert.Equal(HttpStatusCode.Forbidden, (await host.Client.PostAsJsonAsync(
+            $"/api/occupations/{host.BlockOccupationId}/block-move-preview",
+            new OccupationBlockMoveInput(host.RoomBId, new(2027, 4, 5)))).StatusCode);
+    }
+
+    [Fact]
+    public async Task BlockPreviewKeepsCapabilitiesOrderedAndAllocatesEachRequiredMeeting()
+    {
+        await using var host = await Host.CreateAsync();
+        using (var scope = host.App.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+            var first = await db.PlanProposals.Include(p => p.Assignment).SingleAsync();
+            var firstCapability = await db.CurricularCapabilities.SingleAsync(c => c.Id == first.CurricularCapabilityId);
+            firstCapability.RequiredHours = 8;
+            var wednesday = new TeachingAssignment { ClassGroupId = first.Assignment.ClassGroupId,
+                TeacherId = first.Assignment.TeacherId, CurricularUnitId = first.Assignment.CurricularUnitId,
+                DisciplineName = first.Assignment.DisciplineName, Weekday = 3, PreferredShiftId = host.MorningId };
+            db.Assignments.Add(wednesday);
+            var capability = new CurricularCapability { CurricularUnitId = first.Assignment.CurricularUnitId!.Value,
+                Description = "Capacidade seguinte", NormalizedDescription = "CAPACIDADE SEGUINTE",
+                Contents = "Conteúdo", RequiredHours = 8, Order = 2 };
+            db.CurricularCapabilities.Add(capability);
+            db.CapabilityEnvironmentRequirements.Add(new CapabilityEnvironmentRequirement
+                { CurricularCapability = capability, RoomKind = RoomKind.Laboratorio });
+            var firstWednesday = new PlanProposal { SemesterPlanId = first.SemesterPlanId,
+                Assignment = wednesday, CurricularCapabilityId = firstCapability.Id,
+                RoomId = host.RoomAId, ShiftId = host.MorningId,
+                StartDate = new(2027, 3, 31), EndDate = new(2027, 3, 31),
+                CreatedById = "admin", Status = PlanProposalStatus.Publicada };
+            var mondayProposal = new PlanProposal { SemesterPlanId = first.SemesterPlanId,
+                AssignmentId = first.AssignmentId, CurricularCapability = capability,
+                RoomId = host.RoomAId, ShiftId = host.MorningId,
+                StartDate = new(2027, 4, 5), EndDate = new(2027, 4, 5),
+                CreatedById = "admin", Status = PlanProposalStatus.Publicada };
+            var wednesdayProposal = new PlanProposal { SemesterPlanId = first.SemesterPlanId,
+                Assignment = wednesday, CurricularCapability = capability,
+                RoomId = host.RoomAId, ShiftId = host.MorningId,
+                StartDate = new(2027, 4, 7), EndDate = new(2027, 4, 7),
+                CreatedById = "admin", Status = PlanProposalStatus.Publicada };
+            db.PlanProposals.AddRange(firstWednesday, mondayProposal, wednesdayProposal);
+            var operating = await db.RoomOperatingShifts.SingleAsync(x => x.RoomId == host.RoomBId);
+            operating.WeekdaysMask |= 1 << 3;
+            await db.SaveChangesAsync();
+            db.Occupations.AddRange(
+                new RoomOccupation { PlanProposalId = firstWednesday.Id, RoomId = host.RoomAId,
+                    TeacherId = "teacher1", ClassGroupId = first.Assignment.ClassGroupId,
+                    StartsAt = new(2027, 3, 31, 8, 0, 0), EndsAt = new(2027, 3, 31, 12, 0, 0), Kind = OccupationKind.Aula },
+                new RoomOccupation { PlanProposalId = mondayProposal.Id, RoomId = host.RoomAId,
+                    TeacherId = "teacher1", ClassGroupId = first.Assignment.ClassGroupId,
+                    StartsAt = new(2027, 4, 5, 8, 0, 0), EndsAt = new(2027, 4, 5, 12, 0, 0), Kind = OccupationKind.Aula },
+                new RoomOccupation { PlanProposalId = wednesdayProposal.Id, RoomId = host.RoomAId,
+                    TeacherId = "teacher1", ClassGroupId = first.Assignment.ClassGroupId,
+                    StartsAt = new(2027, 4, 7, 8, 0, 0), EndsAt = new(2027, 4, 7, 12, 0, 0), Kind = OccupationKind.Aula });
+            await db.SaveChangesAsync();
+        }
+        var preview = await host.BlockPreview(host.BlockOccupationId, host.RoomBId, new(2027, 5, 3));
+        Assert.True(preview.GetProperty("allowed").GetBoolean());
+        var capabilities = preview.GetProperty("capabilities").EnumerateArray().ToArray();
+        Assert.Equal(2, capabilities.Length);
+        Assert.Equal("Capacidade", capabilities[0].GetProperty("description").GetString());
+        Assert.Equal(new[] { "2027-05-03", "2027-05-05" }, capabilities[0].GetProperty("newDates")
+            .EnumerateArray().Select(d => d.GetString()).ToArray());
+        Assert.Equal(new[] { "2027-05-10", "2027-05-12" }, capabilities[1].GetProperty("newDates")
+            .EnumerateArray().Select(d => d.GetString()).ToArray());
+    }
+
+    [Fact]
+    public async Task BlockMoveAuditFailureRollsBackOccupationAndPublishedProposal()
+    {
+        await using var host = await Host.CreateAsync();
+        var preview = await host.BlockPreview(host.BlockOccupationId, host.RoomBId, new(2027, 4, 5));
+        using (var scope = host.App.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+            await db.Database.ExecuteSqlRawAsync("CREATE TRIGGER fail_block_audit BEFORE INSERT ON AuditEntries BEGIN SELECT RAISE(ABORT, 'audit failure'); END;");
+        }
+        await Assert.ThrowsAnyAsync<Exception>(() => host.ConfirmBlock(host.BlockOccupationId,
+            preview, host.RoomBId, new(2027, 4, 5)));
+        await host.AssertOccupation(host.BlockOccupationId, host.RoomAId, new(2027, 3, 29, 8, 0, 0));
+        using var checkScope = host.App.Services.CreateScope();
+        var checkDb = checkScope.ServiceProvider.GetRequiredService<AppDbContext>();
+        Assert.Equal(new DateOnly(2027, 3, 29), (await checkDb.PlanProposals.SingleAsync()).StartDate);
+        Assert.False(await checkDb.OccupationChanges.AnyAsync(c => c.Action == "BlocoRemanejado"));
+        Assert.False(await checkDb.AuditEntries.AnyAsync(a => a.Action == "BlocoRemanejado"));
+        Assert.False(await checkDb.Notifications.AnyAsync(n => n.Subject == "Bloco pedagógico remanejado"));
+    }
+
     private sealed class Host : IAsyncDisposable
     {
         private readonly SqliteConnection connection;
@@ -544,6 +673,7 @@ public sealed class OccupationMoveTests
         public int ScheduledId { get; private set; }
         public int EadId { get; private set; }
         public int BlockedId { get; private set; }
+        public int BlockOccupationId { get; private set; }
         private Host(WebApplication app, SqliteConnection connection)
         { App = app; this.connection = connection; Client = app.GetTestClient(); }
         public void AsAdmin() => SetUser("admin", "Admin");
@@ -569,6 +699,17 @@ public sealed class OccupationMoveTests
                 origin.GetProperty("startsAt").GetDateTime(), origin.GetProperty("endsAt").GetDateTime(),
                 confirm, reason));
         }
+        public async Task<System.Text.Json.JsonElement> BlockPreview(int id, int roomId, DateOnly startDate)
+        {
+            var response = await Client.PostAsJsonAsync($"/api/occupations/{id}/block-move-preview",
+                new OccupationBlockMoveInput(roomId, startDate));
+            Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+            return await response.Content.ReadFromJsonAsync<System.Text.Json.JsonElement>();
+        }
+        public Task<HttpResponseMessage> ConfirmBlock(int id, System.Text.Json.JsonElement preview,
+            int roomId, DateOnly startDate) => Client.PostAsJsonAsync($"/api/occupations/{id}/block-move",
+                new OccupationBlockMoveConfirmInput(roomId, startDate,
+                    preview.GetProperty("signature").GetString()!, true));
         public async Task AssertOccupation(int id, int roomId, DateTime startsAt)
         {
             using var scope = App.Services.CreateScope();
@@ -588,6 +729,11 @@ public sealed class OccupationMoveTests
             builder.Services.AddDbContext<AppDbContext>(options => options.UseSqlite(connection));
             builder.Services.AddIdentityCore<AppUser>().AddRoles<IdentityRole>()
                 .AddEntityFrameworkStores<AppDbContext>().AddSignInManager();
+            builder.Services.AddScoped<SalaGest.Api.Services.ExcelReportService>();
+            builder.Services.AddScoped<SalaGest.Api.Services.ScheduleGenerator>();
+            builder.Services.AddSingleton<SalaGest.Api.Services.InstitutionalLoginTickets>();
+            builder.Services.Configure<SalaGest.Api.Services.InstitutionalSsoOptions>(_ => { });
+            builder.Services.AddDataProtection().UseEphemeralDataProtectionProvider();
             builder.Services.AddAuthentication("Test")
                 .AddScheme<AuthenticationSchemeOptions, HeaderAuthHandler>("Test", _ => { });
             builder.Services.AddAuthorization(options => options.AddPolicy("Admin", p => p.RequireRole("Admin")));
@@ -618,7 +764,7 @@ public sealed class OccupationMoveTests
             var mondayAssignment = new TeachingAssignment { TeacherId = "teacher1", ClassGroup = classGroup,
                 CurricularUnit = unit, DisciplineName = "UC", Weekday = 1, PreferredShift = morning };
             db.Assignments.AddRange(mondayAssignment,
-                new TeachingAssignment { TeacherId = "teacher1", ClassGroup = classGroup,
+                new TeachingAssignment { TeacherId = "teacher2", ClassGroup = classGroup,
                     CurricularUnit = unit, DisciplineName = "UC", Weekday = 5, PreferredShift = morning });
             db.CurricularCapabilities.Add(capability);
             db.CapabilityEnvironmentRequirements.Add(new CapabilityEnvironmentRequirement
@@ -682,12 +828,28 @@ public sealed class OccupationMoveTests
             db.Loans.Add(new RoomLoan { RoomOccupationId = loaned.Id, BookingRequestId = recurring.Id,
                 BorrowerId = "teacher1", Status = LoanStatus.AguardandoDestinatario, Reason = "Empréstimo" });
             await db.SaveChangesAsync();
+            var plan = new SemesterPlan { SemesterId = semester.Id, Published = true, Revision = 1,
+                PublishedAtUtc = DateTime.UtcNow, PublishedById = "admin" };
+            var proposal = new PlanProposal { SemesterPlan = plan, Assignment = mondayAssignment,
+                CurricularCapabilityId = capability.Id, RoomId = roomA.Id, ShiftId = morning.Id,
+                StartDate = new(2027, 3, 29), EndDate = new(2027, 3, 29),
+                CreatedById = "admin", Status = PlanProposalStatus.Publicada };
+            db.PlanProposals.Add(proposal);
+            db.RoomOperatingShifts.Add(new RoomOperatingShift { SemesterId = semester.Id,
+                RoomId = roomB.Id, ShiftId = morning.Id, WeekdaysMask = 1 << 1 });
+            await db.SaveChangesAsync();
+            var blockOccupation = new RoomOccupation { PlanProposalId = proposal.Id, RoomId = roomA.Id,
+                TeacherId = "teacher1", ClassGroupId = classGroup.Id, StartsAt = new(2027, 3, 29, 8, 0, 0),
+                EndsAt = new(2027, 3, 29, 12, 0, 0), Kind = OccupationKind.Aula };
+            db.Occupations.Add(blockOccupation);
+            await db.SaveChangesAsync();
             host.RoomAId = roomA.Id; host.RoomBId = roomB.Id; host.RoomCId = roomC.Id;
             host.SmallRoomId = small.Id; host.MorningId = morning.Id; host.AfternoonId = afternoon.Id;
             host.RecurringFirstId = first.Id; host.RecurringSecondId = second.Id;
             host.ManualId = manual.Id; host.PedagogicalId = ped.Id;
             host.LoanedId = loaned.Id; host.CancelledId = cancelled.Id;
             host.ScheduledId = scheduled.Id; host.EadId = ead.Id; host.BlockedId = blocked.Id;
+            host.BlockOccupationId = blockOccupation.Id;
             return host;
         }
         public async ValueTask DisposeAsync()

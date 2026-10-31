@@ -164,6 +164,7 @@ export type AgendaOccupation = Occupation & {
   curricularUnitName: string | null;
   curricularCapabilityDescription: string | null;
   bookingStatus: string | null;
+  planProposalId?: number | null;
   conflicts: string[];
 };
 export type OccupationMoveSlot = {
@@ -185,6 +186,18 @@ export type OccupationMovePreview = {
   technicalClassification: string;
   technicalFindings: { requirement: string; status: string; detail: string }[];
   affectedOccupationIds: number[];
+};
+export type OccupationBlockMovePreview = {
+  occupationId: number; planId: number; assignmentId: number;
+  teacherName: string; classGroupName: string; courseName: string; moduleName: string;
+  curricularUnitName: string; shiftId: number; shiftName: string;
+  destinationRoomId: number; destinationRoomName: string; requestedStartDate: string;
+  allowed: boolean; blocks: string[]; warnings: string[];
+  capabilities: { capabilityId: number; description: string; order: number;
+    pedagogicalHours: number; requiredMeetings: number; physicalHours: number;
+    previousDates: string[]; newDates: string[]; previousRoomIds: number[];
+    technicalFindings: { requirement: string; status: string; detail: string }[] }[];
+  affectedOccupationIds: number[]; signature: string;
 };
 export type Booking = {
   id: number;

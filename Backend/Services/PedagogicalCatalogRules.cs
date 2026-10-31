@@ -56,6 +56,15 @@ public static class PedagogicalCatalogRules
     public static bool ValidHoursPerShift(decimal hoursPerShift) =>
         hoursPerShift > 0 && hoursPerShift <= 24 && decimal.Round(hoursPerShift, 2) == hoursPerShift;
 
+    public static int EstimateMeetings(decimal pedagogicalHours, decimal hoursPerShift)
+    {
+        if (ValidateHours(pedagogicalHours) is not null)
+            throw new ArgumentOutOfRangeException(nameof(pedagogicalHours));
+        if (!ValidHoursPerShift(hoursPerShift))
+            throw new ArgumentOutOfRangeException(nameof(hoursPerShift));
+        return checked((int)decimal.Ceiling(pedagogicalHours / hoursPerShift));
+    }
+
     public static CurricularUnitWorkloadSummary SummarizeWorkload(int unitId, decimal? plannedHours,
         IEnumerable<decimal> capabilityHours, decimal hoursPerShift)
     {
@@ -68,7 +77,7 @@ public static class PedagogicalCatalogRules
         var excess = Math.Max(0, total - plannedHours.Value);
         var status = missing > 0 ? WorkloadStatus.MissingHours :
             excess > 0 ? WorkloadStatus.ExcessHours : WorkloadStatus.Balanced;
-        var meetings = checked((int)decimal.Ceiling(plannedHours.Value / hoursPerShift));
+        var meetings = EstimateMeetings(plannedHours.Value, hoursPerShift);
         return new(unitId, plannedHours, total, status, missing, excess, hoursPerShift, meetings);
     }
 }
