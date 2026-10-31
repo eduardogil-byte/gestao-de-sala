@@ -12,6 +12,10 @@ using SalaGest.Api.Services;
 
 var builder = WebApplication.CreateBuilder(args);
 
+var connectionString = builder.Configuration.GetConnectionString("DefaultConnection")
+    ?? throw new InvalidOperationException("ConnectionStrings:DefaultConnection não configurada");
+SqlServerConnectionPolicy.Validate(connectionString, builder.Environment);
+
 var institutionalSso = builder.Configuration.GetSection("Authentication:InstitutionalSso")
     .Get<InstitutionalSsoOptions>() ?? new InstitutionalSsoOptions();
 if (institutionalSso.Enabled) institutionalSso.Validate(builder.Environment.IsDevelopment());
@@ -20,9 +24,7 @@ builder.Services.Configure<InstitutionalSsoOptions>(
 builder.Services.AddSingleton<InstitutionalLoginTickets>();
 
 builder.Services.AddDbContext<AppDbContext>(options =>
-    options.UseSqlServer(builder.Configuration.GetConnectionString("DefaultConnection")
-        ?? throw new InvalidOperationException("ConnectionStrings:DefaultConnection não configurada"),
-        sql => sql.UseCompatibilityLevel(120)));
+    options.UseSqlServer(connectionString, sql => sql.UseCompatibilityLevel(120)));
 
 var authentication = builder.Services.AddAuthentication(IdentityConstants.BearerScheme)
     .AddBearerToken(IdentityConstants.BearerScheme);
@@ -102,6 +104,7 @@ builder.Services.AddAuthorization(options =>
     options.AddPolicy("Admin", policy => policy.RequireRole("Admin")));
 builder.Services.AddScoped<ScheduleGenerator>();
 builder.Services.AddScoped<ExcelReportService>();
+builder.Services.AddProblemDetails();
 
 var origins = builder.Configuration.GetSection("Cors:FrontendOrigins").Get<string[]>()
     ?? new[] { "http://localhost:5173" };
@@ -137,12 +140,36 @@ if (app.Environment.IsDevelopment())
     app.UseSwagger();
     app.UseSwaggerUI();
 }
+else
+{
+    app.UseExceptionHandler();
+}
 app.UseCors("React");
 app.UseAuthentication();
 app.UseAuthorization();
 app.MapGet("/api/health", () => Results.Ok(new { status = "ok", service = "SalaGest" }));
+app.MapGet("/health/live", () => Results.Ok(new { status = "ok" }));
+app.MapGet("/health/ready", async (AppDbContext db, ILogger<Program> logger, CancellationToken cancellationToken) =>
+{
+    try
+    {
+        if (await db.Database.CanConnectAsync(cancellationToken))
+            return Results.Ok(new { status = "ready" });
+    }
+    catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+    {
+        throw;
+    }
+    catch (Exception exception)
+    {
+        logger.LogWarning("Readiness check failed ({ExceptionType}).", exception.GetType().Name);
+    }
+
+    return Results.Json(new { status = "not_ready" }, statusCode: StatusCodes.Status503ServiceUnavailable);
+});
 app.MapSalaGestEndpoints();
 
-// Execute as migrations antes de iniciar; o seed só cadastra turnos e o admin configurado.
-await DbSeed.InitializeAsync(app.Services, app.Configuration);
+// Migrations são uma operação explícita; o seed exige opt-in exclusivo de Development.
+if (DbSeed.ShouldRunAtStartup(app.Configuration, app.Environment))
+    await DbSeed.InitializeAsync(app.Services, app.Configuration);
 app.Run();
