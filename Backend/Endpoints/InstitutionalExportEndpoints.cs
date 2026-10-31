@@ -1,6 +1,7 @@
 using SalaGest.Api.Services;
 using SalaGest.Api.Contracts;
 using SalaGest.Api.Models;
+using Microsoft.AspNetCore.Mvc;
 
 namespace SalaGest.Api.Endpoints;
 
@@ -10,7 +11,7 @@ public static partial class ApiEndpoints
     {
         app.MapGet("/api/exports/{report}", async (string report, int? semesterId,
             int? secondSemesterId, int? roomId, int? shiftId, DateOnly? from, DateOnly? to, string? status,
-            ExcelReportService service, CancellationToken cancellationToken) =>
+            [FromServices] ExcelReportService service, CancellationToken cancellationToken) =>
         {
             if (!Enum.TryParse<InstitutionalReport>(report, true, out var kind) || !Enum.IsDefined(kind))
                 return Error("Tipo de relatório inválido.");

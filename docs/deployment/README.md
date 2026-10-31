@@ -113,7 +113,7 @@ Rollback da aplicação e recuperação do banco são operações diferentes. N�
 
 ## Decisões institucionais pendentes
 
-Antes de produção, definir host/domínio/TLS/proxy, banco e identidade SQL, CORS, provisão do primeiro Admin, provedor SSO, calendário e turnos, configuração por ambiente, operação de backup, RPO/RTO, retenção, criptografia/chaves, logs e responsável de suporte. Confirmar decisões D-01, D-03, D-04, D-06 e D-08 em `docs/DECISOES.md`. RN-07/RN-08: movimentação individual existe; movimentação de blocos pedagógicos completos permanece pendente e não está coberta por esta entrega.
+Antes de produção, definir host/domínio/TLS/proxy, banco e identidade SQL, CORS, provisão do primeiro Admin, provedor SSO, calendário e turnos, configuração por ambiente, operação de backup, RPO/RTO, retenção, criptografia/chaves, logs e responsável de suporte. Confirmar decisões D-01, D-03, D-04, D-06 e D-08 em `docs/DECISOES.md`. RN-07/RN-08: a movimentação de blocos pedagógicos completos foi acrescentada após a SG-32, por formulário; ainda exige homologação integrada e não oferece arrastar e soltar.
 
 ## Preparação da SG-30
 

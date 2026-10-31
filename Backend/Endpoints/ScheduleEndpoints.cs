@@ -1,4 +1,5 @@
 using System.Data;
+using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using SalaGest.Api.Contracts;
 using SalaGest.Api.Data;
@@ -58,7 +59,7 @@ public static partial class ApiEndpoints
         });
 
         api.MapPost("/schedules/generate/{semesterId:int}", async (int semesterId,
-            AppDbContext db, ScheduleGenerator generator) =>
+            AppDbContext db, [FromServices] ScheduleGenerator generator) =>
         {
             if (await db.Schedules.AnyAsync(s => s.SemesterId == semesterId
                     && s.Status == ScheduleStatus.Publicada))

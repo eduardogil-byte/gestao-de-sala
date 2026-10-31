@@ -302,6 +302,7 @@ public sealed class TeachingAssignmentTests
             await connection.OpenAsync();
             var builder = WebApplication.CreateBuilder();
             builder.WebHost.UseTestServer();
+            builder.Logging.ClearProviders();
             builder.Services.AddDbContext<AppDbContext>(o => o.UseSqlite(connection));
             builder.Services.AddIdentityCore<AppUser>()
                 .AddRoles<IdentityRole>().AddEntityFrameworkStores<AppDbContext>().AddSignInManager();

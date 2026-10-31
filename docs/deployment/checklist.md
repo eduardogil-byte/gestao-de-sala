@@ -16,7 +16,7 @@ Use em Staging primeiro. Não marque itens como concluídos sem evidência regis
 - [ ] Migrations revisadas, estado atual consultado e SQL gerado revisado por responsável autorizado.
 - [ ] Backup aprovado, arquivo verificado, restauração de ensaio planejada e RPO/RTO definidos.
 - [ ] Decisões institucionais D-01, D-03, D-04, D-06 e D-08 avaliadas.
-- [ ] Pendência RN-07/RN-08 (movimentação de blocos pedagógicos completos) comunicada.
+- [ ] Movimentação de blocos RN-07/RN-08 por formulário identificada para homologação; diferença visual sem arrastar e soltar comunicada.
 - [ ] Artefatos Release do backend e `Frontend/dist` identificados por versão.
 
 ## Durante a implantação
@@ -54,7 +54,7 @@ Use em Staging primeiro. Não marque itens como concluídos sem evidência regis
 - [ ] Validar Dashboard SG-24, oportunidades SG-25 e indicadores SG-23.
 - [ ] Validar importação SG-26 e exportação SG-27 com dados de teste aprovados.
 - [ ] Revisar LGPD, CPF, auditoria, autorizações e dados exportados.
-- [ ] Registrar limitações: movimentação completa de blocos RN-07/RN-08 não implementada.
+- [ ] Validar movimentação completa de blocos RN-07/RN-08, incluindo atomicidade, concorrência, calendário e atualização dos indicadores.
 
 ### Desempenho
 

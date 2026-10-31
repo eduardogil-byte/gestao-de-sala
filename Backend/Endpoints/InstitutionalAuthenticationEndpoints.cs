@@ -35,7 +35,7 @@ public static partial class ApiEndpoints
         }).AllowAnonymous();
 
         api.MapPost("/link/start", async (InstitutionalLinkStartRequest input, ClaimsPrincipal current,
-            InstitutionalLoginTickets tickets, IOptions<InstitutionalSsoOptions> options,
+            [FromServices] InstitutionalLoginTickets tickets, IOptions<InstitutionalSsoOptions> options,
             UserManager<AppUser> users, SignInManager<AppUser> signIn) =>
         {
             if (!options.Value.Enabled) return Results.NotFound();
@@ -50,7 +50,7 @@ public static partial class ApiEndpoints
             return Results.Ok(new { ticket = tickets.Create(userId, forLink: true) });
         }).RequireAuthorization();
 
-        api.MapPost("/link", ([FromForm] InstitutionalLinkRequest input, InstitutionalLoginTickets tickets,
+        api.MapPost("/link", ([FromForm] InstitutionalLinkRequest input, [FromServices] InstitutionalLoginTickets tickets,
             IOptions<InstitutionalSsoOptions> options) =>
         {
             if (!options.Value.Enabled) return Results.NotFound();
@@ -65,7 +65,7 @@ public static partial class ApiEndpoints
         api.MapGet("/callback", CompleteInstitutionalLogin).AllowAnonymous();
 
         api.MapPost("/exchange", async (InstitutionalExchangeRequest input,
-            InstitutionalLoginTickets tickets, UserManager<AppUser> users,
+            [FromServices] InstitutionalLoginTickets tickets, UserManager<AppUser> users,
             SignInManager<AppUser> signIn, IOptions<InstitutionalSsoOptions> options) =>
         {
             if (!options.Value.Enabled) return Results.NotFound();
@@ -82,7 +82,7 @@ public static partial class ApiEndpoints
 
     private static async Task<IResult> CompleteInstitutionalLogin(HttpContext context,
         IOptions<InstitutionalSsoOptions> configured, UserManager<AppUser> users,
-        SignInManager<AppUser> signIn, InstitutionalLoginTickets tickets, AppDbContext db)
+        SignInManager<AppUser> signIn, [FromServices] InstitutionalLoginTickets tickets, AppDbContext db)
     {
         var options = configured.Value;
         if (!options.Enabled) return Results.NotFound();
