@@ -37,8 +37,7 @@ export function UsagePanel() {
       <div>
         <h3 className="section-title">Utilização dos ambientes</h3>
         <p className="text-xs text-slate-500 mt-1">
-          Quanto mais verde, mais salas tiveram aula presencial no dia. Dados
-          reais da API.
+          Quanto mais verde, mais salas tiveram ocupação efetiva registrada no dia, inclusive em datas especiais.
         </p>
       </div>
       <div className="grid sm:grid-cols-2 xl:grid-cols-4 gap-3">
@@ -94,7 +93,7 @@ export function UsagePanel() {
             {usage.days.map((d) => (
               <div
                 key={d.date}
-                title={`${dateBR(d.date)}: ${d.occupiedRooms} sala(s) com aula`}
+                title={`${dateBR(d.date)}: ${d.occupiedRooms} sala(s) com ocupação`}
                 className="w-11 h-12 rounded-lg flex flex-col justify-center items-center border border-emerald-900/5"
                 style={{
                   backgroundColor: `rgba(16,142,81,${0.08 + (0.8 * d.occupiedRooms) / max})`,
@@ -121,7 +120,7 @@ export function UsagePanel() {
                   <p className="text-xs text-slate-600 mt-2" key={r.roomId}>
                     {data.rooms.find((x) => x.id === r.roomId)?.name ||
                       `Sala ${r.roomId}`}{" "}
-                    · {r.hours}h ({r.occurrences} turnos)
+                    · {r.hours}h ({r.occurrences} intervalo(s) distintos)
                   </p>
                 ))}
             </div>

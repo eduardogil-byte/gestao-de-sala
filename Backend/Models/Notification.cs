@@ -6,6 +6,9 @@ public sealed class UserNotification
     public string UserId { get; set; } = "";
     public string ActorId { get; set; } = "";
     public string Message { get; set; } = "";
+    public string? Subject { get; set; }
+    public string? RelatedType { get; set; }
+    public int? RelatedId { get; set; }
     public DateTime CreatedAtUtc { get; set; } = DateTime.UtcNow;
     public DateTime? ReadAtUtc { get; set; }
 }

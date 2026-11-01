@@ -200,7 +200,9 @@ export function Teachers({ user }: { user: User }) {
                     <p className="text-sm font-semibold truncate">
                       {t.displayName}
                     </p>
-                    <p className="text-xs text-slate-500 truncate">{t.email}</p>
+                    {admin && t.email && (
+                      <p className="text-xs text-slate-500 truncate">{t.email}</p>
+                    )}
                   </div>
                 </div>
               ))

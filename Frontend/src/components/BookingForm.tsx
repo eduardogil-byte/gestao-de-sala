@@ -1,10 +1,17 @@
-import { useMemo, useState } from "react";
-import { post } from "../lib/api";
+import { useEffect, useMemo, useState } from "react";
+import { post, read } from "../lib/api";
 import { localDate, nextDate, resultMessage, dateBR } from "../lib/utils";
 import { useData } from "../lib/data";
 import { NeedFields, defaultNeed } from "./NeedFields";
 import { Checkbox, Field, Notice, SubmitButton } from "./UI";
 import type { Need, Shift } from "../types";
+
+type PedagogicalOption = {
+  classGroupId: number; className: string; students: number;
+  curricularUnitId: number; unitName: string; weekday: number;
+  preferredShiftId: number; qualificationWarning: boolean;
+  capabilities: { id: number; description: string }[];
+};
 
 const names = ["Dom", "Seg", "Ter", "Qua", "Qui", "Sex", "Sáb"];
 const startOfWeek = (date: string) => nextDate(date, -(asDay(date) + 6) % 7);
@@ -22,7 +29,7 @@ function actualDates(from: string, to: string, days: number[]) {
     if (days.includes(asDay(d))) found.push(d);
   return found;
 }
-export function BookingForm({ onCreated }: { onCreated: () => void }) {
+export function BookingForm({ onCreated }: { onCreated: (qualificationWarning: boolean) => void }) {
   const { data, reload } = useData();
   const today = localDate(new Date());
   const [date, setDate] = useState(today);
@@ -35,10 +42,28 @@ export function BookingForm({ onCreated }: { onCreated: () => void }) {
   const [eadDay, setEadDay] = useState("");
   const [perComputer, setPerComputer] = useState(1);
   const [classGroupId, setClassGroupId] = useState("");
+  const [pedagogical, setPedagogical] = useState(false);
+  const [unitId, setUnitId] = useState("");
+  const [capabilityId, setCapabilityId] = useState("");
+  const [options, setOptions] = useState<PedagogicalOption[]>([]);
+  const [optionsError, setOptionsError] = useState("");
+  const [optionsBusy, setOptionsBusy] = useState(false);
   const [lessonPlanLink, setLessonPlanLink] = useState("");
   const [need, setNeed] = useState<Need>(defaultNeed);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  useEffect(() => {
+    if (!pedagogical) return;
+    setOptionsError("");
+    setOptionsBusy(true);
+    void read<PedagogicalOption[]>("/bookings/pedagogical-options")
+      .then(setOptions).catch((e) => setOptionsError(resultMessage(e)))
+      .finally(() => setOptionsBusy(false));
+  }, [pedagogical]);
+  const classOptions = options.filter((x) => String(x.classGroupId) === classGroupId);
+  const units = classOptions.filter((x, i, all) =>
+    all.findIndex((a) => a.curricularUnitId === x.curricularUnitId) === i);
+  const selectedUnit = classOptions.find((x) => String(x.curricularUnitId) === unitId);
   const weekStart = startOfWeek(date);
   const start =
     recurring && weekdays.length ? firstSelected(weekStart, weekdays) : date;
@@ -59,10 +84,16 @@ export function BookingForm({ onCreated }: { onCreated: () => void }) {
       setError("Selecione dias e um término válido para a recorrência.");
       return;
     }
+    if (pedagogical && (!classGroupId || !unitId || !capabilityId)) {
+      setError("Selecione turma, UC e capacidade para a reserva pedagógica.");
+      return;
+    }
     setBusy(true);
     try {
-      await post("/bookings", {
+      const created = await post<{ qualificationWarning: boolean }>("/bookings", {
         classGroupId: classGroupId ? Number(classGroupId) : null,
+        curricularUnitId: pedagogical ? Number(unitId) : null,
+        curricularCapabilityId: pedagogical ? Number(capabilityId) : null,
         startsAt: `${start}T${shift.startsAt.slice(0, 8)}`,
         endsAt: `${start}T${shift.endsAt.slice(0, 8)}`,
         students,
@@ -78,7 +109,7 @@ export function BookingForm({ onCreated }: { onCreated: () => void }) {
         ...need,
       });
       await reload();
-      onCreated();
+      onCreated(created.qualificationWarning);
     } catch (err) {
       setError(resultMessage(err));
     } finally {
@@ -88,6 +119,12 @@ export function BookingForm({ onCreated }: { onCreated: () => void }) {
   return (
     <form onSubmit={submit} className="space-y-5">
       {error && <Notice message={error} />}
+      <Checkbox label="Vincular ao planejamento pedagógico" checked={pedagogical}
+        onChange={(value) => { setPedagogical(value); setClassGroupId(""); setUnitId(""); setCapabilityId(""); }} />
+      {pedagogical && optionsBusy && <p className="text-sm text-slate-500">Carregando atribuições...</p>}
+      {pedagogical && optionsError && <Notice message={optionsError} />}
+      {pedagogical && !optionsBusy && options.length === 0 && !optionsError &&
+        <Notice type="info" message="Não há turmas e UCs atribuídas ao seu perfil." />}
       <Field label="Atividade / justificativa">
         <input
           className="field"
@@ -105,20 +142,47 @@ export function BookingForm({ onCreated }: { onCreated: () => void }) {
             value={classGroupId}
             onChange={(e) => {
               setClassGroupId(e.target.value);
+              setUnitId(""); setCapabilityId("");
               const c = data.classes.find(
                 (c) => String(c.id) === e.target.value,
               );
               if (c) setStudents(c.students);
             }}
           >
-            <option value="">Sem turma vinculada</option>
-            {data.classes.map((c) => (
+            <option value="">{pedagogical ? "Selecione uma turma" : "Sem turma vinculada"}</option>
+            {(pedagogical ? data.classes.filter((c) => options.some((x) => x.classGroupId === c.id)) : data.classes).map((c) => (
               <option key={c.id} value={c.id}>
                 {c.name}
               </option>
             ))}
           </select>
         </Field>
+        {pedagogical && <Field label="Unidade curricular">
+          <select className="field" required value={unitId} onChange={(e) => {
+            setUnitId(e.target.value); setCapabilityId("");
+            const assignment = classOptions.find((x) => String(x.curricularUnitId) === e.target.value);
+            if (assignment?.preferredShiftId) {
+              setShiftId(String(assignment.preferredShiftId));
+              const assignedDate = firstSelected(date, [assignment.weekday]);
+              setDate(assignedDate);
+              setWeekdays([assignment.weekday]);
+              if (repeatUntil < assignedDate) setRepeatUntil(assignedDate);
+            }
+          }}>
+            <option value="">Selecione uma UC</option>
+            {units.map((x) => <option key={x.curricularUnitId} value={x.curricularUnitId}>{x.unitName}</option>)}
+          </select>
+        </Field>}
+        {pedagogical && <Field label="Capacidade">
+          <select className="field" required value={capabilityId} onChange={(e) => setCapabilityId(e.target.value)}>
+            <option value="">Selecione uma capacidade</option>
+            {selectedUnit?.capabilities.map((x) => <option key={x.id} value={x.id}>{x.description}</option>)}
+          </select>
+        </Field>}
+        {pedagogical && selectedUnit?.qualificationWarning &&
+          <Notice type="info" message="Habilitação para esta UC não cadastrada no perfil. A reserva pode prosseguir." />}
+        {pedagogical && selectedUnit &&
+          <p className="text-xs text-slate-500">Dia atribuído: {names[selectedUnit.weekday]}; use o turno correspondente.</p>}
         <Field label="Alunos">
           <input
             className="field"
@@ -222,7 +286,7 @@ export function BookingForm({ onCreated }: { onCreated: () => void }) {
           </p>
         </div>
       )}
-      <div className="border-t pt-4 space-y-3">
+      {pedagogical ? <Notice type="info" message="Os requisitos técnicos desta capacidade serão consultados no Catálogo Pedagógico." /> : <div className="border-t pt-4 space-y-3">
         <h3 className="font-semibold text-sm">Recursos necessários</h3>
         <NeedFields value={need} onChange={setNeed} software={data.software} />
         {(need.needsStudentComputers || need.softwareIds.length > 0) && (
@@ -237,7 +301,7 @@ export function BookingForm({ onCreated }: { onCreated: () => void }) {
             />
           </Field>
         )}
-      </div>
+      </div>}
       <Field label="Link do plano de ensino (opcional)">
         <input
           type="url"

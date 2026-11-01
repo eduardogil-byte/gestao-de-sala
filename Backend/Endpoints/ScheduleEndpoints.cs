@@ -1,4 +1,5 @@
 using System.Data;
+using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using SalaGest.Api.Contracts;
 using SalaGest.Api.Data;
@@ -58,7 +59,7 @@ public static partial class ApiEndpoints
         });
 
         api.MapPost("/schedules/generate/{semesterId:int}", async (int semesterId,
-            AppDbContext db, ScheduleGenerator generator) =>
+            AppDbContext db, [FromServices] ScheduleGenerator generator) =>
         {
             if (await db.Schedules.AnyAsync(s => s.SemesterId == semesterId
                     && s.Status == ScheduleStatus.Publicada))
@@ -129,38 +130,7 @@ public static partial class ApiEndpoints
             });
         }).RequireAuthorization("Admin");
 
-        api.MapGet("/agenda", async (DateTime from, DateTime to, int? roomId, AppDbContext db) =>
-        {
-            if (from >= to || to > from.AddDays(32))
-                return Error("Informe período válido de até 32 dias");
-            var occupations = await db.Occupations.AsNoTracking()
-                .Where(o => o.CancelledAtUtc == null && o.StartsAt < to && o.EndsAt > from &&
-                    (roomId == null || o.RoomId == roomId)).OrderBy(o => o.StartsAt).ToListAsync();
-            var ids = occupations.Select(x => x.Id).ToArray();
-            var loans = await db.Loans.Include(l => l.BookingRequest)
-                .Where(l => l.Status == LoanStatus.Aprovado
-                && ids.Contains(l.RoomOccupationId)).ToListAsync();
-            return Results.Ok(occupations.Select(o => new
-            {
-                o.Id,
-                o.RoomId,
-                o.StartsAt,
-                o.EndsAt,
-                o.Kind,
-                o.DayStatus,
-                o.Description,
-                OriginalTeacherId = o.TeacherId,
-                ActualTeacherId = loans.FirstOrDefault(l => l.RoomOccupationId == o.Id)?.BorrowerId ?? o.TeacherId,
-                IsBorrowed = loans.Any(l => l.RoomOccupationId == o.Id),
-                OriginalClassGroupId = o.ClassGroupId,
-                ActualClassGroupId = loans.Any(l => l.RoomOccupationId == o.Id)
-                    ? loans.First(l => l.RoomOccupationId == o.Id).BookingRequest.ClassGroupId : o.ClassGroupId,
-                o.WeeklyClassId,
-                o.BookingRequestId,
-                LoanId = loans.FirstOrDefault(l => l.RoomOccupationId == o.Id)?.Id,
-                LoanDisposition = loans.FirstOrDefault(l => l.RoomOccupationId == o.Id)?.OwnerDisposition
-            }));
-        });
+        MapPeriodAgenda(api);
 
         api.MapPost("/rooms/block", async (BlockRoom input, AppDbContext db) =>
         {

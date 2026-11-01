@@ -13,14 +13,32 @@ public static partial class ApiEndpoints
     private static void MapOccupationManagement(IEndpointRouteBuilder app)
     {
         var api = app.MapGroup("/api/occupations").RequireAuthorization().WithTags("Gerenciar alocações");
+        MapOccupationMoves(api);
+        MapOccupationReversals(api);
 
         api.MapGet("/{id:int}/history", async (int id, ClaimsPrincipal current, AppDbContext db) =>
         {
             var occ = await db.Occupations.FindAsync(id);
             if (occ is null) return Results.NotFound();
             if (occ.TeacherId != UserId(current) && !current.IsInRole("Admin")) return Results.Forbid();
-            return Results.Ok(await db.OccupationChanges.AsNoTracking()
-                .Where(c => c.RoomOccupationId == id).OrderByDescending(c => c.ChangedAtUtc).ToListAsync());
+            var changes = await db.OccupationChanges.AsNoTracking()
+                .Where(c => c.RoomOccupationId == id).OrderByDescending(c => c.Id).ToListAsync();
+            var latest = changes.FirstOrDefault();
+            var reference = latest?.ReferenceChangeId is int referenceId
+                ? changes.FirstOrDefault(c => c.Id == referenceId) : latest;
+            var actorIds = changes.Select(c => c.ChangedById).Distinct().ToArray();
+            var names = await db.Users.AsNoTracking().Where(u => actorIds.Contains(u.Id))
+                .Select(u => new { u.Id, u.DisplayName }).ToDictionaryAsync(u => u.Id, u => u.DisplayName);
+            return Results.Ok(changes.Select(c => new { c.Id, c.RoomOccupationId, c.ChangedById,
+                ActorName = names.GetValueOrDefault(c.ChangedById, "Usuário"), c.Action, c.Details,
+                CanUndo = current.IsInRole("Admin") && occ.CancelledAtUtc is null &&
+                    c.Id == reference?.Id && c.FromRoomId is not null &&
+                    (latest?.Action is "Remanejada" or "Refeita") &&
+                    occ.RoomId == c.ToRoomId && occ.StartsAt == c.ToStartsAt && occ.EndsAt == c.ToEndsAt,
+                CanRedo = current.IsInRole("Admin") && occ.CancelledAtUtc is null &&
+                    c.Id == reference?.Id && c.FromRoomId is not null && latest?.Action == "Desfeita" &&
+                    occ.RoomId == c.FromRoomId && occ.StartsAt == c.FromStartsAt && occ.EndsAt == c.FromEndsAt,
+                ChangedAtUtc = DateTime.SpecifyKind(c.ChangedAtUtc, DateTimeKind.Utc) }));
         });
 
         // Editar letivo/EAD/não letivo NÃO libera a sala: a liberação é uma ação explícita.
@@ -35,6 +53,8 @@ public static partial class ApiEndpoints
             if (await db.Loans.AnyAsync(l => l.RoomOccupationId == id &&
                 l.Status == LoanStatus.Aprovado))
                 return Results.Conflict(new ApiError("A ocorrência emprestada precisa preservar a situação da turma titular no empréstimo"));
+            if (occ.DayStatus == input.Status)
+                return Results.Ok(new { occ.Id, occ.DayStatus, RoomRemainsReserved = true });
             var old = occ.DayStatus;
             occ.DayStatus = input.Status;
             occ.ChangedById = UserId(current);
@@ -45,6 +65,10 @@ public static partial class ApiEndpoints
                 Action = "DiaLetivo",
                 Details = $"{old} -> {input.Status}"
             });
+            if (occ.TeacherId is string teacherId)
+                AuditTrail.Notify(db, teacherId, UserId(current), "Situação da aula alterada",
+                    $"A situação da sua aula em {occ.StartsAt:dd/MM/yyyy HH:mm} foi alterada de {old} para {input.Status}.",
+                    "Occupation", occ.Id);
             await db.SaveChangesAsync();
             return Results.Ok(new { occ.Id, occ.DayStatus, RoomRemainsReserved = true });
         });
@@ -77,6 +101,10 @@ public static partial class ApiEndpoints
                     Action = "Liberada",
                     Details = $"Sala {occ.RoomId}, {occ.StartsAt:dd/MM/yyyy HH:mm}"
                 });
+                if (occ.TeacherId is string teacherId)
+                    AuditTrail.Notify(db, teacherId, UserId(current), "Aula liberada",
+                        $"Sua ocupação de {occ.StartsAt:dd/MM/yyyy HH:mm} foi liberada pela coordenação.",
+                        "Occupation", occ.Id);
             }
             await db.SaveChangesAsync();
             await tx.CommitAsync();
@@ -103,6 +131,10 @@ public static partial class ApiEndpoints
                 Action = "Liberada",
                 Details = $"Sala {occ.RoomId}, {occ.StartsAt:dd/MM/yyyy HH:mm}"
             });
+            if (occ.TeacherId is string teacherId)
+                AuditTrail.Notify(db, teacherId, UserId(current), "Aula liberada",
+                    $"Sua ocupação de {occ.StartsAt:dd/MM/yyyy HH:mm} foi liberada pela coordenação.",
+                    "Occupation", occ.Id);
             await db.SaveChangesAsync();
             await tx.CommitAsync();
             return Results.Ok(new { occ.Id, Released = true });
@@ -216,13 +248,10 @@ public static partial class ApiEndpoints
                 Action = "Transferida",
                 Details = $"Sala {oldRoomId} -> sala {room.Id}"
             });
-            if (input.NotifyTeachers && occ.TeacherId != UserId(current) && occ.TeacherId is not null)
-                db.Notifications.Add(new UserNotification
-                {
-                    UserId = occ.TeacherId,
-                    ActorId = UserId(current),
-                    Message = $"Sua aula em {occ.StartsAt:dd/MM/yyyy HH:mm} foi transferida da sala {oldRoomId} para {room.Name}."
-                });
+            if (occ.TeacherId is string teacherId)
+                AuditTrail.Notify(db, teacherId, UserId(current), "Ambiente alterado",
+                    $"Sua aula em {occ.StartsAt:dd/MM/yyyy HH:mm} foi transferida da sala {oldRoomId} para {room.Name}.",
+                    "Occupation", occ.Id);
             await db.SaveChangesAsync();
             await tx.CommitAsync();
             return Results.Ok(new { occ.Id, OldRoomId = oldRoomId, occ.RoomId });
@@ -244,8 +273,12 @@ public static partial class ApiEndpoints
                 n.ActorId,
                 ActorName = names.GetValueOrDefault(n.ActorId, "Usuário"),
                 n.Message,
-                n.CreatedAtUtc,
-                n.ReadAtUtc
+                n.Subject,
+                n.RelatedType,
+                n.RelatedId,
+                CreatedAtUtc = DateTime.SpecifyKind(n.CreatedAtUtc, DateTimeKind.Utc),
+                ReadAtUtc = n.ReadAtUtc is DateTime read
+                    ? DateTime.SpecifyKind(read, DateTimeKind.Utc) : (DateTime?)null
             }));
         });
         notifications.MapGet("/unread-count", async (ClaimsPrincipal current, AppDbContext db) =>
@@ -275,7 +308,13 @@ public static partial class ApiEndpoints
             var shifts = await db.Shifts.AsNoTracking().ToListAsync();
             if (shiftId.HasValue && shifts.All(s => s.Id != shiftId)) return Results.NotFound();
             var occ = await db.Occupations.AsNoTracking()
-                .Where(o => o.CancelledAtUtc == null && o.StartsAt < end && o.EndsAt > start)
+                .Where(o => o.CancelledAtUtc == null && o.StartsAt < end && o.EndsAt > start &&
+                    (o.BookingRequestId == null || db.Bookings.Any(b => b.Id == o.BookingRequestId &&
+                        b.Status == BookingStatus.Aprovada)) &&
+                    (o.WeeklyClassId == null || db.WeeklyClasses.Any(w => w.Id == o.WeeklyClassId &&
+                        w.Schedule.Status == ScheduleStatus.Publicada)) &&
+                    (o.PlanProposalId == null || db.PlanProposals.Any(p => p.Id == o.PlanProposalId &&
+                        p.Status == PlanProposalStatus.Publicada)))
                 .ToListAsync();
             var ids = occ.Select(o => o.Id).ToArray();
             var loans = await db.Loans.AsNoTracking().Include(l => l.BookingRequest)
@@ -287,8 +326,7 @@ public static partial class ApiEndpoints
                 var actualClass = loan is null ? o.ClassGroupId : loan.BookingRequest.ClassGroupId;
                 return (shiftId is null || shifts.Any(s => s.Id == shiftId &&
                         s.StartsAt == TimeOnly.FromDateTime(o.StartsAt) && s.EndsAt == TimeOnly.FromDateTime(o.EndsAt))) &&
-                    (classGroupId == null || actualClass == classGroupId) &&
-                    (loan is not null || o.DayStatus == ClassDayStatus.Letivo);
+                    (classGroupId == null || actualClass == classGroupId);
             }).ToList();
             var dailyCounts = visible.GroupBy(o => DateOnly.FromDateTime(o.StartsAt))
                 .ToDictionary(g => g.Key, g => g.Select(o => o.RoomId).Distinct().Count());
@@ -306,8 +344,10 @@ public static partial class ApiEndpoints
                 return new
                 {
                     RoomId = roomId,
-                    Occurrences = uses.Count,
-                    Hours = uses.Sum(o => (o.EndsAt - o.StartsAt).TotalHours)
+                    Occurrences = uses.Select(o => (o.StartsAt, o.EndsAt)).Distinct().Count(),
+                    Hours = OccupancyIndicators.UnionHours(uses.Where(o => shifts.Count(s =>
+                        s.StartsAt == TimeOnly.FromDateTime(o.StartsAt) &&
+                        s.EndsAt == TimeOnly.FromDateTime(o.EndsAt)) == 1))
                 };
             }).OrderByDescending(r => r.Hours).ToList();
             return Results.Ok(new

@@ -6,6 +6,18 @@ namespace SalaGest.Api.Data;
 
 public static class DbSeed
 {
+    public static bool ShouldRunAtStartup(IConfiguration config, IHostEnvironment environment)
+    {
+        if (!config.GetValue<bool>("Bootstrap:EnableDevelopmentSeed"))
+            return false;
+
+        if (!environment.IsDevelopment())
+            throw new InvalidOperationException(
+                "Bootstrap:EnableDevelopmentSeed só pode ser habilitado no ambiente Development.");
+
+        return true;
+    }
+
     public static async Task InitializeAsync(IServiceProvider services, IConfiguration config)
     {
         using var scope = services.CreateScope();

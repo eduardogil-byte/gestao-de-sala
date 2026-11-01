@@ -4,12 +4,39 @@ export type User = {
   email: string;
   roles: string[];
 };
-export type Teacher = { id: string; displayName: string; email: string };
+export type Teacher = { id: string; displayName: string; email: string | null };
 export type Shift = {
   id: number;
   name: string;
   startsAt: string;
   endsAt: string;
+};
+export type Course = { id: number; code: string; name: string; active: boolean };
+export type CourseModule = { id: number; courseId: number; name: string; order: number };
+export type CurricularUnit = {
+  id: number;
+  courseModuleId: number;
+  code: string;
+  name: string;
+  plannedHours: number | null;
+};
+export type CurricularCapability = {
+  id: number;
+  curricularUnitId: number;
+  description: string;
+  contents: string;
+  requiredHours: number;
+  order: number;
+};
+export type WorkloadSummary = {
+  curricularUnitId: number;
+  plannedHours: number | null;
+  capabilityHours: number;
+  status: "Undefined" | "Balanced" | "MissingHours" | "ExcessHours";
+  missingHours: number;
+  excessHours: number;
+  hoursPerShift: number;
+  requiredMeetings: number | null;
 };
 export type Software = { id: number; name: string };
 export type InstalledSoftware = {
@@ -28,6 +55,7 @@ export type ComputerGroup = {
 };
 export type Room = {
   id: number;
+  code?: string | null;
   name: string;
   location: string;
   purpose?: string | null;
@@ -57,6 +85,10 @@ export type Assignment = {
   id: number;
   classGroupId: number;
   teacherId: string;
+  semesterId: number;
+  curricularUnitId: number | null;
+  weekday: number | null;
+  endedAtUtc: string | null;
   disciplineName: string;
   meetingsPerWeek: number;
   preferredShiftId: number | null;
@@ -116,10 +148,65 @@ export type Occupation = {
   bookingRequestId: number | null;
   loanId?: number | null;
 };
+export type AgendaOccupation = Occupation & {
+  roomName: string;
+  date: string;
+  shiftId: number | null;
+  shiftName: string | null;
+  calendarKind: string | null;
+  calendarReason: string | null;
+  status: string;
+  source: string;
+  actualTeacherName: string | null;
+  actualClassGroupName: string | null;
+  courseName: string | null;
+  curricularUnitId: number | null;
+  curricularUnitName: string | null;
+  curricularCapabilityDescription: string | null;
+  bookingStatus: string | null;
+  planProposalId?: number | null;
+  conflicts: string[];
+};
+export type OccupationMoveSlot = {
+  roomId: number;
+  roomName: string;
+  date: string;
+  shiftId: number | null;
+  shiftName: string | null;
+  startsAt: string;
+  endsAt: string;
+};
+export type OccupationMovePreview = {
+  occupationId: number;
+  origin: OccupationMoveSlot;
+  destination: OccupationMoveSlot;
+  allowed: boolean;
+  blocks: string[];
+  warnings: string[];
+  technicalClassification: string;
+  technicalFindings: { requirement: string; status: string; detail: string }[];
+  affectedOccupationIds: number[];
+};
+export type OccupationBlockMovePreview = {
+  occupationId: number; planId: number; assignmentId: number;
+  teacherName: string; classGroupName: string; courseName: string; moduleName: string;
+  curricularUnitName: string; shiftId: number; shiftName: string;
+  destinationRoomId: number; destinationRoomName: string; requestedStartDate: string;
+  allowed: boolean; blocks: string[]; warnings: string[];
+  capabilities: { capabilityId: number; description: string; order: number;
+    pedagogicalHours: number; requiredMeetings: number; physicalHours: number;
+    previousDates: string[]; newDates: string[]; previousRoomIds: number[];
+    technicalFindings: { requirement: string; status: string; detail: string }[] }[];
+  affectedOccupationIds: number[]; signature: string;
+};
 export type Booking = {
   id: number;
   teacherId: string;
   classGroupId: number | null;
+  curricularUnitId?: number | null;
+  curricularCapabilityId?: number | null;
+  curricularUnitName?: string | null;
+  curricularCapabilityDescription?: string | null;
   startsAt: string;
   endsAt: string;
   students: number;
@@ -158,6 +245,10 @@ export type Suggestion = {
   score: number;
   compatible: boolean;
   incompatibility: string | null;
+  technicalClassification?: "Compatible" | "Partial" | "Incompatible";
+  technicalFindings?: { requirement: string; status: string; detail: string }[];
+  calendarBlockedCount?: number;
+  availabilityReason?: string | null;
   available: boolean;
   availableOccurrences: number;
   totalOccurrences: number;
@@ -173,6 +264,9 @@ export type AvailabilityDay = {
   start: string;
   end: string;
   available: boolean;
+  calendarStatus?: string | null;
+  calendarReason?: string | null;
+  availabilityReason?: string | null;
   conflicts: ConflictInfo[];
 };
 export type BookingAvailability = {
@@ -210,7 +304,10 @@ export type Need = {
 export type Notification = {
   id: number;
   actorName: string;
+  subject: string | null;
   message: string;
+  relatedType: string | null;
+  relatedId: number | null;
   createdAtUtc: string;
   readAtUtc: string | null;
 };

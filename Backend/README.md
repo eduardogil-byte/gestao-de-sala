@@ -4,10 +4,9 @@
 ASP.NET Core Identity Bearer Token. O React já enviado anteriormente é um projeto separado e
 **ainda deve ser atualizado** para este novo fluxo.
 
-**Estado de validação:** esta versão foi preparada a partir do backend ZIP original, com revisão estática
-local; **não foi compilada nem executada** aqui porque o SDK do .NET e o SQL Server não estão
-instalados no ambiente de preparação. Execute `dotnet build`, `dotnet test`, crie/aplique as migrations
-e teste os fluxos no seu computador antes de colocar usuários reais. Não há promessa de homologação.
+**Estado de validação:** o backend compilou e os testes unitários passaram neste ambiente.
+A migration SG-08 foi gerada, mas não foi aplicada nem testada em SQL Server. Valide os fluxos
+HTTP e a migration em um banco de teste antes de colocar usuários reais.
 
 ## Começar no Windows
 
@@ -24,9 +23,60 @@ dotnet tool install --global dotnet-ef --version 8.0.0
 dotnet user-secrets set "Seed:AdminEmail" "admin@instituicao.local"
 dotnet user-secrets set "Seed:AdminPassword" "TroquePorUmaSenhaForte123!"
 
-dotnet ef migrations add InitialCreate
 dotnet ef database update
 dotnet run
+```
+
+As migrations `InitialCreate`, `SG07PedagogicalCatalog` e `SG08CapabilitiesWorkload` já estão versionadas. Não execute
+`migrations add InitialCreate` novamente. `database update` aplica as migrations pendentes
+ao banco configurado; execute-o apenas quando houver um SQL Server disponível.
+
+### SG-07: catálogo pedagógico
+
+As consultas exigem autenticação Bearer; POST e PUT exigem o perfil `Admin`. Os caminhos
+de módulo e UC preservam o contexto do curso. Exemplos de escrita:
+
+```text
+POST /api/courses                                  {"code":"AUT","name":"Técnico em Automação","active":true}
+POST /api/courses/1/modules                        {"name":"Módulo Introdutório","order":1}
+POST /api/courses/1/modules/2/curricular-units     {"code":"UC01","name":"Fundamentos de Automação"}
+```
+
+Use GET e PUT nos mesmos recursos: `/api/courses/{courseId}`,
+`/api/courses/{courseId}/modules/{moduleId}` e
+`/api/courses/{courseId}/modules/{moduleId}/curricular-units/{unitId}`.
+GET nas coleções lista cursos, módulos do curso e UCs do módulo, respectivamente.
+Não há endpoint de exclusão do catálogo; as FKs impedem exclusão em cascata.
+
+### SG-08: capacidades e carga horária
+
+As rotas abaixo usam como base
+`/api/courses/{courseId}/modules/{moduleId}/curricular-units/{unitId}`.
+GET exige Bearer; POST e PUT exigem `Admin`.
+
+```text
+PUT  /workload                         {"plannedHours":40.5}
+POST /capabilities                     {"description":"Projetar circuitos","contents":"Diagramas e simulação","requiredHours":12.5,"order":1}
+GET  /capabilities
+GET  /capabilities/{capabilityId}
+PUT  /capabilities/{capabilityId}      {"description":"Projetar circuitos","contents":"Diagramas e simulação","requiredHours":14,"order":1}
+GET  /workload-summary?hoursPerShift=4
+```
+
+`plannedHours` pode ser `null` enquanto a UC não tiver CH definida. O `PUT` original
+da UC mantém a CH atual. O resumo soma as horas das capacidades, mostra horas faltantes
+ou excedentes e calcula encontros a partir da CH prevista e de `hoursPerShift`.
+Não há exclusão física de capacidades.
+
+Depois de configurar o SQL Server, valide a aplicação da migration a partir de `Backend/`:
+
+```powershell
+dotnet restore
+dotnet build
+dotnet test .\SalaGest.Backend.Tests\SalaGest.Backend.Tests.csproj
+dotnet tool restore
+dotnet ef migrations list --context AppDbContext
+dotnet ef database update --context AppDbContext
 ```
 
 O endereço padrão em `Properties/launchSettings.json` é `http://localhost:5108`;

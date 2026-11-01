@@ -4,10 +4,14 @@ namespace SalaGest.Api.Models;
 
 public sealed class AppUser : IdentityUser
 {
+    public string? Cpf { get; set; }
     public string DisplayName { get; set; } = "";
+    public string Education { get; set; } = "";
+    public string TechnicalSkills { get; set; } = "";
+    public string ProfessionalKnowledge { get; set; } = "";
 }
 
-public enum RoomKind { Comum = 1, Laboratorio = 2, Hibrida = 3 }
+public enum RoomKind { Comum = 1, Laboratorio = 2, Hibrida = 3, Oficina = 4 }
 public enum HardwareTier { Basico = 1, Intermediario = 2, Alto = 3 }
 public enum ScheduleStatus { Rascunho = 1, Publicada = 2, Arquivada = 3 }
 public enum BookingStatus { Pendente = 1, Aprovada = 2, Rejeitada = 3 }
@@ -20,6 +24,8 @@ public enum OccupationKind { Aula = 1, Avulsa = 2, Bloqueio = 3 }
 public sealed class Room
 {
     public int Id { get; set; }
+    public string? Code { get; set; }
+    public string? NormalizedCode { get; set; }
     public string Name { get; set; } = "";
     public string Location { get; set; } = "";
     public string Purpose { get; set; } = "";
@@ -31,6 +37,26 @@ public sealed class Room
     public bool HasInternet { get; set; }
     public bool Active { get; set; } = true;
     public List<ComputerGroup> ComputerGroups { get; set; } = new();
+    public List<RoomResource> Resources { get; set; } = new();
+}
+
+public sealed class RoomResource
+{
+    public int Id { get; set; }
+    public int RoomId { get; set; }
+    public Room Room { get; set; } = null!;
+    public string Name { get; set; } = "";
+    public string NormalizedName { get; set; } = "";
+    public string Type { get; set; } = "";
+    public string NormalizedType { get; set; } = "";
+    public int Quantity { get; set; }
+    public int? OperationalQuantity { get; set; }
+    public string? Description { get; set; }
+    public string? Condition { get; set; }
+    public string? TechnicalDetails { get; set; }
+    public int? Voltage { get; set; }
+    public DateOnly? WarrantyExpiresOn { get; set; }
+    public DateOnly? LicenseExpiresOn { get; set; }
 }
 
 public sealed class ComputerGroup
@@ -43,6 +69,17 @@ public sealed class ComputerGroup
     public int RamGb { get; set; }
     public HardwareTier Tier { get; set; }
     public bool DedicatedGpu { get; set; }
+    public int? OperationalQuantity { get; set; }
+    public string? Processor { get; set; }
+    public string? Storage { get; set; }
+    public string? GraphicsCard { get; set; }
+    public string? OperatingSystem { get; set; }
+    public bool? Virtualization { get; set; }
+    public bool? DockerWsl { get; set; }
+    public bool? CadCompatible { get; set; }
+    public bool? SimulatorCompatible { get; set; }
+    public string? NetworkDetails { get; set; }
+    public bool? InternetAvailable { get; set; }
     public List<GroupSoftware> Software { get; set; } = new();
 }
 
@@ -59,6 +96,9 @@ public sealed class GroupSoftware
     public int SoftwareId { get; set; }
     public Software Software { get; set; } = null!;
     public int InstalledQuantity { get; set; }
+    public string? Version { get; set; }
+    public int? LicenseQuantity { get; set; }
+    public DateOnly? LicenseExpiresOn { get; set; }
 }
 
 public sealed class Semester
@@ -82,6 +122,11 @@ public sealed class ClassGroup
     public int Id { get; set; }
     public int SemesterId { get; set; }
     public Semester Semester { get; set; } = null!;
+    public int? CourseId { get; set; }
+    public Course? Course { get; set; }
+    public int? EadWeekday { get; set; }
+    public DateOnly? EadStartDate { get; set; }
+    public DateOnly? EadEndDate { get; set; }
     public string Name { get; set; } = "";
     public int Students { get; set; }
 }
@@ -103,10 +148,14 @@ public sealed class TeachingAssignment
     public ClassGroup ClassGroup { get; set; } = null!;
     public string TeacherId { get; set; } = "";
     public AppUser Teacher { get; set; } = null!;
+    public int? CurricularUnitId { get; set; }
+    public CurricularUnit? CurricularUnit { get; set; }
     public string DisciplineName { get; set; } = "";
     public int MeetingsPerWeek { get; set; } = 1;
+    public int? Weekday { get; set; }
     public int? PreferredShiftId { get; set; }
     public SchoolShift? PreferredShift { get; set; }
+    public DateTime? EndedAtUtc { get; set; }
     public bool NeedsProjector { get; set; }
     public bool NeedsTeacherComputer { get; set; }
     public bool NeedsStudentComputers { get; set; }
@@ -157,6 +206,10 @@ public sealed class BookingRequest
     public AppUser Teacher { get; set; } = null!;
     public int? ClassGroupId { get; set; }
     public ClassGroup? ClassGroup { get; set; }
+    public int? CurricularUnitId { get; set; }
+    public CurricularUnit? CurricularUnit { get; set; }
+    public int? CurricularCapabilityId { get; set; }
+    public CurricularCapability? CurricularCapability { get; set; }
     public DateTime StartsAt { get; set; }
     public DateTime EndsAt { get; set; }
     public BookingRecurrence Recurrence { get; set; } = BookingRecurrence.Nenhuma;
@@ -202,6 +255,7 @@ public sealed class RoomOccupation
     public int? ClassGroupId { get; set; }
     public int? WeeklyClassId { get; set; }
     public int? BookingRequestId { get; set; }
+    public int? PlanProposalId { get; set; }
     public string? Description { get; set; }
 }
 

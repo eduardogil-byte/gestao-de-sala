@@ -12,16 +12,23 @@ import { useData } from "../lib/data";
 import { dateTimeBR, roomKind } from "../lib/utils";
 import { Card, Empty, Title, Badge } from "../components/UI";
 import { UsagePanel } from "../components/UsagePanel";
+import { ManagerDashboard } from "../components/ManagerDashboard";
 import type { Occupation, User } from "../types";
 
 export function Dashboard({
   user,
   navigate,
   occupations,
+  openTimeline,
+  openOpportunity,
+  onExport,
 }: {
   user: User;
   navigate: (page: string) => void;
   occupations: Occupation[];
+  openTimeline: (semesterId: number, roomId: number) => void;
+  openOpportunity: (semesterId: number, roomId: number) => void;
+  onExport: (semesterId: number, secondSemesterId: number | null, roomId: number | null) => void;
 }) {
   const { data } = useData();
   const admin = user.roles.includes("Admin");
@@ -210,7 +217,8 @@ export function Dashboard({
           </Card>
         </div>
       </div>
-      <UsagePanel />
+      {admin ? <ManagerDashboard onTimeline={openTimeline} onOpportunity={openOpportunity}
+        onExport={onExport} /> : <UsagePanel />}
     </>
   );
 }

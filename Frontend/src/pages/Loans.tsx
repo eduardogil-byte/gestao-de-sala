@@ -5,14 +5,17 @@ import { post, read } from "../lib/api";
 import { dateTimeBR, localDate, nextDate, resultMessage } from "../lib/utils";
 import { Badge, Card, Empty, Field, Notice, Title } from "../components/UI";
 import { NeedFields, defaultNeed } from "../components/NeedFields";
+import { AuditHistory } from "../components/AuditHistory";
 import type { Need, Occupation, Loan, User } from "../types";
 
 export function Loans({
   user,
   reloadAgenda,
+  focusId,
 }: {
   user: User;
   reloadAgenda: () => Promise<void>;
+  focusId?: number | null;
 }) {
   const { data, reload } = useData();
   const [from, setFrom] = useState(localDate(new Date())),
@@ -31,6 +34,12 @@ export function Loans({
   const [busy, setBusy] = useState(false),
     [error, setError] = useState(""),
     [success, setSuccess] = useState("");
+  const [historyLoanId, setHistoryLoanId] = useState<number | null>(null);
+  useEffect(() => {
+    if (!focusId) return;
+    const timer = window.setTimeout(() => document.getElementById("loan-" + focusId)?.scrollIntoView({ block: "center" }), 0);
+    return () => window.clearTimeout(timer);
+  }, [focusId, data.loans]);
   const teacher = (id: string) =>
     data.teachers.find((t) => t.id === id)?.displayName || id.slice(0, 8);
   async function load() {
@@ -259,7 +268,7 @@ export function Loans({
           ) : (
             <div className="divide-y divide-slate-100 max-h-[780px] overflow-y-auto">
               {data.loans.map((l) => (
-                <div key={l.id} className="p-4 space-y-3">
+                <div key={l.id} id={"loan-" + l.id} className={"p-4 space-y-3 " + (focusId === l.id ? "ring-2 ring-inset ring-sky-500" : "")}>
                   <div className="flex justify-between gap-2">
                     <div>
                       <p className="text-sm font-bold">
@@ -276,6 +285,8 @@ export function Loans({
                     {l.reason} · Titular: {teacher(l.ownerTeacherId)} ·
                     Destinatário: {teacher(l.borrowerId)}
                   </p>
+                  <button type="button" className="text-xs font-semibold text-sky-700 underline" onClick={() => setHistoryLoanId(historyLoanId === l.id ? null : l.id)}>Histórico do empréstimo</button>
+                  {historyLoanId === l.id && <AuditHistory type="Loan" id={l.id} />}
                   {l.status === "AguardandoDestinatario" &&
                     l.borrowerId === user.id && (
                       <button

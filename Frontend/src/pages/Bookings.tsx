@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   CalendarPlus,
   Check,
@@ -20,6 +20,7 @@ import {
   Checkbox,
 } from "../components/UI";
 import { BookingForm } from "../components/BookingForm";
+import { AuditHistory } from "../components/AuditHistory";
 import type {
   Booking,
   Suggestion,
@@ -31,9 +32,11 @@ import type {
 export function Bookings({
   user,
   reloadAgenda,
+  focusId,
 }: {
   user: User;
   reloadAgenda: () => Promise<void>;
+  focusId?: number | null;
 }) {
   const { data, reload } = useData();
   const [form, setForm] = useState(false),
@@ -48,6 +51,27 @@ export function Bookings({
     [busy, setBusy] = useState(false);
   const [error, setError] = useState(""),
     [success, setSuccess] = useState("");
+  const [historyBookingId, setHistoryBookingId] = useState<number | null>(null);
+  useEffect(() => {
+    if (!focusId) return;
+    setFilter("Todos");
+    const timer = window.setTimeout(() => document.getElementById("booking-" + focusId)?.scrollIntoView({ block: "center" }), 0);
+    return () => window.clearTimeout(timer);
+  }, [focusId, data.bookings]);
+  const acceptedDates =
+    availability?.days
+      .filter(
+        (d) =>
+          d.available ||
+          (replace &&
+            booking?.classGroupId != null &&
+            !d.calendarReason &&
+            !d.availabilityReason &&
+            d.conflicts.length === 1 &&
+            d.conflicts[0].teacherId === booking.teacherId &&
+            d.conflicts[0].classGroupId === booking.classGroupId),
+      )
+      .map((d) => d.start.slice(0, 10)) ?? [];
   const teacher = (id: string | null) =>
     data.teachers.find((t) => t.id === id)?.displayName ||
     "Professor não identificado";
@@ -105,10 +129,10 @@ export function Bookings({
       );
       return;
     }
-    const missing = availability.unavailable;
+    const missing = availability.total - acceptedDates.length;
     const explanation = missing
-      ? `${missing} de ${availability.total} datas apresentam conflitos. A API tentará confirmar apenas as disponíveis.`
-      : `Confirmar ${availability.available} data(s) no ${chosen.name}?`;
+      ? `${missing} de ${availability.total} datas estão indisponíveis. Confirmar somente as ${acceptedDates.length} datas válidas?`
+      : `Confirmar ${acceptedDates.length} data(s) no ${chosen.name}?`;
     if (!window.confirm(explanation)) return;
     setBusy(true);
     setError("");
@@ -121,6 +145,9 @@ export function Bookings({
         roomId: Number(selectedRoom),
         confirmPartial: missing > 0,
         replaceOwnClassBooking: replace,
+        expectedAvailableDates: booking.curricularCapabilityId
+          ? acceptedDates
+          : undefined,
       });
       await reload();
       await reloadAgenda();
@@ -154,16 +181,7 @@ export function Bookings({
     (b) => filter === "Todos" || b.status === filter,
   );
   const selected = suggestions.find((s) => s.id === Number(selectedRoom));
-  const possiblyAvailable =
-    availability?.days.filter(
-      (d) =>
-        d.available ||
-        (replace &&
-          booking?.classGroupId != null &&
-          d.conflicts.length === 1 &&
-          d.conflicts[0].teacherId === booking.teacherId &&
-          d.conflicts[0].classGroupId === booking.classGroupId),
-    ).length ?? 0;
+  const possiblyAvailable = acceptedDates.length;
   return (
     <>
       <Title
@@ -225,7 +243,8 @@ export function Bookings({
       ) : (
         <div className="grid gap-3">
           {list.map((b) => (
-            <Card key={b.id} className="p-4 md:p-5">
+            <Card key={b.id} className={"p-4 md:p-5 " + (focusId === b.id ? "ring-2 ring-sky-500" : "")}>
+              <span id={"booking-" + b.id} />
               <div className="flex flex-wrap justify-between items-start gap-3">
                 <div className="flex gap-3">
                   <span className="bg-sky-50 text-sky-700 p-3 rounded-xl">
@@ -248,6 +267,9 @@ export function Bookings({
                           {turma(b.classGroupId)}
                         </span>
                       )}
+                      {b.curricularUnitId && <span className="pill bg-sky-50 text-sky-700">
+                        {b.curricularUnitName || `UC #${b.curricularUnitId}`} · {b.curricularCapabilityDescription || `capacidade #${b.curricularCapabilityId}`}
+                      </span>}
                       {b.approvedRoomId && (
                         <span className="pill bg-sky-50 text-sky-700">
                           {
@@ -285,6 +307,8 @@ export function Bookings({
                   </div>
                 )}
               </div>
+              <button type="button" className="text-xs font-semibold text-sky-700 underline mt-3" onClick={() => setHistoryBookingId(historyBookingId === b.id ? null : b.id)}>Histórico da reserva</button>
+              {historyBookingId === b.id && <div className="mt-3 border-t pt-3"><AuditHistory type="Booking" id={b.id} /></div>}
             </Card>
           ))}
         </div>
@@ -292,10 +316,11 @@ export function Bookings({
       {form && (
         <Modal title="Criar reserva" onClose={() => setForm(false)}>
           <BookingForm
-            onCreated={() => {
+            onCreated={(qualificationWarning) => {
               setForm(false);
               setSuccess(
-                "Reserva criada! Agora selecione uma sala na lista e confirme a alocação.",
+                "Reserva criada! Agora selecione uma sala na lista e confirme a alocação." +
+                  (qualificationWarning ? " Habilitação para esta UC não cadastrada no perfil." : ""),
               );
             }}
           />
@@ -334,7 +359,8 @@ export function Bookings({
                     <span
                       className={`text-[11px] font-bold ${s.compatible ? "text-emerald-700" : "text-rose-700"}`}
                     >
-                      {s.compatible ? "Compatível" : "Incompatível"}
+                      {s.technicalClassification === "Partial" ? "Parcial" :
+                        s.compatible ? "Compatível" : "Incompatível"}
                     </span>
                   </div>
                   <p className="text-xs text-slate-500">
@@ -349,11 +375,17 @@ export function Bookings({
                   >
                     {s.available
                       ? "Livre"
-                      : `Ocupada: ${s.availableOccurrences}/${s.totalOccurrences} datas livres`}
+                      : s.technicalClassification
+                        ? `${s.availableOccurrences}/${s.totalOccurrences} datas presenciais livres`
+                        : `Ocupada: ${s.availableOccurrences}/${s.totalOccurrences} datas livres`}
                   </p>
                   {s.incompatibility && (
                     <p className="text-xs text-rose-700">{s.incompatibility}</p>
                   )}
+                  {s.technicalClassification && <p className="text-xs text-slate-600">
+                    Técnica: {s.technicalClassification === "Compatible" ? "compatível" :
+                      s.technicalClassification === "Partial" ? "parcial" : "incompatível"}. Disponibilidade em separado.
+                  </p>}
                   {s.conflicts.length > 0 && (
                     <p className="text-xs text-slate-500 line-clamp-2">
                       {conflicts(s.conflicts)}
@@ -378,6 +410,11 @@ export function Bookings({
                     )
                     .join(" | ") || "Sala sem computadores cadastrados."}
                 </div>
+                {selected.technicalFindings?.map((finding) =>
+                  <p key={finding.requirement} className="text-xs text-slate-600">
+                    {finding.status === "Met" ? "Atendido" : finding.status === "Unknown" ? "Verificar" :
+                      finding.status === "Partial" ? "Parcial" : "Não atendido"}: {finding.detail}
+                  </p>)}
                 {availability && (
                   <div className="rounded-xl bg-slate-50 border p-3">
                     <p className="text-sm font-bold mb-2">
@@ -393,7 +430,9 @@ export function Bookings({
                           {dateTimeBR(d.start)} ·{" "}
                           {d.available
                             ? "Disponível"
-                            : `Ocupada: ${conflicts(d.conflicts)}`}
+                            : d.calendarReason
+                              ? `${d.calendarReason}${d.conflicts.length ? `; ocupada: ${conflicts(d.conflicts)}` : ""}`
+                              : d.availabilityReason || `Ocupada: ${conflicts(d.conflicts)}`}
                         </p>
                       ))}
                     </div>

@@ -18,7 +18,7 @@ export class ApiError extends Error {
 export async function api<T>(path: string, init: RequestInit = {}): Promise<T> {
   const token = tokenStore.get();
   const headers = new Headers(init.headers);
-  if (init.body && !headers.has("Content-Type"))
+  if (init.body && !(init.body instanceof FormData) && !headers.has("Content-Type"))
     headers.set("Content-Type", "application/json");
   if (token) headers.set("Authorization", `Bearer ${token}`);
   let res: Response;
@@ -72,6 +72,26 @@ export const post = <T>(path: string, data?: unknown) =>
 export const put = <T>(path: string, data: unknown) =>
   api<T>(path, { method: "PUT", body: JSON.stringify(data) });
 export const remove = <T>(path: string) => api<T>(path, { method: "DELETE" });
+export const upload = <T>(path: string, data: FormData) =>
+  api<T>(path, { method: "POST", body: data });
+export async function downloadFile(path: string, filename = "relatorio.xlsx") {
+  const token = tokenStore.get();
+  const response = await fetch(`/api${path}`, {
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
+  });
+  if (!response.ok) {
+    const body = await response.json().catch(() => null) as { error?: string } | null;
+    if (response.status === 401 && token) window.dispatchEvent(new Event("salagest:unauthorized"));
+    throw new ApiError(body?.error || `Falha ao gerar o arquivo (${response.status}).`, response.status);
+  }
+  const url = URL.createObjectURL(await response.blob());
+  const link = document.createElement("a");
+  link.href = url;
+  const disposition = response.headers.get("Content-Disposition");
+  link.download = disposition?.match(/filename="?([^";]+)"?/i)?.[1] ?? filename;
+  link.click();
+  window.setTimeout(() => URL.revokeObjectURL(url), 0);
+}
 export async function signIn(email: string, password: string): Promise<User> {
   const result = await post<{ accessToken: string }>("/auth/login", {
     email,

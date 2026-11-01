@@ -15,10 +15,25 @@ public static partial class ApiEndpoints
         MapAccounts(app);
         MapPasswords(app);
         MapCatalog(app);
+        MapEnvironmentInventory(app);
+        MapEnvironmentCompatibility(app);
+        MapPedagogicalCatalog(app);
+        MapCurricularWorkload(app);
+        MapTeacherPedagogicalProfiles(app);
+        MapAssignments(app);
+        MapAcademicCalendar(app);
         MapSchedules(app);
+        MapSemesterPlanning(app);
         MapBookings(app);
+        MapPedagogicalBookingOptions(app);
         MapLoans(app);
         MapOccupationManagement(app);
+        MapOccupancyIndicators(app);
+        MapRoomOpportunities(app);
+        MapInstitutionalImport(app);
+        MapInstitutionalExports(app);
+        MapInstitutionalAuthentication(app);
+        MapAudit(app);
     }
 
     private static string UserId(ClaimsPrincipal user)
@@ -43,6 +58,7 @@ public static partial class ApiEndpoints
     private static object RoomView(Room r) => new
     {
         r.Id,
+        r.Code,
         r.Name,
         r.Location,
         r.Purpose,
@@ -105,10 +121,16 @@ public static partial class ApiEndpoints
                 Roles = await manager.GetRolesAsync(user)
             });
         }).RequireAuthorization().WithTags("Autenticação");
-        app.MapGet("/api/teachers", async (UserManager<AppUser> manager) =>
+        app.MapGet("/api/teachers", async (ClaimsPrincipal current, UserManager<AppUser> manager) =>
         {
             var teachers = await manager.GetUsersInRoleAsync("Professor");
-            return Results.Ok(teachers.Select(u => new { u.Id, u.DisplayName, u.Email }));
+            var isAdmin = current.IsInRole("Admin");
+            return Results.Ok(teachers.Select(u => new
+            {
+                u.Id,
+                u.DisplayName,
+                Email = isAdmin ? u.Email : null
+            }));
         }).RequireAuthorization().WithTags("Professores");
     }
 
@@ -161,31 +183,60 @@ public static partial class ApiEndpoints
             var room = (await AllRooms(db)).FirstOrDefault(r => r.Id == id);
             return room is null ? Results.NotFound() : Results.Ok(RoomView(room));
         });
-        api.MapPost("/rooms", async (RoomInput input, AppDbContext db) =>
+        api.MapPost("/rooms", async (RoomInput input, AppDbContext db, ClaimsPrincipal current) =>
         {
             var validation = await ValidateRoom(db, input);
             if (validation is not null) return Error(validation);
             var room = CreateRoom(input);
+            await using var createTx = await db.Database.BeginTransactionAsync();
             db.Rooms.Add(room);
             await db.SaveChangesAsync();
+            AuditTrail.Add(db, "Room", room.Id.ToString(), "Criado", UserId(current), null,
+                new { room.Name, room.Location, room.Kind, room.Seats, room.Desks,
+                    room.HasProjector, room.HasTeacherComputer, room.HasInternet, room.Active,
+                    ComputerGroups = room.ComputerGroups.Select(g => new { g.Quantity, g.RamGb, g.Tier,
+                        Software = g.Software.Select(s => new { s.SoftwareId, s.InstalledQuantity }).ToArray() }).ToArray() });
+            await db.SaveChangesAsync();
+            await createTx.CommitAsync();
             return Results.Created($"/api/rooms/{room.Id}", new { room.Id, room.Name });
         }).RequireAuthorization("Admin");
-        api.MapPut("/rooms/{id:int}", async (int id, RoomInput input, AppDbContext db) =>
+        api.MapPut("/rooms/{id:int}", async (int id, RoomInput input, AppDbContext db,
+            ClaimsPrincipal current) =>
         {
             var validation = await ValidateRoom(db, input);
             if (validation is not null) return Error(validation);
             var existing = await db.Rooms.Include(r => r.ComputerGroups)
                 .ThenInclude(g => g.Software).FirstOrDefaultAsync(r => r.Id == id);
             if (existing is null) return Results.NotFound();
+            var before = new { existing.Name, existing.Location, existing.Purpose, existing.Kind,
+                existing.Seats, existing.Desks, existing.HasProjector, existing.HasTeacherComputer,
+                existing.HasInternet, existing.Active,
+                ComputerGroups = existing.ComputerGroups.Select(g => new { g.Quantity, g.RamGb, g.Tier,
+                    Software = g.Software.Select(s => new { s.SoftwareId, s.InstalledQuantity }).ToArray() }).ToArray() };
             existing.Name = input.Name.Trim(); existing.Location = input.Location.Trim();
             existing.Purpose = input.Purpose?.Trim() ?? "";
             existing.Kind = input.Kind; existing.Seats = input.Seats; existing.Desks = input.Desks;
             existing.HasProjector = input.HasProjector;
             existing.HasTeacherComputer = input.HasTeacherComputer;
             existing.HasInternet = input.HasInternet; existing.Active = input.Active;
-            db.GroupSoftware.RemoveRange(existing.ComputerGroups.SelectMany(g => g.Software));
-            db.ComputerGroups.RemoveRange(existing.ComputerGroups);
-            existing.ComputerGroups = NewComputerGroups(input.ComputerGroups);
+            UpdateComputerGroups(existing.ComputerGroups, input.ComputerGroups);
+            AuditTrail.Add(db, "Room", existing.Id.ToString(), "Alterado", UserId(current), before,
+                new { existing.Name, existing.Location, existing.Purpose, existing.Kind,
+                    existing.Seats, existing.Desks, existing.HasProjector, existing.HasTeacherComputer,
+                    existing.HasInternet, existing.Active,
+                    ComputerGroups = existing.ComputerGroups.Select(g => new { g.Quantity, g.RamGb, g.Tier,
+                        Software = g.Software.Select(s => new { s.SoftwareId, s.InstalledQuantity }).ToArray() }).ToArray() });
+            if (before.Active && !existing.Active)
+            {
+                var affected = await db.Occupations.AsNoTracking()
+                    .Where(o => o.RoomId == id && o.CancelledAtUtc == null &&
+                        o.StartsAt >= DateTime.Now && o.TeacherId != null)
+                    .Select(o => o.TeacherId!).Distinct().ToListAsync();
+                foreach (var teacherId in affected)
+                    AuditTrail.Notify(db, teacherId, UserId(current), "Ambiente desativado",
+                        $"O ambiente {existing.Name} foi desativado. Revise suas ocupações futuras; nenhuma reserva foi cancelada automaticamente.",
+                        "Room", existing.Id);
+            }
             await db.SaveChangesAsync();
             return Results.NoContent();
         }).RequireAuthorization("Admin");
@@ -209,14 +260,30 @@ public static partial class ApiEndpoints
             if (input.Students < 1 || input.Students > 500 || string.IsNullOrWhiteSpace(input.Name))
                 return Error("Turma deve ter nome e quantidade de alunos válida");
             if (!await db.Semesters.AnyAsync(s => s.Id == input.SemesterId)) return Error("Semestre não encontrado");
+            if (input.CourseId is int courseId && !await db.Courses.AnyAsync(c => c.Id == courseId))
+                return Error("Curso não encontrado");
             var item = new ClassGroup
             {
                 SemesterId = input.SemesterId,
+                CourseId = input.CourseId,
                 Name = input.Name.Trim(),
                 Students = input.Students
             };
             db.Classes.Add(item); await db.SaveChangesAsync();
             return Results.Created($"/api/classes/{item.Id}", item);
+        }).RequireAuthorization("Admin");
+        api.MapPut("/classes/{id:int}/course", async (int id, ClassCourseInput input, AppDbContext db) =>
+        {
+            var classGroup = await db.Classes.FindAsync(id);
+            if (classGroup is null) return Results.NotFound();
+            if (!await db.Courses.AnyAsync(c => c.Id == input.CourseId)) return Error("Curso não encontrado");
+            if (classGroup.CourseId == input.CourseId) return Results.NoContent();
+            if (classGroup.CourseId is not null ||
+                await db.Assignments.AnyAsync(a => a.ClassGroupId == id && a.CurricularUnitId != null))
+                return Results.Conflict(new ApiError("O curso da turma já está definido ou possui atribuições pedagógicas"));
+            classGroup.CourseId = input.CourseId;
+            await db.SaveChangesAsync();
+            return Results.NoContent();
         }).RequireAuthorization("Admin");
 
         api.MapGet("/teachers/{teacherId}/availability", async (string teacherId, AppDbContext db) =>
@@ -240,60 +307,6 @@ public static partial class ApiEndpoints
             return Results.NoContent();
         });
 
-        api.MapGet("/assignments", async (int? semesterId, AppDbContext db) =>
-        {
-            var items = await db.Assignments.Include(a => a.ClassGroup).Include(a => a.Software)
-                .Where(a => semesterId == null || a.ClassGroup.SemesterId == semesterId).ToListAsync();
-            return Results.Ok(items.Select(a => new
-            {
-                a.Id,
-                a.TeacherId,
-                a.ClassGroupId,
-                a.DisciplineName,
-                a.MeetingsPerWeek,
-                a.PreferredShiftId,
-                a.NeedsProjector,
-                a.NeedsTeacherComputer,
-                a.NeedsStudentComputers,
-                a.MinTier,
-                a.MinRamGb,
-                a.NeedsDedicatedGpu,
-                a.LessonPlanLink,
-                SoftwareIds = a.Software.Select(s => s.SoftwareId)
-            }));
-        });
-        api.MapPost("/assignments", async (AssignmentCreate input, AppDbContext db,
-            UserManager<AppUser> users) =>
-        {
-            var teacher = await users.FindByIdAsync(input.TeacherId);
-            if (teacher is null || !await users.IsInRoleAsync(teacher, "Professor"))
-                return Error("Professor não encontrado");
-            if (!await db.Classes.AnyAsync(c => c.Id == input.ClassGroupId) ||
-                input.MeetingsPerWeek < 1 || input.MeetingsPerWeek > 5 ||
-                string.IsNullOrWhiteSpace(input.DisciplineName) ||
-                !Enum.IsDefined(input.MinTier) || input.MinRamGb < 0 || input.MinRamGb > 512 ||
-                (input.PreferredShiftId is int shiftId && !await db.Shifts.AnyAsync(s => s.Id == shiftId)) ||
-                !await SoftwareExists(db, input.SoftwareIds))
-                return Error("Dados da atribuição inválidos");
-            var item = new TeachingAssignment
-            {
-                ClassGroupId = input.ClassGroupId,
-                TeacherId = input.TeacherId,
-                DisciplineName = input.DisciplineName.Trim(),
-                MeetingsPerWeek = input.MeetingsPerWeek,
-                PreferredShiftId = input.PreferredShiftId,
-                NeedsProjector = input.NeedsProjector,
-                NeedsTeacherComputer = input.NeedsTeacherComputer,
-                NeedsStudentComputers = input.NeedsStudentComputers,
-                MinTier = input.MinTier,
-                MinRamGb = input.MinRamGb,
-                NeedsDedicatedGpu = input.NeedsDedicatedGpu,
-                LessonPlanLink = input.LessonPlanLink,
-                Software = input.SoftwareIds.Distinct().Select(id => new AssignmentSoftware { SoftwareId = id }).ToList()
-            };
-            db.Assignments.Add(item); await db.SaveChangesAsync();
-            return Results.Created($"/api/assignments/{item.Id}", new { item.Id });
-        }).RequireAuthorization("Admin");
     }
 
     private static async Task<string?> ValidateRoom(AppDbContext db, RoomInput input)
@@ -340,4 +353,34 @@ public static partial class ApiEndpoints
             Software = g.Software.Select(s => new GroupSoftware
             { SoftwareId = s.SoftwareId, InstalledQuantity = s.InstalledQuantity }).ToList()
         }).ToList();
+
+    private static void UpdateComputerGroups(List<ComputerGroup> existing,
+        IEnumerable<ComputerGroupInput> inputs)
+    {
+        foreach (var input in inputs)
+        {
+            var group = existing.FirstOrDefault(g => string.Equals(g.Description.Trim(),
+                input.Description.Trim(), StringComparison.OrdinalIgnoreCase));
+            if (group is null)
+            {
+                existing.Add(NewComputerGroups(new[] { input })[0]);
+                continue;
+            }
+
+            group.Description = input.Description.Trim();
+            group.Quantity = input.Quantity;
+            group.RamGb = input.RamGb;
+            group.Tier = input.Tier;
+            group.DedicatedGpu = input.DedicatedGpu;
+            foreach (var software in input.Software)
+            {
+                var link = group.Software.FirstOrDefault(s => s.SoftwareId == software.SoftwareId);
+                if (link is null)
+                    group.Software.Add(new GroupSoftware
+                    { SoftwareId = software.SoftwareId, InstalledQuantity = software.InstalledQuantity });
+                else
+                    link.InstalledQuantity = software.InstalledQuantity;
+            }
+        }
+    }
 }
