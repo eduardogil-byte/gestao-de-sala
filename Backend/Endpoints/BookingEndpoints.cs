@@ -12,7 +12,7 @@ public static partial class ApiEndpoints
 {
     private static void MapBookings(IEndpointRouteBuilder app)
     {
-        var api = app.MapGroup("/api/bookings").RequireAuthorization().WithTags("Reservas por turno");
+        var api = app.MapGroup("/api/bookings").RequireAuthorization(policy => policy.RequireRole("Admin", "Professor")).WithTags("Reservas por turno");
 
         api.MapPost("", async (BookingCreate input, ClaimsPrincipal current, AppDbContext db) =>
         {

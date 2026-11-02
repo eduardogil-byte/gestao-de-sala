@@ -1,6 +1,8 @@
 using System.Security.Claims;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Data.SqlClient;
+using System.Data.Common;
 using SalaGest.Api.Contracts;
 using SalaGest.Api.Data;
 using SalaGest.Api.Models;
@@ -88,17 +90,37 @@ public static partial class ApiEndpoints
     private static void MapAccounts(IEndpointRouteBuilder app)
     {
         var api = app.MapGroup("/api/auth").WithTags("Autenticação");
-        api.MapPost("/register", async (RegisterTeacher input, UserManager<AppUser> manager) =>
+        api.MapPost("/register", async (RegisterTeacher input, UserManager<AppUser> manager, AppDbContext db) =>
         {
             if (string.IsNullOrWhiteSpace(input.Name) || input.Name.Length > 120 ||
                 string.IsNullOrWhiteSpace(input.Email)) return Error("Nome e e-mail são obrigatórios");
             var email = input.Email.Trim();
             var user = new AppUser { UserName = email, Email = email, DisplayName = input.Name.Trim() };
-            var result = await manager.CreateAsync(user, input.Password);
-            if (!result.Succeeded) return Error(string.Join("; ", result.Errors.Select(e => e.Description)));
-            await manager.AddToRoleAsync(user, "Professor");
-            return Results.Created("/api/me", new { user.Id, user.DisplayName, user.Email, Role = "Professor" });
-        }).AllowAnonymous();
+            try
+            {
+                await using var transaction = await db.Database.BeginTransactionAsync();
+                var result = await manager.CreateAsync(user, input.Password);
+                if (!result.Succeeded)
+                {
+                    if (result.Errors.Any(e => e.Code is "DuplicateEmail" or "DuplicateUserName"))
+                        return Results.Conflict(new ApiError("Já existe uma conta com esse e-mail."));
+                    return Error(string.Join("; ", result.Errors.Select(e => e.Description)));
+                }
+                var roleResult = await manager.AddToRoleAsync(user, "Professor");
+                if (!roleResult.Succeeded)
+                    return Results.Problem("Não foi possível concluir o cadastro do professor.");
+                await transaction.CommitAsync();
+                return Results.Created("/api/me", new { user.Id, user.DisplayName, user.Email, Role = "Professor" });
+            }
+            catch (DbUpdateException exception) when (exception.InnerException is SqlException { Number: 2601 or 2627 })
+            {
+                return Results.Conflict(new ApiError("Já existe uma conta com esse e-mail."));
+            }
+            catch (Exception exception) when (exception is DbUpdateException or DbException)
+            {
+                return Results.Problem("Não foi possível concluir o cadastro. Tente novamente.", statusCode: 503);
+            }
+        }).RequireAuthorization("Admin");
 
         api.MapPost("/login", async (LoginRequest input, SignInManager<AppUser> signIn) =>
         {
@@ -305,7 +327,7 @@ public static partial class ApiEndpoints
             { TeacherId = teacherId, Weekday = a.Weekday, ShiftId = a.ShiftId }));
             await db.SaveChangesAsync();
             return Results.NoContent();
-        });
+        }).RequireAuthorization(policy => policy.RequireRole("Admin", "Professor"));
 
     }
 

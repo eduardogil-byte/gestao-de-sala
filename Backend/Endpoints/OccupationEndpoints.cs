@@ -12,7 +12,7 @@ public static partial class ApiEndpoints
 {
     private static void MapOccupationManagement(IEndpointRouteBuilder app)
     {
-        var api = app.MapGroup("/api/occupations").RequireAuthorization().WithTags("Gerenciar alocações");
+        var api = app.MapGroup("/api/occupations").RequireAuthorization(policy => policy.RequireRole("Admin", "Professor")).WithTags("Gerenciar alocações");
         MapOccupationMoves(api);
         MapOccupationReversals(api);
 

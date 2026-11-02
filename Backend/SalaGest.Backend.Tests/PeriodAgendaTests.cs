@@ -136,6 +136,37 @@ public sealed class PeriodAgendaTests
             $"/api/agenda?semesterId={host.SemesterId}")).StatusCode);
     }
 
+    [Fact]
+    public async Task PrivateDescriptionsAreVisibleOnlyToAdminOwnerAndBorrower()
+    {
+        await using var host = await Host.CreateAsync();
+        using (var scope = host.App.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+            foreach (var occupation in await db.Occupations.ToListAsync())
+                occupation.Description = "Private description";
+            await db.SaveChangesAsync();
+        }
+        var range = "from=2027-03-01&to=2027-04-01";
+        host.AsOtherTeacher();
+        var rows = await host.Read(range);
+        var other = Assert.Single(rows, x => x.GetProperty("id").GetInt32() == host.PedagogicalOccupationId);
+        Assert.Null(other.GetProperty("description").GetString());
+        Assert.Null(other.GetProperty("curricularCapabilityDescription").GetString());
+        Assert.True(other.GetProperty("roomId").GetInt32() > 0);
+        host.AsTeacher();
+        rows = await host.Read(range);
+        Assert.Equal("Private description", Assert.Single(rows, x => x.GetProperty("id").GetInt32() == host.PedagogicalOccupationId).GetProperty("description").GetString());
+        Assert.All(rows.Where(x => x.GetProperty("isBorrowed").GetBoolean()), x => Assert.Equal("Private description", x.GetProperty("description").GetString()));
+        host.AsUnrelatedTeacher();
+        rows = await host.Read(range);
+        Assert.All(rows, x => Assert.Null(x.GetProperty("description").GetString()));
+        Assert.All(rows.Where(x => x.GetProperty("isBorrowed").GetBoolean()),
+            x => Assert.Equal(System.Text.Json.JsonValueKind.Null, x.GetProperty("loanDisposition").ValueKind));
+        host.AsAdmin();
+        Assert.All(await host.Read(range), x => Assert.Equal("Private description", x.GetProperty("description").GetString()));
+    }
+
     private sealed class Host : IAsyncDisposable
     {
         private readonly SqliteConnection connection;
@@ -164,6 +195,7 @@ public sealed class PeriodAgendaTests
         }
         public void AsTeacher() => SetUser("teacher1", "Professor");
         public void AsOtherTeacher() => SetUser("teacher2", "Professor");
+        public void AsUnrelatedTeacher() => SetUser("teacher3", "Professor");
         public void AsAdmin() => SetUser("admin", "Admin");
         public void AsAnonymous() { Client.DefaultRequestHeaders.Remove("X-Test-User");
             Client.DefaultRequestHeaders.Remove("X-Test-Role"); }

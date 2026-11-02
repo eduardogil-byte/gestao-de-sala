@@ -25,7 +25,8 @@ public static partial class ApiEndpoints
 
     private static void MapSemesterPlanning(IEndpointRouteBuilder app)
     {
-        var api = app.MapGroup("/api/semester-plans").RequireAuthorization().WithTags("Planejamento semestral");
+        var api = app.MapGroup("/api/semester-plans")
+            .RequireAuthorization(policy => policy.RequireRole("Admin", "Professor")).WithTags("Planejamento semestral");
         api.MapGet("", async (int? semesterId, ClaimsPrincipal current, AppDbContext db) =>
         {
             var admin = current.IsInRole("Admin");

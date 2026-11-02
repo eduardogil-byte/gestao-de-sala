@@ -12,7 +12,7 @@ public static partial class ApiEndpoints
 {
     private static void MapSchedules(IEndpointRouteBuilder app)
     {
-        var api = app.MapGroup("/api").RequireAuthorization().WithTags("Grade e agenda");
+        var api = app.MapGroup("/api").RequireAuthorization(policy => policy.RequireRole("Admin", "Professor")).WithTags("Grade e agenda");
         api.MapGet("/schedules", async (int? semesterId, AppDbContext db) =>
             Results.Ok(await db.Schedules.Where(s => semesterId == null || s.SemesterId == semesterId)
                 .OrderByDescending(s => s.CreatedAtUtc)
