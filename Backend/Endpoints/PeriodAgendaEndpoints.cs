@@ -164,7 +164,7 @@ public static partial class ApiEndpoints
                     Status = o.Kind == OccupationKind.Bloqueio ? "Blocked" : "Confirmed",
                     Source = o.BookingRequestId != null ? "Booking" : o.WeeklyClassId != null ? "Schedule" :
                         o.PlanProposalId != null ? "Planning" : o.Kind == OccupationKind.Bloqueio ? "Block" : "Manual",
-                    Description = o.Description,
+                    Description = visibleDetails ? o.Description : null,
                     OriginalTeacherId = o.TeacherId, ActualTeacherId = actualTeacher,
                     ActualTeacherName = visibleDetails && actualTeacher is not null
                         ? teachers.GetValueOrDefault(actualTeacher) : null,
@@ -179,7 +179,8 @@ public static partial class ApiEndpoints
                     WeeklyClassId = o.WeeklyClassId, BookingRequestId = o.BookingRequestId,
                     PlanProposalId = o.PlanProposalId,
                     EffectiveBookingRequestId = bookingId, BookingStatus = booking?.Status,
-                    IsBorrowed = loan is not null, LoanId = loan?.Id, LoanDisposition = loan?.OwnerDisposition
+                    IsBorrowed = loan is not null, LoanId = loan?.Id,
+                    LoanDisposition = visibleDetails ? loan?.OwnerDisposition : null
                 };
             }).ToList();
 

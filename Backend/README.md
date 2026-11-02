@@ -8,6 +8,16 @@ ASP.NET Core Identity Bearer Token. O React já enviado anteriormente é um proj
 A migration SG-08 foi gerada, mas não foi aplicada nem testada em SQL Server. Valide os fluxos
 HTTP e a migration em um banco de teste antes de colocar usuários reais.
 
+## Autenticação e permissões — SG-03
+
+`POST /api/auth/register` exige Bearer Token e papel Admin: 401 sem autenticação e 403 sem permissão. O servidor atribui somente Professor. Conta e papel são criados na mesma transação; falha na atribuição não confirma o cadastro. A tela pública oferece login local e SSO, sem autocadastro; o formulário administrativo em Professores é reutilizado.
+
+Reservas, empréstimos, ocupações, grade/agenda, planejamento semestral e alteração de disponibilidade exigem Admin ou Professor, além das verificações de titularidade existentes. A agenda omite descrição privada e destino da turma no empréstimo para terceiros. Contas e histórico existentes são preservados.
+
+O primeiro Admin de desenvolvimento continua provisionado com seed opt-in e segredos privados, sem promoção de conta comum preexistente. O procedimento de produção permanece pendente; não habilitar Development em produção. Os testes SG-03 verificaram o bootstrap somente em SQLite em memória.
+
+**Sessões:** antes da autorização, requisições Bearer protegidas validam usuário, elegibilidade, bloqueio, security stamp e papéis persistidos. Troca de senha e alterações de papéis invalidam tokens anteriores; bloqueio temporário suspende o acesso enquanto vigente. Falha de consulta retorna 503 sem executar a operação. A expiração existente foi preservada, sem cache ou nova tabela. Ver testes, impactos e pendências em `docs/tasks/SG-03.md`.
+
 ## Começar no Windows
 
 Instale .NET 8 SDK, SQL Server Express e (opcional) Visual Studio. Abra um terminal
@@ -209,7 +219,7 @@ Datas e horários de aula são **locais da instituição sem sufixo `Z`**.
 - Testar SQL Server real: concorrência de dois professores na mesma sala,
   recorrência parcialmente disponível, troca da mesma turma, múltiplos empréstimos
   e realocação da turma cedente.
-- Verificar política de segurança para cadastro público de professores antes de publicar na rede da instituição.
+- Cadastro restrito a Admin pela DD-SG03; aprovar provisionamento do primeiro Admin e política de sessões antes da publicação institucional.
 
 **Não disponibilize o sistema para operação real sem compilar, migrar, testar e
 revisar as políticas de acesso na infraestrutura da instituição.**

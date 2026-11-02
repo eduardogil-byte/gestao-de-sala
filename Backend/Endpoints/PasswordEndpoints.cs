@@ -48,7 +48,7 @@ namespace SalaGest.Api.Endpoints
 
             return Results.Ok(new
             {
-                message = "Senha alterada com sucesso."
+                message = "Senha alterada com sucesso. Entre novamente para continuar."
             });
         })
         .RequireAuthorization()

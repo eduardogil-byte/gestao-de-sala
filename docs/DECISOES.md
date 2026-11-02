@@ -43,5 +43,13 @@ Este documento separa **regras confirmadas**, **propostas do coordenador** e **d
 - Preservar o histórico de alterações, evitando exclusão física de registros relacionados.
 - Adotar a comparação estruturada de requisitos técnicos para recomendações, com justificativas legíveis.
 
+## DD-SG03 — Cadastro de professores por Admin (2026-11-01)
+
+- **Situação:** decisão de desenvolvimento aprovada pelo responsável pelo projeto nesta etapa da SG-03.
+- **Regra:** somente Admin autenticado cadastra professores. O backend atribui exclusivamente Professor; não há autocadastro público nem escolha de papel pelo cliente.
+- **Consequência:** `/api/auth/register` exige Admin (401 sem autenticação; 403 sem permissão). Contas existentes e login preservados; formulário administrativo reutilizado.
+- **Complemento de desenvolvimento aprovado:** requisições protegidas revalidam conta, bloqueio, stamp e papéis. Troca de senha e alteração de papéis revogam tokens anteriores; bloqueio temporário somente suspende acesso. Após desbloqueio, token não expirado pode retomar se não houver outra revogação. Consultas com falha não autorizam operações.
+- **Pendências institucionais:** matriz futura Gestor/Coordenador (D-08), duração de sessões, procedimento do primeiro Admin em produção e entrega de credenciais iniciais. Ver `docs/tasks/SG-03.md`.
+
 ## Como registrar novas decisões
 Acrescentar: data, ID, situação (`Confirmada`, `Proposta`, `Em aberto`), responsável pela decisão, regra, motivo e Issues afetadas. **Não mudar o status para Confirmada por dedução.**

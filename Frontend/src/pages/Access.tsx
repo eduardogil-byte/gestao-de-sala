@@ -9,13 +9,11 @@ import {
   Layers3,
 } from "lucide-react";
 import type { User } from "../types";
-import { read, register, signIn } from "../lib/api";
+import { read, signIn } from "../lib/api";
 import { resultMessage } from "../lib/utils";
 import { Field, Notice } from "../components/UI";
 
 export function Access({ onLogin, initialMessage = "" }: { onLogin: (user: User) => void; initialMessage?: string }) {
-  const [mode, setMode] = useState<"login" | "register">("login");
-  const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
@@ -33,11 +31,7 @@ export function Access({ onLogin, initialMessage = "" }: { onLogin: (user: User)
     setError("");
     setMessage("");
     try {
-      if (mode === "register") {
-        await register(name, email, password);
-        setMode("login");
-        setMessage("Conta de professor criada! Entre com seu e-mail e senha.");
-      } else onLogin(await signIn(email, password));
+      onLogin(await signIn(email, password));
     } catch (e) {
       setError(resultMessage(e));
     } finally {
@@ -97,30 +91,14 @@ export function Access({ onLogin, initialMessage = "" }: { onLogin: (user: User)
             <LockKeyhole size={23} />
           </div>
           <h2 className="text-[30px] tracking-tight font-bold text-slate-800">
-            {mode === "login"
-              ? "Bem-vindo de volta"
-              : "Criar conta de professor"}
+            Bem-vindo de volta
           </h2>
           <p className="text-slate-500 mt-2 mb-8">
-            {mode === "login"
-              ? "Entre para acessar a gestão de salas e horários."
-              : "Professores podem solicitar reservas e consultar a agenda."}
+            Entre para acessar a gestão de salas e horários.
           </p>
           <form onSubmit={submit} className="space-y-4">
             {error && <Notice message={error} />}{" "}
             {message && <Notice message={message} type="success" />}
-            {mode === "register" && (
-              <Field label="Nome completo">
-                <input
-                  className="field"
-                  required
-                  value={name}
-                  maxLength={120}
-                  onChange={(e) => setName(e.target.value)}
-                  placeholder="Nome e sobrenome"
-                />
-              </Field>
-            )}
             <Field label="E-mail institucional">
               <input
                 type="email"
@@ -134,10 +112,7 @@ export function Access({ onLogin, initialMessage = "" }: { onLogin: (user: User)
             </Field>
             <Field label="Senha">
               <PasswordInput
-                key={mode}
-                autoComplete={
-                  mode === "login" ? "current-password" : "new-password"
-                }
+                autoComplete="current-password"
                 minLength={8}
                 required
                 value={password}
@@ -146,36 +121,19 @@ export function Access({ onLogin, initialMessage = "" }: { onLogin: (user: User)
               />
             </Field>
             <button disabled={busy} className="btn-primary w-full !py-3 mt-2">
-              {busy
-                ? "Enviando..."
-                : mode === "login"
-                  ? "Entrar na plataforma"
-                  : "Criar conta"}
+              {busy ? "Enviando..." : "Entrar na plataforma"}
               <ArrowRight size={17} />
             </button>
           </form>
-          {mode === "login" && ssoEnabled && <div className="mt-4">
+          {ssoEnabled && <div className="mt-4">
             <button type="button" disabled={busy} className="btn-secondary w-full !py-3"
               onClick={() => { setBusy(true); window.location.assign("/api/auth/institutional/login"); }}>
               Entrar com conta institucional
             </button>
           </div>}
-          <div className="mt-6 text-center text-sm text-slate-500">
-            {mode === "login"
-              ? "É professor e ainda não tem conta?"
-              : "Já possui uma conta?"}{" "}
-            <button
-              className="text-skybrand-700 font-semibold hover:underline"
-              onClick={() => {
-                setMode(mode === "login" ? "register" : "login");
-                setError("");
-                setMessage("");
-                setPassword("");
-              }}
-            >
-              {mode === "login" ? "Cadastre-se" : "Fazer login"}
-            </button>
-          </div>
+          <p className="mt-6 text-center text-sm text-slate-500">
+            Precisa de uma conta? Procure a administração da instituição.
+          </p>
           <p className="text-center text-xs text-slate-400 mt-10">
             A conta de administrador é criada no backend, por configuração
             segura.

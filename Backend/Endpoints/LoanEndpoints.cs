@@ -13,7 +13,7 @@ public static partial class ApiEndpoints
 {
     private static void MapLoans(IEndpointRouteBuilder app)
     {
-        var api = app.MapGroup("/api/loans").RequireAuthorization().WithTags("Empréstimos entre professores");
+        var api = app.MapGroup("/api/loans").RequireAuthorization(policy => policy.RequireRole("Admin", "Professor")).WithTags("Empréstimos entre professores");
         api.MapGet("", async (ClaimsPrincipal current, AppDbContext db) =>
         {
             var me = UserId(current);

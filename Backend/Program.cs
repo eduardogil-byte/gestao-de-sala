@@ -99,6 +99,7 @@ builder.Services.AddIdentityCore<AppUser>(options =>
     })
     .AddRoles<IdentityRole>()
     .AddEntityFrameworkStores<AppDbContext>()
+    .AddUserManager<SessionUserManager>()
     .AddSignInManager();
 builder.Services.AddAuthorization(options =>
     options.AddPolicy("Admin", policy => policy.RequireRole("Admin")));
@@ -146,6 +147,7 @@ else
 }
 app.UseCors("React");
 app.UseAuthentication();
+app.UseMiddleware<BearerSessionValidationMiddleware>();
 app.UseAuthorization();
 app.MapGet("/api/health", () => Results.Ok(new { status = "ok", service = "SalaGest" }));
 app.MapGet("/health/live", () => Results.Ok(new { status = "ok" }));

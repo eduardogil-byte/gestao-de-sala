@@ -36,7 +36,7 @@ public static partial class ApiEndpoints
                 Capabilities = capabilities.Where(c => c.CurricularUnitId == x.CurricularUnitId)
                     .Select(c => new { c.Id, c.Description })
             }));
-        }).RequireAuthorization().WithTags("Reservas por turno");
+        }).RequireAuthorization(policy => policy.RequireRole("Admin", "Professor")).WithTags("Reservas por turno");
     }
 
     private static async Task<Dictionary<DateOnly, CalendarDateResult>> CalendarForBooking(
