@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { put, post, read } from "../lib/api";
 import { resultMessage } from "../lib/utils";
-import { Checkbox, Field, Notice } from "./UI";
+import { Checkbox, Field, Notice, useConfirmation } from "./UI";
 import type { Occupation, RoomOption } from "../types";
 
 export function OccupationManager({
@@ -12,6 +12,7 @@ export function OccupationManager({
   onSaved: () => Promise<void>;
 }) {
   const [status, setStatus] = useState(occ.dayStatus || "Letivo");
+  const ask = useConfirmation();
   const [options, setOptions] = useState<RoomOption[]>([]),
     [room, setRoom] = useState(""),
     [notify, setNotify] = useState(true);
@@ -111,15 +112,17 @@ export function OccupationManager({
             !options.find((r) => r.id === Number(room))?.available
           }
           onClick={() => {
-            if (window.confirm("Confirmar a transferência desta ocorrência?"))
-              void run(
-                () =>
-                  put(`/occupations/${occ.id}/room`, {
+            void ask({ title: "Transferir ocorrência", message: "Esta ocorrência será transferida para a sala selecionada. As demais datas não serão alteradas.", confirmLabel: "Transferir sala" }).then((confirmed) => {
+              if (confirmed) {
+                void run(
+                  () => put(`/occupations/${occ.id}/room`, {
                     roomId: Number(room),
                     notifyTeachers: notify,
                   }),
-                "Sala alterada.",
-              );
+                  "Sala alterada.",
+                );
+              }
+            });
           }}
         >
           Confirmar transferência
@@ -130,15 +133,14 @@ export function OccupationManager({
           className="btn-secondary text-red-700"
           disabled={busy}
           onClick={() => {
-            if (
-              window.confirm(
-                "Liberar esta data? A operação libera a sala somente nesta ocorrência.",
-              )
-            )
-              void run(
-                () => post(`/occupations/${occ.id}/release`, { confirm: true }),
-                "Data liberada.",
-              );
+            void ask({ title: "Liberar esta data", message: "A sala será liberada somente nesta ocorrência. As demais datas da reserva permanecerão ativas.", confirmLabel: "Liberar data", danger: true }).then((confirmed) => {
+              if (confirmed) {
+                void run(
+                  () => post(`/occupations/${occ.id}/release`, { confirm: true }),
+                  "Data liberada.",
+                );
+              }
+            });
           }}
         >
           Liberar esta data

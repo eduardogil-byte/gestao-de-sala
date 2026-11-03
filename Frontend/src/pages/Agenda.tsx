@@ -16,6 +16,7 @@ import {
   Notice,
   SubmitButton,
   Title,
+  useConfirmation,
 } from "../components/UI";
 import { OccupationManager } from "../components/OccupationManager";
 import type { Occupation, User } from "../types";
@@ -31,6 +32,7 @@ export function Agenda({
 }) {
   const admin = user.roles.includes("Admin");
   const { data } = useData();
+  const ask = useConfirmation();
   const [selected, setSelected] = useState<Occupation | null>(null);
   const [chosen, setChosen] = useState<number[]>([]);
   const [from, setFrom] = useState(localDate(new Date()));
@@ -85,7 +87,7 @@ export function Agenda({
   async function releaseMany() {
     if (
       !chosen.length ||
-      !window.confirm(`Liberar ${chosen.length} datas selecionadas?`)
+      !await ask({ title: "Liberar datas", message: `A sala será liberada nas ${chosen.length} datas selecionadas. As demais datas permanecerão reservadas.`, confirmLabel: "Liberar datas", danger: true })
     )
       return;
     setBusy(true);
@@ -104,7 +106,7 @@ export function Agenda({
     }
   }
   async function unblock(id: number) {
-    if (!window.confirm("Deseja remover este bloqueio?")) return;
+    if (!await ask({ title: "Remover bloqueio", message: "Este bloqueio de sala será removido e o período voltará a ficar disponível.", confirmLabel: "Remover bloqueio", danger: true })) return;
     try {
       await remove(`/rooms/block/${id}`);
       await load();

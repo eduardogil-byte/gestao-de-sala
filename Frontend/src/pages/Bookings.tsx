@@ -18,6 +18,7 @@ import {
   Notice,
   Title,
   Checkbox,
+  useConfirmation,
 } from "../components/UI";
 import { BookingForm } from "../components/BookingForm";
 import { AuditHistory } from "../components/AuditHistory";
@@ -39,6 +40,7 @@ export function Bookings({
   focusId?: number | null;
 }) {
   const { data, reload } = useData();
+  const ask = useConfirmation();
   const [form, setForm] = useState(false),
     [filter, setFilter] = useState("Todos");
   const [booking, setBooking] = useState<Booking | null>(null),
@@ -133,7 +135,7 @@ export function Bookings({
     const explanation = missing
       ? `${missing} de ${availability.total} datas estão indisponíveis. Confirmar somente as ${acceptedDates.length} datas válidas?`
       : `Confirmar ${acceptedDates.length} data(s) no ${chosen.name}?`;
-    if (!window.confirm(explanation)) return;
+    if (!await ask({ title: "Confirmar reserva", message: explanation, confirmLabel: "Confirmar datas" })) return;
     setBusy(true);
     setError("");
     try {
@@ -164,7 +166,7 @@ export function Bookings({
     }
   }
   async function discard(id: number) {
-    if (!window.confirm("Descartar esta solicitação ainda não confirmada?"))
+    if (!await ask({ title: "Descartar solicitação", message: "Esta solicitação ainda não confirmada será descartada. As reservas já confirmadas não serão alteradas.", confirmLabel: "Descartar solicitação", danger: true }))
       return;
     setBusy(true);
     try {

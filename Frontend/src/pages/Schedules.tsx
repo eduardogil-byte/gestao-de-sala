@@ -3,7 +3,7 @@ import { CalendarCheck2, Sparkles, Send, AlertTriangle } from "lucide-react";
 import { useData } from "../lib/data";
 import { post, read } from "../lib/api";
 import { dayNames, hour, resultMessage } from "../lib/utils";
-import { Badge, Card, Empty, Field, Notice, Title } from "../components/UI";
+import { Badge, Card, Empty, Field, Notice, Title, useConfirmation } from "../components/UI";
 import type { ScheduleDetails, User } from "../types";
 
 export function Schedules({
@@ -15,6 +15,7 @@ export function Schedules({
 }) {
   const admin = user.roles.includes("Admin");
   const { data, reload } = useData();
+  const ask = useConfirmation();
   const [semesterId, setSemesterId] = useState("");
   const [selected, setSelected] = useState("");
   const [details, setDetails] = useState<ScheduleDetails | null>(null);
@@ -56,9 +57,7 @@ export function Schedules({
   async function publish() {
     if (
       !selected ||
-      !window.confirm(
-        "Publicar esta grade? A versão atual do backend não substitui uma grade já publicada.",
-      )
+      !await ask({ title: "Publicar grade", message: "As aulas desta grade serão adicionadas à agenda. A versão atual do backend não substitui uma grade já publicada.", confirmLabel: "Publicar grade" })
     )
       return;
     setBusy(true);

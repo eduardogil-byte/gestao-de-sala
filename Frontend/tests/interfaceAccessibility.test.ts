@@ -38,3 +38,39 @@ test("modal associa o título ao diálogo e oferece fechamento nomeado", async (
     await server.close();
   }
 });
+
+test("confirmação destrutiva descreve o impacto e oferece cancelamento", async () => {
+  const server = await createServer({ configFile: false, server: { middlewareMode: true, hmr: false }, appType: "custom" });
+  try {
+    const { ConfirmationDialog } = await server.ssrLoadModule("/src/components/UI.tsx");
+    const markup = renderToStaticMarkup(createElement(ConfirmationDialog, {
+      options: { title: "Liberar data", message: "A sala será liberada apenas nesta ocorrência.", confirmLabel: "Liberar data", danger: true },
+      onAnswer: () => {},
+    }));
+    const descriptionId = markup.match(/aria-describedby="([^"]+)"/)?.[1];
+    assert.ok(descriptionId);
+    assert.ok(markup.includes(`id="${descriptionId}"`));
+    assert.match(markup, /A sala será liberada apenas nesta ocorrência/);
+    assert.match(markup, /class="btn-danger"/);
+    assert.match(markup, />Cancelar<\/button>/);
+    assert.match(markup, />Liberar data<\/button>/);
+  } finally {
+    await server.close();
+  }
+});
+
+test("seletor oferece busca para listas grandes e preserva a opção selecionada", async () => {
+  const server = await createServer({ configFile: false, server: { middlewareMode: true, hmr: false }, appType: "custom" });
+  try {
+    const { SearchableSelect } = await server.ssrLoadModule("/src/components/UI.tsx");
+    const options = Array.from({ length: 13 }, (_, index) => ({ value: String(index), label: `Professor ${index}` }));
+    const large = renderToStaticMarkup(createElement(SearchableSelect, { label: "Professor", options, value: "12", onChange: () => {} }));
+    assert.match(large, /Buscar professor/);
+    assert.match(large, /type="search"/);
+    assert.match(large, /value="12" selected=""/);
+    const small = renderToStaticMarkup(createElement(SearchableSelect, { label: "Professor", options: options.slice(0, 2), value: "0", onChange: () => {} }));
+    assert.doesNotMatch(small, /type="search"/);
+  } finally {
+    await server.close();
+  }
+});

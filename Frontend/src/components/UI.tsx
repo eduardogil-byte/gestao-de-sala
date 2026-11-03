@@ -1,4 +1,4 @@
-import { useEffect, useId, useRef, type ReactNode } from "react";
+import { createContext, useContext, useEffect, useId, useRef, useState, type ReactNode } from "react";
 import {
   AlertCircle,
   CheckCircle2,
@@ -20,11 +20,11 @@ export function Title({
   return (
     <div className="flex flex-wrap items-center justify-between gap-4 mb-6">
       <div>
-        <h1 className="text-2xl md:text-[28px] leading-tight font-bold tracking-tight text-slate-800">
+        <h1 className="text-2xl md:text-[28px] leading-tight font-bold tracking-tight text-ink">
           {title}
         </h1>
         {subtitle && (
-          <p className="text-slate-500 mt-1.5 text-sm">{subtitle}</p>
+          <p className="text-muted-ink mt-1.5 text-sm">{subtitle}</p>
         )}
       </div>
       {action}
@@ -55,6 +55,29 @@ export function Field({
       {children}
     </label>
   );
+}
+export function SearchableSelect({ label, options, value, onChange, searchThreshold = 12 }: {
+  label: string;
+  options: { value: string; label: string }[];
+  value: string;
+  onChange: (value: string) => void;
+  searchThreshold?: number;
+}) {
+  const [search, setSearch] = useState("");
+  const query = search.trim().toLocaleLowerCase("pt-BR");
+  const visible = options.filter((option) => option.value === value || option.label.toLocaleLowerCase("pt-BR").includes(query));
+  return <div className="space-y-2">
+    {options.length > searchThreshold && <Field label={`Buscar ${label.toLocaleLowerCase("pt-BR")}`}>
+      <input className="field" type="search" value={search} onChange={(event) => setSearch(event.target.value)} />
+    </Field>}
+    <Field label={label}>
+      <select className="field" value={value} onChange={(event) => onChange(event.target.value)}>
+        {visible.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+      </select>
+    </Field>
+    {query && visible.length === 1 && visible[0].value === value && !visible[0].label.toLocaleLowerCase("pt-BR").includes(query) &&
+      <p className="muted" role="status">Nenhum outro resultado para a busca.</p>}
+  </div>;
 }
 export function Checkbox({
   label,
@@ -116,7 +139,7 @@ export function Notice({
       {success ? <CheckCircle2 aria-hidden="true" size={18} /> : <AlertCircle aria-hidden="true" size={18} />}
       <div className="flex-1">{message}</div>
       {onClose && (
-        <button type="button" aria-label="Fechar aviso" onClick={onClose}>
+        <button type="button" aria-label="Fechar aviso" className="-m-2 min-h-10 min-w-10 flex items-center justify-center rounded-lg hover:bg-black/5" onClick={onClose}>
           <X aria-hidden="true" size={17} />
         </button>
       )}
@@ -153,11 +176,13 @@ export function Modal({
   children,
   onClose,
   width = "max-w-2xl",
+  descriptionId,
 }: {
   title: string;
   children: ReactNode;
   onClose: () => void;
   width?: string;
+  descriptionId?: string;
 }) {
   const dialogRef = useRef<HTMLDivElement>(null);
   const onCloseRef = useRef(onClose);
@@ -178,6 +203,8 @@ export function Modal({
     (firstField ?? focusable()[0] ?? dialog)?.focus();
 
     const onKeyDown = (event: KeyboardEvent) => {
+      const dialogs = document.querySelectorAll('[role="dialog"]');
+      if (dialogs[dialogs.length - 1] !== dialog) return;
       if (event.key === "Escape") {
         event.preventDefault();
         onCloseRef.current();
@@ -212,7 +239,7 @@ export function Modal({
 
   return (
     <div
-      className="fixed inset-0 z-50 bg-slate-900/50 backdrop-blur-[2px] p-4 overflow-y-auto flex items-start md:items-center justify-center"
+      className="fixed inset-0 z-50 bg-slate-900/60 p-3 sm:p-4 overflow-y-auto flex items-start md:items-center justify-center"
       onMouseDown={(e) => {
         if (e.currentTarget === e.target) onClose();
       }}
@@ -222,24 +249,66 @@ export function Modal({
         role="dialog"
         aria-modal="true"
         aria-labelledby={titleId}
+        aria-describedby={descriptionId}
         tabIndex={-1}
-        className={`bg-white rounded-2xl shadow-2xl w-full ${width} my-8`}
+        className={`bg-surface text-ink rounded-panel shadow-xl w-full ${width} my-4 md:my-8`}
       >
-        <div className="flex justify-between items-center border-b border-slate-100 px-6 py-4">
+        <div className="flex justify-between items-center border-b border-line px-4 sm:px-6 py-4 gap-3">
           <h2 id={titleId} className="text-lg font-semibold">{title}</h2>
           <button
             type="button"
             aria-label="Fechar"
             onClick={onClose}
-            className="p-2 rounded-lg hover:bg-slate-100"
+            className="min-w-11 min-h-11 flex items-center justify-center rounded-lg hover:bg-slate-100"
           >
             <X aria-hidden="true" size={19} />
           </button>
         </div>
-        <div className="p-6">{children}</div>
+        <div className="p-4 sm:p-6">{children}</div>
       </div>
     </div>
   );
+}
+
+type ConfirmationOptions = {
+  title: string;
+  message: string;
+  confirmLabel: string;
+  danger?: boolean;
+};
+
+const ConfirmationContext = createContext<((options: ConfirmationOptions) => Promise<boolean>) | null>(null);
+
+export function ConfirmationProvider({ children }: { children: ReactNode }) {
+  const [pending, setPending] = useState<{ options: ConfirmationOptions; resolve: (confirmed: boolean) => void } | null>(null);
+  const confirm = (options: ConfirmationOptions) => new Promise<boolean>((resolve) => setPending({ options, resolve }));
+  const answer = (confirmed: boolean) => {
+    pending?.resolve(confirmed);
+    setPending(null);
+  };
+  return (
+    <ConfirmationContext.Provider value={confirm}>
+      {children}
+      {pending && <ConfirmationDialog options={pending.options} onAnswer={answer} />}
+    </ConfirmationContext.Provider>
+  );
+}
+
+export function ConfirmationDialog({ options, onAnswer }: { options: ConfirmationOptions; onAnswer: (confirmed: boolean) => void }) {
+  const descriptionId = useId();
+  return <Modal title={options.title} onClose={() => onAnswer(false)} width="max-w-md" descriptionId={descriptionId}>
+    <p id={descriptionId} className="text-sm leading-relaxed text-muted-ink">{options.message}</p>
+    <div className="mt-6 flex flex-wrap justify-end gap-2">
+      <button type="button" className="btn-secondary" onClick={() => onAnswer(false)}>Cancelar</button>
+      <button type="button" className={options.danger ? "btn-danger" : "btn-primary"} onClick={() => onAnswer(true)}>{options.confirmLabel}</button>
+    </div>
+  </Modal>;
+}
+
+export function useConfirmation() {
+  const confirm = useContext(ConfirmationContext);
+  if (!confirm) throw new Error("useConfirmation requer ConfirmationProvider");
+  return confirm;
 }
 export function SubmitButton({
   busy,

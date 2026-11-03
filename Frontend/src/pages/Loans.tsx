@@ -3,7 +3,7 @@ import { Check, Handshake, X } from "lucide-react";
 import { useData } from "../lib/data";
 import { post, read } from "../lib/api";
 import { dateTimeBR, localDate, nextDate, resultMessage } from "../lib/utils";
-import { Badge, Card, Empty, Field, Notice, Title } from "../components/UI";
+import { Badge, Card, Empty, Field, Notice, Title, useConfirmation } from "../components/UI";
 import { NeedFields, defaultNeed } from "../components/NeedFields";
 import { AuditHistory } from "../components/AuditHistory";
 import type { Need, Occupation, Loan, User } from "../types";
@@ -18,6 +18,7 @@ export function Loans({
   focusId?: number | null;
 }) {
   const { data, reload } = useData();
+  const ask = useConfirmation();
   const [from, setFrom] = useState(localDate(new Date())),
     [occupations, setOccupations] = useState<Occupation[]>([]);
   const [chosen, setChosen] = useState<number[]>([]),
@@ -81,9 +82,7 @@ export function Loans({
   async function offer() {
     if (!chosen.length || !borrower || !reason.trim()) return;
     if (
-      !window.confirm(
-        `Oferecer ${chosen.length} ocorrência(s) para ${teacher(borrower)}?`,
-      )
+      !await ask({ title: "Oferecer empréstimo", message: `Oferecer ${chosen.length} ocorrência(s) para ${teacher(borrower)}? O destinatário precisará aceitar.`, confirmLabel: "Enviar oferta" })
     )
       return;
     if (
@@ -326,12 +325,15 @@ export function Loans({
                         disabled={busy}
                         className="btn-quiet !py-2 text-red-700"
                         onClick={() => {
-                          if (window.confirm("Rejeitar esta oferta?"))
-                            void action(
-                              `/loans/${l.id}/reject`,
-                              undefined,
-                              "Oferta rejeitada.",
-                            );
+                          void ask({ title: "Rejeitar oferta", message: "Esta oferta de empréstimo será rejeitada. A sala permanecerá com o titular.", confirmLabel: "Rejeitar oferta", danger: true }).then((confirmed) => {
+                            if (confirmed) {
+                              void action(
+                                `/loans/${l.id}/reject`,
+                                undefined,
+                                "Oferta rejeitada.",
+                              );
+                            }
+                          });
                         }}
                       >
                         <X size={15} />

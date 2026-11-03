@@ -2,18 +2,25 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import {
   Bell,
   CalendarDays,
+  CalendarRange,
   ChevronDown,
   ClipboardList,
   DoorOpen,
+  Download,
   GraduationCap,
   Handshake,
+  Import,
   LayoutDashboard,
   Link2,
-  FileSpreadsheet,
   Layers3,
   LogOut,
   Menu,
+  PanelLeftClose,
+  PanelLeftOpen,
   RefreshCcw,
+  SearchCheck,
+  Table2,
+  UserRound,
   Users,
   X,
 } from "lucide-react";
@@ -44,8 +51,15 @@ import type { User, Occupation } from "./types";
 const navIcons = {
   dashboard: LayoutDashboard,
   calendar: CalendarDays,
+  timeline: CalendarRange,
+  instructor: UserRound,
+  planning: Layers3,
+  schedule: Table2,
   door: DoorOpen,
-  spreadsheet: FileSpreadsheet,
+  opportunity: SearchCheck,
+  spreadsheet: Table2,
+  import: Import,
+  export: Download,
   catalog: Layers3,
   people: Users,
   booking: ClipboardList,
@@ -62,8 +76,12 @@ function Workspace({ user, onLogout, onPasswordChanged, institutionalNotice = ""
   const [opportunityFilter, setOpportunityFilter] = useState<{ semesterId: number; roomId: number } | null>(null);
   const [exportFilter, setExportFilter] = useState<{ semesterId: number; secondSemesterId: number | null; roomId: number | null } | null>(null);
   const [menu, setMenu] = useState(false);
+  const [collapsed, setCollapsed] = useState(false);
   const menuButtonRef = useRef<HTMLButtonElement>(null);
+  const accountHeaderRef = useRef<HTMLButtonElement>(null);
+  const menuReturnFocusRef = useRef<HTMLButtonElement | null>(null);
   const menuRef = useRef<HTMLElement>(null);
+  const accountButtonRef = useRef<HTMLButtonElement>(null);
   const [occupations, setOccupations] = useState<Occupation[]>([]);
   const [agendaError, setAgendaError] = useState("");
   const [unread, setUnread] = useState(0);
@@ -162,7 +180,8 @@ function Workspace({ user, onLogout, onPasswordChanged, institutionalNotice = ""
     document.addEventListener("keydown", onKeyDown);
     return () => {
       document.removeEventListener("keydown", onKeyDown);
-      menuButtonRef.current?.focus();
+      const returnFocus = menuReturnFocusRef.current ?? menuButtonRef.current;
+      if (returnFocus?.isConnected) returnFocus.focus();
     };
   }, [menu]);
   const reloadAgenda = useCallback(async () => {
@@ -180,6 +199,7 @@ function Workspace({ user, onLogout, onPasswordChanged, institutionalNotice = ""
   useEffect(() => {
     void reloadAgenda();
   }, [reloadAgenda]);
+  const scrollToTop = () => window.scrollTo({ top: 0, behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth" });
   const open = (p: string) => {
     setRelated(null);
     setTimelineFilter(null);
@@ -187,28 +207,37 @@ function Workspace({ user, onLogout, onPasswordChanged, institutionalNotice = ""
     setExportFilter(null);
     setPage(p as Page);
     setMenu(false);
-    window.scrollTo({ top: 0, behavior: "smooth" });
+    scrollToTop();
   };
   const openTimeline = (semesterId: number, roomId: number, anchor?: string, shiftId?: number) => {
     const semester = data.semesters.find((item) => item.id === semesterId);
     setTimelineFilter({ semesterId, roomId, anchor: anchor ?? semester?.startDate ?? localDate(new Date()), shiftId });
     setPage("room-timeline");
-    window.scrollTo({ top: 0, behavior: "smooth" });
+    scrollToTop();
   };
   const openOpportunity = (semesterId: number, roomId: number) => {
     setOpportunityFilter({ semesterId, roomId });
     setPage("opportunities");
-    window.scrollTo({ top: 0, behavior: "smooth" });
+    scrollToTop();
   };
   const openDashboardExport = (semesterId: number, secondSemesterId: number | null, roomId: number | null) => {
     setExportFilter({ semesterId, secondSemesterId, roomId });
     setPage("exports");
-    window.scrollTo({ top: 0, behavior: "smooth" });
+    scrollToTop();
   };
   const navigation = getNavigationSections(admin);
   const current = navigation.flatMap((section) => section.items).find((item) => item.page === page);
+  const openAccount = () => {
+    setCollapsed(false);
+    if (window.matchMedia("(max-width: 1023px)").matches) {
+      menuReturnFocusRef.current = accountHeaderRef.current;
+      setMenu(true);
+    }
+    window.requestAnimationFrame(() => accountButtonRef.current?.focus());
+  };
   return (
-    <div className="min-h-screen bg-[#f7f9fc] flex">
+    <div className="min-h-screen bg-canvas flex">
+      <a href="#main-content" className="sr-only focus:not-sr-only focus:fixed focus:top-2 focus:left-2 focus:z-[60] focus:rounded-lg focus:bg-skybrand-600 focus:px-4 focus:py-2 focus:text-white">Ir para o conteúdo</a>
       {menu && (
         <div
           aria-hidden="true"
@@ -220,34 +249,40 @@ function Workspace({ user, onLogout, onPasswordChanged, institutionalNotice = ""
         id="primary-navigation"
         ref={menuRef}
         aria-label="Menu principal"
-        className={`fixed top-0 bottom-0 left-0 z-40 w-[255px] bg-navy-900 text-white flex flex-col transition-transform lg:translate-x-0 ${menu ? "visible translate-x-0" : "invisible -translate-x-full lg:visible"}`}
+        className={`fixed top-0 bottom-0 left-0 z-40 w-[255px] ${collapsed ? "lg:w-[76px]" : "lg:w-[255px]"} bg-navy-900 text-white flex flex-col transition-[width,transform] lg:translate-x-0 ${menu ? "visible translate-x-0" : "invisible -translate-x-full lg:visible"}`}
       >
-        <div className="h-[83px] flex items-center justify-between px-6 border-b border-white/10">
-          <div className="flex items-center gap-2.5">
+        <div className={`h-[83px] flex items-center justify-between border-b border-white/10 ${collapsed ? "px-4 lg:px-3 lg:justify-center" : "px-6"}`}>
+          <div className={`flex items-center gap-2.5 ${collapsed ? "lg:hidden" : ""}`}>
             <div className="h-10 w-10 rounded-xl bg-skybrand-500 flex items-center justify-center">
               <Layers3 size={23} />
             </div>
-            <span className="text-[22px] font-bold tracking-tight">
+            <span className={`text-[22px] font-bold tracking-tight ${collapsed ? "lg:hidden" : ""}`}>
               SalaGest
             </span>
           </div>
           <button
             type="button"
             aria-label="Fechar menu"
-            className="lg:hidden"
+            className="lg:hidden min-w-11 min-h-11 flex items-center justify-center rounded-lg hover:bg-white/10"
             onClick={() => setMenu(false)}
           >
             <X size={20} />
           </button>
+          <button type="button" aria-label={collapsed ? "Expandir menu lateral" : "Recolher menu lateral"}
+            aria-expanded={!collapsed} aria-controls="primary-navigation"
+            className="hidden lg:flex min-w-10 min-h-10 items-center justify-center rounded-lg text-slate-300 hover:bg-white/10 hover:text-white"
+            onClick={() => setCollapsed(!collapsed)}>
+            {collapsed ? <PanelLeftOpen size={19} /> : <PanelLeftClose size={19} />}
+          </button>
         </div>
-        <div className="px-4 py-7 flex-1 overflow-y-auto">
-          <p className="text-[11px] font-semibold tracking-[.15em] text-slate-400 px-4 mb-3 uppercase">
+        <div className={`${collapsed ? "lg:px-2" : ""} px-4 py-7 flex-1 overflow-y-auto overflow-x-hidden`}>
+          <p className={`text-[11px] font-semibold tracking-[.15em] text-slate-400 px-4 mb-3 uppercase ${collapsed ? "lg:hidden" : ""}`}>
             Menu principal
           </p>
           <nav aria-label="Navegação principal" className="space-y-5">
             {navigation.map((section) => (
               <section key={section.title} aria-label={section.title}>
-                <p className="text-[11px] font-semibold tracking-[.12em] text-slate-400 px-4 mb-2 uppercase">
+                <p className={`text-[11px] font-semibold tracking-[.12em] text-slate-400 px-4 mb-2 uppercase ${collapsed ? "lg:sr-only" : ""}`}>
                   {section.title}
                 </p>
                 <div className="space-y-1">
@@ -258,12 +293,14 @@ function Workspace({ user, onLogout, onPasswordChanged, institutionalNotice = ""
                       <button
                         type="button"
                         key={item.page}
+                        aria-label={item.teacherLabel && !admin ? item.teacherLabel : item.label}
+                        title={collapsed ? (item.teacherLabel && !admin ? item.teacherLabel : item.label) : undefined}
                         aria-current={active ? "page" : undefined}
                         onClick={() => open(item.page)}
-                        className={`w-full flex items-center gap-3 rounded-xl px-4 py-3 text-[13px] text-left font-medium transition ${active ? "bg-skybrand-600 text-white shadow-lg shadow-sky-900/20" : "text-slate-300 hover:bg-white/10 hover:text-white"}`}
+                        className={`w-full min-h-11 flex items-center gap-3 rounded-xl px-4 py-3 text-[13px] text-left font-medium transition ${collapsed ? "lg:justify-center lg:px-2" : ""} ${active ? "bg-skybrand-600 text-white" : "text-slate-300 hover:bg-white/10 hover:text-white"}`}
                       >
                         <Icon aria-hidden="true" size={19} />
-                        {item.teacherLabel && !admin ? item.teacherLabel : item.label}
+                        <span className={collapsed ? "lg:sr-only" : ""}>{item.teacherLabel && !admin ? item.teacherLabel : item.label}</span>
                       </button>
                     );
                   })}
@@ -272,20 +309,21 @@ function Workspace({ user, onLogout, onPasswordChanged, institutionalNotice = ""
             ))}
           </nav>
         </div>
-        <div className="px-4 pb-5">
-          <div className="p-3 bg-white/5 border border-white/10 rounded-xl">
+        <div className={`${collapsed ? "lg:px-2" : ""} px-4 pb-5`}>
+          {collapsed && <button type="button" className="hidden lg:flex w-full min-h-11 items-center justify-center rounded-xl bg-white/10 text-white hover:bg-white/20" aria-label="Expandir menu e acessar conta" title="Conta" onClick={() => { setCollapsed(false); window.requestAnimationFrame(() => accountButtonRef.current?.focus()); }}>{user.displayName.charAt(0).toUpperCase()}</button>}
+          <div className={`p-3 bg-white/5 border border-white/10 rounded-xl ${collapsed ? "lg:hidden" : ""}`}>
             <p className="text-sm font-semibold">{user.displayName}</p>
             <p className="text-xs text-slate-400 mt-1">
               {admin ? "Administrador" : "Professor"}
             </p>
             <button
-              className="mt-3 flex items-center text-xs font-semibold gap-2 text-slate-300 hover:text-white"
+              className="mt-3 flex min-h-10 items-center text-xs font-semibold gap-2 text-slate-300 hover:text-white"
               onClick={onLogout}
             >
               <LogOut size={14} />
               Sair da conta
             </button>
-            <button type="button" className="mt-3 block text-xs font-semibold text-slate-300 underline"
+            <button ref={accountButtonRef} type="button" className="mt-3 block min-h-10 text-xs font-semibold text-slate-300 underline"
               onClick={() => { setChangingPassword(!changingPassword); setPasswordError(""); }}>Alterar senha</button>
             {changingPassword && <form className="mt-3 space-y-2" onSubmit={(event) => void changePassword(event)}>
               <label className="block text-xs text-slate-300">Senha atual
@@ -298,7 +336,7 @@ function Workspace({ user, onLogout, onPasswordChanged, institutionalNotice = ""
               {passwordError && <p role="alert" className="text-xs text-rose-200">{passwordError}</p>}
             </form>}
             {ssoEnabled && !linking && <button type="button"
-              className="mt-3 flex items-center text-xs font-semibold gap-2 text-slate-300 hover:text-white"
+              className="mt-3 flex min-h-10 items-center text-xs font-semibold gap-2 text-slate-300 hover:text-white"
               onClick={() => { setLinkError(""); setLinking(true); }}>
               <Link2 size={14} />Vincular conta institucional
             </button>}
@@ -320,25 +358,25 @@ function Workspace({ user, onLogout, onPasswordChanged, institutionalNotice = ""
           </div>
         </div>
       </aside>
-      <div className="flex-1 min-w-0 lg:pl-[255px]">
-        <header className="h-[83px] bg-white border-b border-slate-200/80 px-5 md:px-9 flex items-center justify-between gap-3 sticky top-0 z-20">
+      <div className={`flex-1 min-w-0 ${collapsed ? "lg:pl-[76px]" : "lg:pl-[255px]"}`}>
+        <header className="h-[83px] bg-surface border-b border-line px-3 sm:px-5 md:px-9 flex items-center justify-between gap-3 sticky top-0 z-20">
           <div className="flex min-w-0 items-center gap-3">
             <button
               type="button"
               ref={menuButtonRef}
-              className="lg:hidden p-2 text-slate-600"
+              className="lg:hidden min-w-11 min-h-11 flex items-center justify-center rounded-lg text-slate-600 hover:bg-slate-100"
               aria-label="Abrir menu"
               aria-expanded={menu}
               aria-controls="primary-navigation"
-              onClick={() => setMenu(true)}
+              onClick={() => { menuReturnFocusRef.current = menuButtonRef.current; setMenu(true); }}
             >
               <Menu size={23} />
             </button>
             <div>
-              <p className="text-[11px] uppercase font-bold tracking-wide text-slate-400">
+              <p className="text-[11px] uppercase font-bold tracking-wide text-slate-600">
                 Plataforma institucional
               </p>
-              <p className="text-sm font-semibold text-slate-700 mt-1 truncate max-w-[42vw] sm:max-w-none">
+              <p className="text-sm font-semibold text-ink mt-1 truncate max-w-[28vw] sm:max-w-none">
                 {(current?.teacherLabel && !admin ? current.teacherLabel : current?.label) || "Painel"}
               </p>
             </div>
@@ -347,7 +385,7 @@ function Workspace({ user, onLogout, onPasswordChanged, institutionalNotice = ""
             <button
               aria-label="Atualizar dados"
               title="Atualizar"
-              className="rounded-xl p-2.5 text-slate-500 hover:bg-slate-100"
+              className="hidden sm:flex rounded-xl min-w-11 min-h-11 items-center justify-center text-slate-600 hover:bg-slate-100"
               onClick={() => {
                 void reload();
                 void reloadAgenda();
@@ -363,7 +401,7 @@ function Workspace({ user, onLogout, onPasswordChanged, institutionalNotice = ""
                   : "Ver notificações"
               }
               onClick={() => open("notifications")}
-              className="rounded-xl p-2.5 text-slate-500 hover:bg-slate-100 relative"
+              className="rounded-xl min-w-11 min-h-11 flex items-center justify-center text-slate-600 hover:bg-slate-100 relative"
             >
               <Bell size={19} />
               {unread > 0 && (
@@ -372,8 +410,8 @@ function Workspace({ user, onLogout, onPasswordChanged, institutionalNotice = ""
                 </span>
               )}
             </button>
-            <div className="h-9 w-px bg-slate-200" />
-            <div className="flex items-center gap-2">
+            <div className="hidden sm:block h-9 w-px bg-line" />
+            <button ref={accountHeaderRef} type="button" onClick={openAccount} aria-label="Abrir opções da conta" className="flex min-h-11 items-center gap-2 rounded-xl px-1 hover:bg-slate-100">
               <div className="w-9 h-9 rounded-full bg-skybrand-100 text-skybrand-700 font-bold flex items-center justify-center">
                 {user.displayName.charAt(0).toUpperCase()}
               </div>
@@ -384,10 +422,10 @@ function Workspace({ user, onLogout, onPasswordChanged, institutionalNotice = ""
                 size={15}
                 className="hidden sm:block text-slate-400"
               />
-            </div>
+            </button>
           </div>
         </header>
-        <main className="max-w-[1500px] mx-auto p-5 md:p-8 lg:p-9">
+        <main id="main-content" tabIndex={-1} className="max-w-[1500px] mx-auto p-4 sm:p-5 md:p-8 lg:p-9">
           {institutionalNotice && <div className="mb-5"><Notice type="success" message={institutionalNotice} /></div>}
           {institutionalError && <div className="mb-5"><Notice type="error" message={institutionalError} /></div>}
           {error && (
@@ -447,8 +485,8 @@ function Workspace({ user, onLogout, onPasswordChanged, institutionalNotice = ""
             }} />
           ) : null}
         </main>
-        <footer className="py-5 px-8 text-center text-xs text-slate-400">
-          SalaGest · MVP institucional · React + ASP.NET Core
+        <footer className="py-5 px-8 text-center text-xs text-slate-600">
+          SalaGest · Gestão institucional de ambientes
         </footer>
       </div>
     </div>

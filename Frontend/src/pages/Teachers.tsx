@@ -8,6 +8,7 @@ import {
   Empty,
   Field,
   Notice,
+  SearchableSelect,
   SubmitButton,
   Title,
 } from "../components/UI";
@@ -100,20 +101,14 @@ export function Teachers({ user }: { user: User }) {
             <h3 className="section-title">Disponibilidade por turno</h3>
           </div>
           {admin ? (
-            <Field label="Selecione o professor">
-              <select
-                className="field mb-4"
-                value={teacherId}
-                onChange={(e) => setTeacherId(e.target.value)}
-              >
-                <option value={user.id}>Sua conta (administrador)</option>
-                {data.teachers.map((t) => (
-                  <option key={t.id} value={t.id}>
-                    {t.displayName}
-                  </option>
-                ))}
-              </select>
-            </Field>
+            <div className="mb-4">
+              <SearchableSelect label="Professor" value={teacherId} onChange={setTeacherId}
+                options={[
+                  { value: user.id, label: "Sua conta (administrador)" },
+                  ...data.teachers.filter((teacher) => teacher.id !== user.id)
+                    .map((teacher) => ({ value: teacher.id, label: teacher.displayName })),
+                ]} />
+            </div>
           ) : (
             <p className="muted mb-4">Disponibilidade de {user.displayName}</p>
           )}

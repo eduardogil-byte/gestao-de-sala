@@ -7,6 +7,11 @@ export default {
         sans: ["Inter", "ui-sans-serif", "system-ui", "Segoe UI", "sans-serif"],
       },
       colors: {
+        canvas: "var(--color-canvas)",
+        surface: "var(--color-surface)",
+        ink: "var(--color-ink)",
+        "muted-ink": "var(--color-muted-ink)",
+        line: "var(--color-line)",
         navy: { 900: "#16273b", 800: "#20374e", 700: "#2b4560" },
         skybrand: {
           50: "#eef6ff",
@@ -16,7 +21,8 @@ export default {
           700: "#195aa2",
         },
       },
-      boxShadow: { soft: "0 4px 24px rgba(25,47,77,.04)" },
+      borderRadius: { panel: "var(--radius-panel)", control: "var(--radius-control)" },
+      boxShadow: { soft: "var(--shadow-soft)" },
     },
   },
   plugins: [],

@@ -20,7 +20,7 @@ export type NavigationItem = {
   page: Page;
   label: string;
   teacherLabel?: string;
-  icon: "dashboard" | "calendar" | "door" | "spreadsheet" | "catalog" | "people" | "booking" | "loan" | "bell" | "course";
+  icon: "dashboard" | "calendar" | "timeline" | "instructor" | "planning" | "schedule" | "door" | "opportunity" | "spreadsheet" | "import" | "export" | "catalog" | "people" | "booking" | "loan" | "bell" | "course";
   adminOnly?: boolean;
 };
 
@@ -39,10 +39,10 @@ const sections: NavigationSection[] = [
     items: [
       { page: "bookings", label: "Reservas", icon: "booking" },
       { page: "agenda", label: "Agenda", icon: "calendar" },
-      { page: "room-timeline", label: "Cronograma de Ambientes", icon: "calendar" },
-      { page: "instructor-agenda", label: "Agenda dos Instrutores", teacherLabel: "Minha Agenda", icon: "calendar" },
-      { page: "semester-planning", label: "Planejamento Semestral", icon: "calendar" },
-      { page: "schedules", label: "Grades semanais", icon: "calendar", adminOnly: true },
+      { page: "room-timeline", label: "Cronograma de Ambientes", icon: "timeline" },
+      { page: "instructor-agenda", label: "Agenda dos Instrutores", teacherLabel: "Minha Agenda", icon: "instructor" },
+      { page: "semester-planning", label: "Planejamento Semestral", icon: "planning" },
+      { page: "schedules", label: "Grades semanais", icon: "schedule", adminOnly: true },
     ],
   },
   {
@@ -57,14 +57,14 @@ const sections: NavigationSection[] = [
     title: "Ambientes",
     items: [
       { page: "rooms", label: "Ambientes", icon: "door" },
-      { page: "opportunities", label: "Oportunidades de Ambientes", icon: "door", adminOnly: true },
+      { page: "opportunities", label: "Oportunidades de Ambientes", icon: "opportunity", adminOnly: true },
     ],
   },
   {
     title: "Gestão",
     items: [
-      { page: "imports", label: "Importar Dados", icon: "spreadsheet", adminOnly: true },
-      { page: "exports", label: "Exportar Dados", icon: "spreadsheet", adminOnly: true },
+      { page: "imports", label: "Importar Dados", icon: "import", adminOnly: true },
+      { page: "exports", label: "Exportar Dados", icon: "export", adminOnly: true },
     ],
   },
   {
