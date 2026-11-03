@@ -585,6 +585,10 @@ namespace SalaGest.Api.Migrations
 
                     SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
 
+                    b.Property<string>("Code")
+                        .HasMaxLength(30)
+                        .HasColumnType("nvarchar(30)");
+
                     b.Property<int?>("CourseId")
                         .HasColumnType("int");
 
@@ -602,6 +606,10 @@ namespace SalaGest.Api.Migrations
                         .HasMaxLength(100)
                         .HasColumnType("nvarchar(100)");
 
+                    b.Property<string>("NormalizedCode")
+                        .HasMaxLength(30)
+                        .HasColumnType("nvarchar(30)");
+
                     b.Property<int>("SemesterId")
                         .HasColumnType("int");
 
@@ -612,7 +620,9 @@ namespace SalaGest.Api.Migrations
 
                     b.HasIndex("CourseId");
 
-                    b.HasIndex("SemesterId");
+                    b.HasIndex("SemesterId", "NormalizedCode")
+                        .IsUnique()
+                        .HasFilter("[NormalizedCode] IS NOT NULL");
 
                     b.ToTable("Classes", t =>
                         {

@@ -4,7 +4,7 @@ import { localDate, nextDate, resultMessage, dateBR } from "../lib/utils";
 import { useData } from "../lib/data";
 import { NeedFields, defaultNeed } from "./NeedFields";
 import { Checkbox, Field, Notice, SubmitButton } from "./UI";
-import type { Need, Shift } from "../types";
+import type { Need, Shift, User } from "../types";
 
 type PedagogicalOption = {
   classGroupId: number; className: string; students: number;
@@ -29,8 +29,10 @@ function actualDates(from: string, to: string, days: number[]) {
     if (days.includes(asDay(d))) found.push(d);
   return found;
 }
-export function BookingForm({ onCreated }: { onCreated: (qualificationWarning: boolean) => void }) {
+export function BookingForm({ onCreated, user }: { onCreated: (qualificationWarning: boolean) => void; user: User }) {
   const { data, reload } = useData();
+  const admin = user.roles.includes("Admin");
+  const [teacherId, setTeacherId] = useState("");
   const today = localDate(new Date());
   const [date, setDate] = useState(today);
   const [shiftId, setShiftId] = useState("");
@@ -53,13 +55,13 @@ export function BookingForm({ onCreated }: { onCreated: (qualificationWarning: b
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   useEffect(() => {
-    if (!pedagogical) return;
+    if (!pedagogical || (admin && !teacherId)) { setOptions([]); return; }
     setOptionsError("");
     setOptionsBusy(true);
-    void read<PedagogicalOption[]>("/bookings/pedagogical-options")
+    void read<PedagogicalOption[]>(`/bookings/pedagogical-options${admin ? `?teacherId=${encodeURIComponent(teacherId)}` : ""}`)
       .then(setOptions).catch((e) => setOptionsError(resultMessage(e)))
       .finally(() => setOptionsBusy(false));
-  }, [pedagogical]);
+  }, [pedagogical, admin, teacherId]);
   const classOptions = options.filter((x) => String(x.classGroupId) === classGroupId);
   const units = classOptions.filter((x, i, all) =>
     all.findIndex((a) => a.curricularUnitId === x.curricularUnitId) === i);
@@ -80,6 +82,7 @@ export function BookingForm({ onCreated }: { onCreated: (qualificationWarning: b
       setError("Cadastre ao menos um turno para criar reservas.");
       return;
     }
+    if (admin && !teacherId) { setError("Selecione o professor responsável."); return; }
     if (recurring && (!dates.length || repeatUntil < start)) {
       setError("Selecione dias e um término válido para a recorrência.");
       return;
@@ -91,6 +94,7 @@ export function BookingForm({ onCreated }: { onCreated: (qualificationWarning: b
     setBusy(true);
     try {
       const created = await post<{ qualificationWarning: boolean }>("/bookings", {
+        teacherId: admin ? teacherId : null,
         classGroupId: classGroupId ? Number(classGroupId) : null,
         curricularUnitId: pedagogical ? Number(unitId) : null,
         curricularCapabilityId: pedagogical ? Number(capabilityId) : null,
@@ -119,6 +123,14 @@ export function BookingForm({ onCreated }: { onCreated: (qualificationWarning: b
   return (
     <form onSubmit={submit} className="space-y-5">
       {error && <Notice message={error} />}
+      {admin && <Field label="Professor responsável">
+        <select className="field" required value={teacherId} onChange={(e) => {
+          setTeacherId(e.target.value); setClassGroupId(""); setUnitId(""); setCapabilityId("");
+        }}>
+          <option value="">Selecione um professor</option>
+          {data.teachers.map((teacher) => <option key={teacher.id} value={teacher.id}>{teacher.displayName}</option>)}
+        </select>
+      </Field>}
       <Checkbox label="Vincular ao planejamento pedagógico" checked={pedagogical}
         onChange={(value) => { setPedagogical(value); setClassGroupId(""); setUnitId(""); setCapabilityId(""); }} />
       {pedagogical && optionsBusy && <p className="text-sm text-slate-500">Carregando atribuições...</p>}

@@ -11,9 +11,14 @@ public static partial class ApiEndpoints
 {
     private static void MapPedagogicalBookingOptions(IEndpointRouteBuilder app)
     {
-        app.MapGet("/api/bookings/pedagogical-options", async (ClaimsPrincipal current, AppDbContext db) =>
+        app.MapGet("/api/bookings/pedagogical-options", async (string? teacherId, ClaimsPrincipal current, AppDbContext db) =>
         {
-            var teacherId = UserId(current);
+            if (current.IsInRole("Admin"))
+            {
+                if (string.IsNullOrWhiteSpace(teacherId)) return Results.Ok(Array.Empty<object>());
+            }
+            else if (teacherId is not null && teacherId != UserId(current)) return Results.Forbid();
+            teacherId ??= UserId(current);
             var assignments = await db.Assignments.AsNoTracking()
                 .Include(x => x.ClassGroup).Include(x => x.CurricularUnit)
                 .Where(x => x.EndedAtUtc == null && x.CurricularUnitId != null &&

@@ -7,7 +7,7 @@ import {
   Users,
 } from "lucide-react";
 import { useData } from "../lib/data";
-import { post } from "../lib/api";
+import { post, put } from "../lib/api";
 import { dateBR, resultMessage } from "../lib/utils";
 import { NeedFields, defaultNeed } from "../components/NeedFields";
 import {
@@ -28,7 +28,8 @@ export function Academic({ user }: { user: User }) {
     startDate: "2026-10-12",
     endDate: "2026-12-18",
   });
-  const [cls, setCls] = useState({ semesterId: "", name: "", students: 25 });
+  const [cls, setCls] = useState({ semesterId: "", code: "", name: "", students: 25 });
+  const [editingClass, setEditingClass] = useState<{ id: number; code: string; name: string } | null>(null);
   const [as, setAs] = useState({
     classGroupId: "",
     teacherId: "",
@@ -174,6 +175,10 @@ export function Academic({ user }: { user: User }) {
                 </select>
               </Field>
               <div className="grid grid-cols-2 gap-3">
+                <Field label="Código da turma">
+                  <input className="field" maxLength={30} value={cls.code}
+                    onChange={(e) => setCls({ ...cls, code: e.target.value })} placeholder="001" />
+                </Field>
                 <Field label="Turma">
                   <input
                     required
@@ -366,13 +371,37 @@ export function Academic({ user }: { user: User }) {
                           className="pill bg-sky-50 text-sky-700"
                           key={c.id}
                         >
-                          {c.name} • {c.students} alunos
+                          {c.code ? `${c.code} | ` : ""}{c.name}
+                          {(() => {
+                            const shiftNames = [...new Set(data.assignments
+                              .filter((assignment) => assignment.classGroupId === c.id && !assignment.endedAtUtc)
+                              .map((assignment) => data.shifts.find((shift) => shift.id === assignment.preferredShiftId)?.name)
+                              .filter((name): name is string => Boolean(name)))];
+                            return shiftNames.length ? ` — ${shiftNames.join(" / ")}` : "";
+                          })()} • {c.students} alunos
+                          {admin && <button type="button" className="ml-2 underline"
+                            onClick={() => setEditingClass({ id: c.id, code: c.code || "", name: c.name })}>Corrigir</button>}
                         </span>
                       ))
                   ) : (
                     <span className="text-xs text-slate-400">Sem turmas</span>
                   )}
                 </div>
+                {editingClass && data.classes.some((c) => c.id === editingClass.id && c.semesterId === s.id) &&
+                  <form className="mt-3 flex flex-wrap gap-2" onSubmit={async (event) => {
+                    event.preventDefault(); setError("");
+                    try {
+                      await put(`/classes/${editingClass.id}`, { name: editingClass.name, code: editingClass.code });
+                      await reload(); setEditingClass(null); setSuccess("Turma corrigida.");
+                    } catch (reason) { setError(resultMessage(reason)); }
+                  }}>
+                    <input className="field !w-28" aria-label="Código da turma" maxLength={30}
+                      value={editingClass.code} onChange={(event) => setEditingClass({ ...editingClass, code: event.target.value })} />
+                    <input className="field !w-48" aria-label="Nome da turma" required maxLength={100}
+                      value={editingClass.name} onChange={(event) => setEditingClass({ ...editingClass, name: event.target.value })} />
+                    <button className="btn-primary" type="submit">Salvar</button>
+                    <button className="btn-secondary" type="button" onClick={() => setEditingClass(null)}>Cancelar</button>
+                  </form>}
               </div>
             ))
           )}

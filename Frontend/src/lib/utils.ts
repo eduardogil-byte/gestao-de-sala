@@ -21,6 +21,7 @@ export const roomKind = (k: string) =>
     Comum: "Sala comum",
     Laboratorio: "Laboratório",
     Hibrida: "Sala híbrida",
+    Oficina: "Oficina",
   })[k] || k;
 export const statusText = (s: string) =>
   ({

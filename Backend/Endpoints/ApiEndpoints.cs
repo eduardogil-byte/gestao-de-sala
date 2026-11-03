@@ -209,12 +209,15 @@ public static partial class ApiEndpoints
         {
             var validation = await ValidateRoom(db, input);
             if (validation is not null) return Error(validation);
+            var normalizedCode = string.IsNullOrWhiteSpace(input.Code) ? null : input.Code.Trim().ToUpperInvariant();
+            if (!string.IsNullOrEmpty(normalizedCode) && await db.Rooms.AnyAsync(r => r.NormalizedCode == normalizedCode))
+                return Results.Conflict(new ApiError("Já existe um ambiente com este código."));
             var room = CreateRoom(input);
             await using var createTx = await db.Database.BeginTransactionAsync();
             db.Rooms.Add(room);
             await db.SaveChangesAsync();
             AuditTrail.Add(db, "Room", room.Id.ToString(), "Criado", UserId(current), null,
-                new { room.Name, room.Location, room.Kind, room.Seats, room.Desks,
+                new { room.Code, room.Name, room.Location, room.Kind, room.Seats, room.Desks,
                     room.HasProjector, room.HasTeacherComputer, room.HasInternet, room.Active,
                     ComputerGroups = room.ComputerGroups.Select(g => new { g.Quantity, g.RamGb, g.Tier,
                         Software = g.Software.Select(s => new { s.SoftwareId, s.InstalledQuantity }).ToArray() }).ToArray() });
@@ -230,11 +233,16 @@ public static partial class ApiEndpoints
             var existing = await db.Rooms.Include(r => r.ComputerGroups)
                 .ThenInclude(g => g.Software).FirstOrDefaultAsync(r => r.Id == id);
             if (existing is null) return Results.NotFound();
-            var before = new { existing.Name, existing.Location, existing.Purpose, existing.Kind,
+            var normalizedCode = string.IsNullOrWhiteSpace(input.Code) ? null : input.Code.Trim().ToUpperInvariant();
+            if (!string.IsNullOrEmpty(normalizedCode) && await db.Rooms.AnyAsync(r => r.Id != id && r.NormalizedCode == normalizedCode))
+                return Results.Conflict(new ApiError("Já existe um ambiente com este código."));
+            var before = new { existing.Code, existing.Name, existing.Location, existing.Purpose, existing.Kind,
                 existing.Seats, existing.Desks, existing.HasProjector, existing.HasTeacherComputer,
                 existing.HasInternet, existing.Active,
                 ComputerGroups = existing.ComputerGroups.Select(g => new { g.Quantity, g.RamGb, g.Tier,
                     Software = g.Software.Select(s => new { s.SoftwareId, s.InstalledQuantity }).ToArray() }).ToArray() };
+            existing.Code = string.IsNullOrWhiteSpace(input.Code) ? null : input.Code.Trim();
+            existing.NormalizedCode = normalizedCode;
             existing.Name = input.Name.Trim(); existing.Location = input.Location.Trim();
             existing.Purpose = input.Purpose?.Trim() ?? "";
             existing.Kind = input.Kind; existing.Seats = input.Seats; existing.Desks = input.Desks;
@@ -243,7 +251,7 @@ public static partial class ApiEndpoints
             existing.HasInternet = input.HasInternet; existing.Active = input.Active;
             UpdateComputerGroups(existing.ComputerGroups, input.ComputerGroups);
             AuditTrail.Add(db, "Room", existing.Id.ToString(), "Alterado", UserId(current), before,
-                new { existing.Name, existing.Location, existing.Purpose, existing.Kind,
+                new { existing.Code, existing.Name, existing.Location, existing.Purpose, existing.Kind,
                     existing.Seats, existing.Desks, existing.HasProjector, existing.HasTeacherComputer,
                     existing.HasInternet, existing.Active,
                     ComputerGroups = existing.ComputerGroups.Select(g => new { g.Quantity, g.RamGb, g.Tier,
@@ -279,20 +287,47 @@ public static partial class ApiEndpoints
                 .Where(c => semesterId == null || c.SemesterId == semesterId).ToListAsync()));
         api.MapPost("/classes", async (ClassCreate input, AppDbContext db) =>
         {
-            if (input.Students < 1 || input.Students > 500 || string.IsNullOrWhiteSpace(input.Name))
+            if (input.Students < 1 || input.Students > 500 || string.IsNullOrWhiteSpace(input.Name) ||
+                input.Name.Trim().Length > 100 || (input.Code?.Trim().Length ?? 0) > 30)
                 return Error("Turma deve ter nome e quantidade de alunos válida");
             if (!await db.Semesters.AnyAsync(s => s.Id == input.SemesterId)) return Error("Semestre não encontrado");
             if (input.CourseId is int courseId && !await db.Courses.AnyAsync(c => c.Id == courseId))
                 return Error("Curso não encontrado");
+            var normalizedCode = string.IsNullOrWhiteSpace(input.Code) ? null : input.Code.Trim().ToUpperInvariant();
+            if (!string.IsNullOrEmpty(normalizedCode) && await db.Classes.AnyAsync(c => c.SemesterId == input.SemesterId && c.NormalizedCode == normalizedCode))
+                return Results.Conflict(new ApiError("Já existe uma turma com este código no semestre."));
             var item = new ClassGroup
             {
                 SemesterId = input.SemesterId,
                 CourseId = input.CourseId,
+                Code = string.IsNullOrWhiteSpace(input.Code) ? null : input.Code.Trim(),
+                NormalizedCode = normalizedCode,
                 Name = input.Name.Trim(),
                 Students = input.Students
             };
             db.Classes.Add(item); await db.SaveChangesAsync();
             return Results.Created($"/api/classes/{item.Id}", item);
+        }).RequireAuthorization("Admin");
+        api.MapPut("/classes/{id:int}", async (int id, ClassUpdate input, AppDbContext db,
+            ClaimsPrincipal current) =>
+        {
+            var item = await db.Classes.FindAsync(id);
+            if (item is null) return Results.NotFound();
+            if (string.IsNullOrWhiteSpace(input.Name) || input.Name.Trim().Length > 100 ||
+                (input.Code?.Trim().Length ?? 0) > 30)
+                return Error("Informe nome de até 100 caracteres e código de até 30 caracteres.");
+            var normalizedCode = string.IsNullOrWhiteSpace(input.Code) ? null : input.Code.Trim().ToUpperInvariant();
+            if (!string.IsNullOrEmpty(normalizedCode) && await db.Classes.AnyAsync(c => c.Id != id &&
+                c.SemesterId == item.SemesterId && c.NormalizedCode == normalizedCode))
+                return Results.Conflict(new ApiError("Já existe uma turma com este código no semestre."));
+            var before = new { item.Name, item.Code };
+            item.Name = input.Name.Trim();
+            item.Code = string.IsNullOrWhiteSpace(input.Code) ? null : input.Code.Trim();
+            item.NormalizedCode = normalizedCode;
+            AuditTrail.Add(db, "ClassGroup", id.ToString(), "Alterada", UserId(current), before,
+                new { item.Name, item.Code });
+            await db.SaveChangesAsync();
+            return Results.NoContent();
         }).RequireAuthorization("Admin");
         api.MapPut("/classes/{id:int}/course", async (int id, ClassCourseInput input, AppDbContext db) =>
         {
@@ -333,6 +368,7 @@ public static partial class ApiEndpoints
 
     private static async Task<string?> ValidateRoom(AppDbContext db, RoomInput input)
     {
+        if ((input.Code?.Trim().Length ?? 0) > 30) return "O código do ambiente deve ter até 30 caracteres.";
         if (string.IsNullOrWhiteSpace(input.Name) || input.Name.Length > 120 ||
             !Enum.IsDefined(input.Kind) || input.Seats < 1 || input.Desks < 1 ||
             input.Seats > 1000 || input.Desks > 1000 ||
@@ -351,6 +387,8 @@ public static partial class ApiEndpoints
 
     private static Room CreateRoom(RoomInput input) => new()
     {
+        Code = string.IsNullOrWhiteSpace(input.Code) ? null : input.Code.Trim(),
+        NormalizedCode = string.IsNullOrWhiteSpace(input.Code) ? null : input.Code.Trim().ToUpperInvariant(),
         Name = input.Name.Trim(),
         Location = input.Location.Trim(),
         Purpose = input.Purpose?.Trim() ?? "",

@@ -316,6 +316,7 @@ export function Bookings({
       {form && (
         <Modal title="Criar reserva" onClose={() => setForm(false)}>
           <BookingForm
+            user={user}
             onCreated={(qualificationWarning) => {
               setForm(false);
               setSuccess(

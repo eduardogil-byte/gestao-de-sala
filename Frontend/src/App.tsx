@@ -54,7 +54,7 @@ const navIcons = {
   course: GraduationCap,
 } satisfies Record<NavigationItem["icon"], typeof LayoutDashboard>;
 
-function Workspace({ user, onLogout, institutionalNotice = "", institutionalError = "" }: { user: User; onLogout: () => void; institutionalNotice?: string; institutionalError?: string }) {
+function Workspace({ user, onLogout, onPasswordChanged, institutionalNotice = "", institutionalError = "" }: { user: User; onLogout: () => void; onPasswordChanged: () => void; institutionalNotice?: string; institutionalError?: string }) {
   const { data, loading, error, reload } = useData();
   const [page, setPage] = useState<Page>("dashboard");
   const [related, setRelated] = useState<{ page: Page; id: number } | null>(null);
@@ -72,6 +72,19 @@ function Workspace({ user, onLogout, institutionalNotice = "", institutionalErro
   const [linking, setLinking] = useState(false);
   const [linkPassword, setLinkPassword] = useState("");
   const [linkError, setLinkError] = useState("");
+  const [changingPassword, setChangingPassword] = useState(false);
+  const [currentPassword, setCurrentPassword] = useState("");
+  const [newPassword, setNewPassword] = useState("");
+  const [passwordError, setPasswordError] = useState("");
+  const [passwordBusy, setPasswordBusy] = useState(false);
+  async function changePassword(event: React.FormEvent) {
+    event.preventDefault(); setPasswordError(""); setPasswordBusy(true);
+    try {
+      await post("/auth/change-password", { currentPassword, newPassword });
+      setCurrentPassword(""); setNewPassword(""); onPasswordChanged();
+    } catch (reason) { setPasswordError(resultMessage(reason)); }
+    finally { setPasswordBusy(false); }
+  }
   useEffect(() => {
     let active = true;
     const refresh = async () => {
@@ -272,6 +285,18 @@ function Workspace({ user, onLogout, institutionalNotice = "", institutionalErro
               <LogOut size={14} />
               Sair da conta
             </button>
+            <button type="button" className="mt-3 block text-xs font-semibold text-slate-300 underline"
+              onClick={() => { setChangingPassword(!changingPassword); setPasswordError(""); }}>Alterar senha</button>
+            {changingPassword && <form className="mt-3 space-y-2" onSubmit={(event) => void changePassword(event)}>
+              <label className="block text-xs text-slate-300">Senha atual
+                <input className="field mt-1" type="password" autoComplete="current-password" required
+                  value={currentPassword} onChange={(event) => setCurrentPassword(event.target.value)} /></label>
+              <label className="block text-xs text-slate-300">Nova senha
+                <input className="field mt-1" type="password" autoComplete="new-password" required minLength={8}
+                  value={newPassword} onChange={(event) => setNewPassword(event.target.value)} /></label>
+              <button type="submit" className="text-xs font-semibold text-white underline" disabled={passwordBusy}>Salvar senha</button>
+              {passwordError && <p role="alert" className="text-xs text-rose-200">{passwordError}</p>}
+            </form>}
             {ssoEnabled && !linking && <button type="button"
               className="mt-3 flex items-center text-xs font-semibold gap-2 text-slate-300 hover:text-white"
               onClick={() => { setLinkError(""); setLinking(true); }}>
@@ -446,7 +471,7 @@ export default function App() {
     let active = true;
     const onInvalid = () => {
       logout();
-      setAuthMessage("Sua sessão expirou ou foi invalidada. Entre novamente.");
+      setAuthMessage("Sua sessão expirou ou foi invalidada. Entre novamente. Formulários ainda não enviados podem precisar ser preenchidos de novo.");
     };
     window.addEventListener("salagest:unauthorized", onInvalid);
     const params = new URLSearchParams(window.location.search);
@@ -498,7 +523,9 @@ export default function App() {
     );
   return user ? (
     <DataProvider>
-      <Workspace user={user} onLogout={logout} institutionalNotice={institutionalNotice} institutionalError={authMessage} />
+      <Workspace user={user} onLogout={logout} onPasswordChanged={() => {
+        logout(); setAuthMessage("Senha alterada. Entre novamente para continuar.");
+      }} institutionalNotice={institutionalNotice} institutionalError={authMessage} />
     </DataProvider>
   ) : (
     <Access onLogin={acceptLogin} initialMessage={authMessage} />

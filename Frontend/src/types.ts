@@ -77,6 +77,7 @@ export type Semester = {
 export type ClassGroup = {
   id: number;
   semesterId: number;
+  code?: string | null;
   name: string;
   students: number;
 };

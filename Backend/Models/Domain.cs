@@ -120,6 +120,8 @@ public sealed class SchoolShift
 public sealed class ClassGroup
 {
     public int Id { get; set; }
+    public string? Code { get; set; }
+    public string? NormalizedCode { get; set; }
     public int SemesterId { get; set; }
     public Semester Semester { get; set; } = null!;
     public int? CourseId { get; set; }

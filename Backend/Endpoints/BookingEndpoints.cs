@@ -37,9 +37,26 @@ public static partial class ApiEndpoints
                 (input.ClassGroupId is int classId && !await db.Classes.AnyAsync(c => c.Id == classId)))
                 return Error("Dados inválidos: confira turma, alunos, computadores e recursos");
 
+            var isAdmin = current.IsInRole("Admin");
+            var responsibleId = UserId(current);
+            if (isAdmin)
+            {
+                if (string.IsNullOrWhiteSpace(input.TeacherId))
+                    return Error("Selecione o professor responsável pela reserva.");
+                responsibleId = input.TeacherId;
+                var responsible = await db.Users.AnyAsync(u => u.Id == responsibleId);
+                var hasTeacherRole = await db.UserRoles.Join(db.Roles,
+                    link => link.RoleId, role => role.Id, (link, role) => new { link.UserId, role.Name })
+                    .AnyAsync(x => x.UserId == responsibleId && x.Name == "Professor");
+                if (!responsible || !hasTeacherRole)
+                    return Error("Professor responsável não encontrado.");
+            }
+            else if (input.TeacherId is not null && input.TeacherId != responsibleId)
+                return Results.Forbid();
+
             var booking = new BookingRequest
             {
-                TeacherId = UserId(current),
+                TeacherId = responsibleId,
                 ClassGroupId = input.ClassGroupId,
                 CurricularUnitId = input.CurricularUnitId,
                 CurricularCapabilityId = input.CurricularCapabilityId,

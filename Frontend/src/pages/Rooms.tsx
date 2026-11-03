@@ -28,6 +28,7 @@ import {
 
 type RoomInput = Omit<Room, "id">;
 const emptyRoom: RoomInput = {
+  code: "",
   name: "",
   location: "",
   purpose: "",
@@ -74,6 +75,7 @@ export function Rooms({ user }: { user: User }) {
     setForm(
       room
         ? {
+            code: room.code || "",
             name: room.name,
             location: room.location,
             purpose: room.purpose || "",
@@ -176,6 +178,7 @@ export function Rooms({ user }: { user: User }) {
             <option value="Comum">Sala comum</option>
             <option value="Laboratorio">Laboratório</option>
             <option value="Hibrida">Híbrida</option>
+            <option value="Oficina">Oficina</option>
           </select>
         </div>
       </Card>
@@ -225,18 +228,17 @@ export function Rooms({ user }: { user: User }) {
                 )}
                 <div className="grid grid-cols-2 gap-2 mt-5">
                   <div className="bg-slate-50 rounded-lg p-3">
-                    <span className="block text-xs text-slate-500">
-                      Lugares
-                    </span>
+                    <span className="block text-xs text-slate-500">Capacidade de alunos</span>
                     <b className="text-xl text-slate-800">{r.seats}</b>
                   </div>
                   <div className="bg-slate-50 rounded-lg p-3">
                     <span className="block text-xs text-slate-500">
-                      Computadores
+                      Computadores cadastrados
                     </span>
                     <b className="text-xl text-slate-800">{pcs}</b>
                   </div>
                 </div>
+                <p className="mt-2 text-xs text-slate-500">Carteiras: {r.desks}. Quantidades operacionais e equipamentos: consulte o inventário.</p>
                 <div className="flex flex-wrap gap-2 mt-4 text-[11px] text-slate-500">
                   {r.hasProjector && (
                     <span className="inline-flex gap-1 items-center">
@@ -314,6 +316,10 @@ export function Rooms({ user }: { user: User }) {
           <form className="space-y-5" onSubmit={submit}>
             {error && <Notice message={error} />}
             <div className="grid sm:grid-cols-2 gap-3">
+              <Field label="Código do ambiente">
+                <input className="field" maxLength={30} value={form.code || ""}
+                  onChange={(e) => set("code", e.target.value)} placeholder="Ex.: LAB-01" />
+              </Field>
               <Field label="Nome da sala">
                 <input
                   required
@@ -349,10 +355,11 @@ export function Rooms({ user }: { user: User }) {
                   <option value="Comum">Sala comum</option>
                   <option value="Laboratorio">Laboratório</option>
                   <option value="Hibrida">Híbrida</option>
+                  <option value="Oficina">Oficina</option>
                 </select>
               </Field>
               <div className="grid grid-cols-2 gap-2">
-                <Field label="Lugares">
+                <Field label="Capacidade de alunos">
                   <input
                     type="number"
                     min="1"

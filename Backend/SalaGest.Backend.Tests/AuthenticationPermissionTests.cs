@@ -26,6 +26,91 @@ namespace SalaGest.Backend.Tests;
 public sealed class AuthenticationPermissionTests
 {
     [Fact]
+    public async Task ClassAndRoomCodesAreUniqueAndClassCorrectionKeepsIdentity()
+    {
+        await using var host = await Host.Create();
+        await host.Login("admin");
+        var semester = await host.Client.PostAsJsonAsync("/api/semesters", new
+        {
+            name = "2026/2", startDate = "2026-10-01", endDate = "2026-12-20"
+        });
+        Assert.Equal(HttpStatusCode.Created, semester.StatusCode);
+        var semesterId = (await semester.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("id").GetInt32();
+        var first = await host.Client.PostAsJsonAsync("/api/classes", new { semesterId, code = "001", name = "Mecatrônica", students = 25 });
+        Assert.Equal(HttpStatusCode.Created, first.StatusCode);
+        var classId = (await first.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("id").GetInt32();
+        Assert.Equal(HttpStatusCode.Conflict, (await host.Client.PostAsJsonAsync("/api/classes",
+            new { semesterId, code = " 001 ", name = "Outra", students = 20 })).StatusCode);
+        Assert.Equal(HttpStatusCode.NoContent, (await host.Client.PutAsJsonAsync($"/api/classes/{classId}",
+            new { name = "Mecatrônica corrigida", code = "002" })).StatusCode);
+        var room = new { code = "LAB-01", name = "Laboratório", location = "Bloco A", kind = 2,
+            seats = 30, desks = 30, hasProjector = false, hasTeacherComputer = false,
+            hasInternet = true, active = true, computerGroups = Array.Empty<object>() };
+        Assert.Equal(HttpStatusCode.Created, (await host.Client.PostAsJsonAsync("/api/rooms", room)).StatusCode);
+        Assert.Equal(HttpStatusCode.Conflict, (await host.Client.PostAsJsonAsync("/api/rooms",
+            new { room.name, room.location, room.kind, room.seats, room.desks, room.hasProjector,
+                room.hasTeacherComputer, room.hasInternet, room.active, room.computerGroups, code = "lab-01" })).StatusCode);
+        using (var scope = host.App.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+            var saved = await db.Classes.SingleAsync();
+            Assert.Equal(classId, saved.Id);
+            Assert.Equal("002", saved.Code);
+            Assert.Equal(25, saved.Students);
+            Assert.Equal("LAB-01", (await db.Rooms.SingleAsync()).Code);
+        }
+        await host.Login("teacher");
+        Assert.Equal(HttpStatusCode.Forbidden, (await host.Client.PutAsJsonAsync($"/api/classes/{classId}",
+            new { name = "Indevido", code = "003" })).StatusCode);
+    }
+    [Fact]
+    public async Task AdminBookingRequiresProfessorAndPreservesResponsibleTeacher()
+    {
+        await using var host = await Host.Create();
+        using (var scope = host.App.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+            db.Shifts.Add(new SchoolShift { Name = "Manhã", StartsAt = new TimeOnly(8, 0), EndsAt = new TimeOnly(12, 0) });
+            await db.SaveChangesAsync();
+        }
+        var booking = new
+        {
+            startsAt = "2026-11-04T08:00:00", endsAt = "2026-11-04T12:00:00",
+            students = 20, studentsPerComputer = 1, minTier = 1, softwareIds = Array.Empty<int>(),
+            reason = "Aula", needsProjector = false, needsTeacherComputer = false,
+            needsStudentComputers = false
+        };
+        await host.Login("admin");
+        Assert.Equal(HttpStatusCode.BadRequest, (await host.Client.PostAsJsonAsync("/api/bookings", booking)).StatusCode);
+        string teacherId;
+        string adminId;
+        using (var scope = host.App.Services.CreateScope())
+        {
+            var users = scope.ServiceProvider.GetRequiredService<UserManager<AppUser>>();
+            teacherId = (await users.FindByEmailAsync("teacher@example.test"))!.Id;
+            adminId = (await users.FindByEmailAsync("admin@example.test"))!.Id;
+        }
+        Assert.Equal(HttpStatusCode.BadRequest, (await host.Client.PostAsJsonAsync("/api/bookings",
+            new { booking.startsAt, booking.endsAt, booking.students, booking.studentsPerComputer,
+                booking.minTier, booking.softwareIds, booking.reason, booking.needsProjector,
+                booking.needsTeacherComputer, booking.needsStudentComputers, teacherId = adminId })).StatusCode);
+        Assert.Equal(HttpStatusCode.Created, (await host.Client.PostAsJsonAsync("/api/bookings",
+            new { booking.startsAt, booking.endsAt, booking.students, booking.studentsPerComputer,
+                booking.minTier, booking.softwareIds, booking.reason, booking.needsProjector,
+                booking.needsTeacherComputer, booking.needsStudentComputers, teacherId })).StatusCode);
+        using (var scope = host.App.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+            Assert.Equal(teacherId, (await db.Bookings.SingleAsync()).TeacherId);
+            Assert.Equal(adminId, (await db.AuditEntries.SingleAsync(x => x.EntityType == "Booking")).ActorId);
+        }
+        await host.Login("teacher");
+        Assert.Equal(HttpStatusCode.Forbidden, (await host.Client.PostAsJsonAsync("/api/bookings",
+            new { booking.startsAt, booking.endsAt, booking.students, booking.studentsPerComputer,
+                booking.minTier, booking.softwareIds, booking.reason, booking.needsProjector,
+                booking.needsTeacherComputer, booking.needsStudentComputers, teacherId = adminId })).StatusCode);
+    }
+    [Fact]
     public async Task DevelopmentBootstrapCreatesAdminButNeverPromotesExistingProfessor()
     {
         await using var host = await Host.Create();

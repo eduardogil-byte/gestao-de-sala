@@ -10,10 +10,11 @@ public record ComputerGroupInput(string Description, int Quantity, int RamGb, Ha
     bool DedicatedGpu, List<GroupSoftwareInput> Software);
 public record RoomInput(string Name, string Location, RoomKind Kind, int Seats, int Desks,
     bool HasProjector, bool HasTeacherComputer, bool HasInternet, bool Active,
-    List<ComputerGroupInput> ComputerGroups, string? Purpose = null);
+    List<ComputerGroupInput> ComputerGroups, string? Purpose = null, string? Code = null);
 public record ShiftInput(string Name, TimeOnly StartsAt, TimeOnly EndsAt);
 public record SemesterCreate(string Name, DateOnly StartDate, DateOnly EndDate);
-public record ClassCreate(int SemesterId, string Name, int Students, int? CourseId = null);
+public record ClassCreate(int SemesterId, string Name, int Students, int? CourseId = null, string? Code = null);
+public record ClassUpdate(string Name, string? Code);
 public record ClassCourseInput(int CourseId);
 public record AvailabilityInput(int Weekday, int ShiftId);
 public record AssignmentCreate(int ClassGroupId, string TeacherId, string? DisciplineName = null,
@@ -28,7 +29,7 @@ public record BookingCreate(int? ClassGroupId, DateTime StartsAt, DateTime EndsA
     BookingRecurrence Recurrence = BookingRecurrence.Nenhuma, DateOnly? RepeatUntil = null,
     int MinRamGb = 0, bool NeedsDedicatedGpu = false, int WeekdaysMask = 0,
     int StudentsPerComputer = 1, int? RecurringEadWeekday = null,
-    int? CurricularUnitId = null, int? CurricularCapabilityId = null);
+    int? CurricularUnitId = null, int? CurricularCapabilityId = null, string? TeacherId = null);
 public record ConfirmBooking(int RoomId, bool ConfirmPartial = false, bool ReplaceOwnClassBooking = false,
     List<DateOnly>? ExpectedAvailableDates = null);
 public record DayStatusChange(ClassDayStatus Status);
