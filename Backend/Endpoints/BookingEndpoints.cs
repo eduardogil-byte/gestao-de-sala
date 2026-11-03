@@ -215,21 +215,32 @@ public static partial class ApiEndpoints
                 .Where(o => o.CancelledAtUtc == null && o.StartsAt < to && o.EndsAt > from)
                 .ToListAsync();
             var ids = occupations.Select(o => o.Id).ToArray();
-            var activeLoans = await db.Loans.AsNoTracking()
+            var activeLoans = await db.Loans.AsNoTracking().Include(l => l.BookingRequest)
                 .Where(l => l.Status == LoanStatus.Aprovado && ids.Contains(l.RoomOccupationId))
                 .ToListAsync();
             var need = Need(booking);
+            var lastDate = DateOnly.FromDateTime(periods.Max(p => p.Start));
             var list = rooms.Select(room =>
             {
-                var mismatch = RoomCompatibility.Incompatibility(room, need);
-                var conflicts = occupations.Where(o => o.RoomId == room.Id &&
-                    periods.Any(p => ScheduleGenerator.Overlap(o.StartsAt, o.EndsAt, p.Start, p.End)))
+                var mismatch = RoomCompatibility.Incompatibility(room, need, lastDate);
+                int? ActualClass(RoomOccupation o)
+                {
+                    var loan = activeLoans.FirstOrDefault(l => l.RoomOccupationId == o.Id);
+                    return loan is null ? o.ClassGroupId : loan.BookingRequest.ClassGroupId;
+                }
+                bool Blocks(RoomOccupation o, (DateTime Start, DateTime End) p) =>
+                    ScheduleGenerator.Overlap(o.StartsAt, o.EndsAt, p.Start, p.End) &&
+                    (o.RoomId == room.Id ||
+                        (activeLoans.FirstOrDefault(l => l.RoomOccupationId == o.Id)?.BorrowerId ?? o.TeacherId) == booking.TeacherId ||
+                        (booking.ClassGroupId.HasValue && ActualClass(o) == booking.ClassGroupId));
+                var conflicts = occupations.Where(o =>
+                    periods.Any(p => Blocks(o, p)))
                     .OrderBy(o => o.StartsAt).Select(o => new
                     {
                         o.Id,
                         o.StartsAt,
                         o.EndsAt,
-                        o.ClassGroupId,
+                        ClassGroupId = ActualClass(o),
                         TeacherId = activeLoans.FirstOrDefault(l => l.RoomOccupationId == o.Id)?.BorrowerId ?? o.TeacherId
                     }).ToArray();
                 return new
@@ -258,8 +269,7 @@ public static partial class ApiEndpoints
                     Incompatibility = mismatch,
                     Available = conflicts.Length == 0,
                     Conflicts = conflicts,
-                    AvailableOccurrences = periods.Count(p => !occupations.Any(o => o.RoomId == room.Id &&
-                        ScheduleGenerator.Overlap(o.StartsAt, o.EndsAt, p.Start, p.End))),
+                    AvailableOccurrences = periods.Count(p => !occupations.Any(o => Blocks(o, p))),
                     TotalOccurrences = periods.Count,
                     Score = RoomCompatibility.Score(room, need)
                 };
@@ -286,8 +296,7 @@ public static partial class ApiEndpoints
             var occ = await db.Occupations.AsNoTracking().Where(o => o.CancelledAtUtc == null
                 && o.StartsAt < to && o.EndsAt > from).ToListAsync();
             var occIds = occ.Select(o => o.Id).ToArray();
-            var loans = booking.CurricularCapabilityId is null ? new List<RoomLoan>() :
-                await db.Loans.AsNoTracking().Include(l => l.BookingRequest)
+            var loans = await db.Loans.AsNoTracking().Include(l => l.BookingRequest)
                     .Where(l => l.Status == LoanStatus.Aprovado && occIds.Contains(l.RoomOccupationId)).ToListAsync();
             var result = periods.Select(p =>
             {
@@ -360,7 +369,8 @@ public static partial class ApiEndpoints
             }
             if (booking.CurricularCapabilityId is null)
             {
-                var mismatch = RoomCompatibility.Incompatibility(room, Need(booking));
+                var mismatch = RoomCompatibility.Incompatibility(room, Need(booking),
+                    DateOnly.FromDateTime(BookingPeriods.Expand(booking).Max(p => p.Start)));
                 if (mismatch is not null) return Error($"A sala não atende aos requisitos: {mismatch}");
             }
             else if (!room.Active) return Results.Conflict(new ApiError("Sala inativa"));

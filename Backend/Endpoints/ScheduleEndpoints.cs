@@ -92,10 +92,27 @@ public static partial class ApiEndpoints
                 return Results.Conflict(new ApiError("Já existe outra grade publicada para esse semestre"));
 
             var pendingOccupations = new List<RoomOccupation>();
+            var events = await EventsFor(db, schedule.SemesterId,
+                schedule.Semester.StartDate, schedule.Semester.EndDate);
+            var calendars = new Dictionary<(int ClassId, int Weekday), HashSet<DateOnly>>();
             foreach (var weekly in schedule.WeeklyClasses)
             {
+                var classId = weekly.Assignment.ClassGroupId;
+                var key = (classId, weekly.Weekday);
+                if (!calendars.TryGetValue(key, out var eligible))
+                {
+                    var classGroup = await db.Classes.AsNoTracking().FirstAsync(c => c.Id == classId);
+                    var exceptions = await ExceptionsFor(db, classId,
+                        schedule.Semester.StartDate, schedule.Semester.EndDate);
+                    eligible = AcademicCalendarRules.Preview(schedule.Semester,
+                        schedule.Semester.StartDate, schedule.Semester.EndDate,
+                        1 << weekly.Weekday, classGroup, events, exceptions).Dates
+                        .Where(d => d.CountsAsPresential).Select(d => d.Date).ToHashSet();
+                    calendars[key] = eligible;
+                }
                 foreach (var period in ScheduleGenerator.AllOccurrences(schedule.Semester, weekly.Weekday, weekly.Shift))
                 {
+                    if (!eligible.Contains(DateOnly.FromDateTime(period.Start))) continue;
                     var conflict = await ReservationRules.ConflictAsync(db, weekly.RoomId,
                         period.Start, period.End, weekly.Assignment.TeacherId,
                         weekly.Assignment.ClassGroupId);
@@ -118,6 +135,8 @@ public static partial class ApiEndpoints
                     });
                 }
             }
+            if (pendingOccupations.Count == 0)
+                return Results.Conflict(new ApiError("A grade não possui encontros presenciais elegíveis no calendário das turmas"));
             db.Occupations.AddRange(pendingOccupations);
             schedule.Status = ScheduleStatus.Publicada;
             await db.SaveChangesAsync();
