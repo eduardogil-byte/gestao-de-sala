@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { api } from "../lib/api";
 import { useData } from "../lib/data";
 import { agendaErrorMessage, assignmentConflicts, loadSemesterAgenda, teacherActivities, teacherWorkload } from "../lib/instructorAgenda";
-import { movePeriod, weekStart, type TimelineView } from "../lib/roomTimeline";
+import { movePeriod, type TimelineView } from "../lib/roomTimeline";
 import { dateBR, localDate, nextDate, statusText } from "../lib/utils";
 import { Busy, Card, Field, Modal, Notice, Title } from "../components/UI";
 import type { AgendaOccupation, User } from "../types";
@@ -37,14 +37,14 @@ function Activity({ item, onSelect }: { item: AgendaOccupation; onSelect: (item:
   return <button type="button" onClick={() => onSelect(item)}
     className={(item.conflicts.length ? "border-rose-300 bg-rose-50 text-rose-900" : "border-sky-200 bg-sky-50 text-sky-900") +
       " block w-full rounded-lg border p-2 text-left text-xs focus:ring-2 focus:ring-sky-600"}>
-    <strong>{item.conflicts.length ? "Conflito · " : "Aula registrada · "}{item.actualClassGroupName ?? "Turma não informada"}</strong>
+    <strong>{item.conflicts.length ? "Conflito" : item.bookingStatus && item.bookingStatus !== "Aprovada" ? statusText(item.bookingStatus) : item.isBorrowed ? "Empréstimo" : occupationStatusNames[item.status] ?? statusText(item.status)} · {item.actualClassGroupName ?? "Turma não informada"}</strong>
     <span className="block">{item.roomName}</span>
     {item.curricularUnitName && <span className="block">{item.curricularUnitName}</span>}
     {special(item) && <span className="block font-medium text-amber-800">{special(item)}</span>}
   </button>;
 }
 
-export function InstructorAgenda({ user }: { user: User }) {
+export function InstructorAgenda({ user, onOpenRelated, onManage }: { user: User; onOpenRelated?: (type: "Booking" | "Loan", id: number) => void; onManage?: (date: string, roomId: number, occupationId: number) => void }) {
   const { data, loading: catalogLoading, error: catalogError } = useData();
   const admin = user.roles.includes("Admin");
   const [semesterId, setSemesterId] = useState("");
@@ -105,13 +105,13 @@ export function InstructorAgenda({ user }: { user: User }) {
   const assignments = useMemo(() => data.assignments.filter((item) => item.teacherId === teacherId &&
     item.semesterId === semester?.id && !item.endedAtUtc), [data.assignments, teacherId, semester]);
   const pedagogicalConflicts = useMemo(() => assignmentConflicts(assignments), [assignments]);
-  const week = weekStart(anchor);
+  const week = nextDate(anchor, -new Date(anchor + "T12:00:00").getDay());
   const weekDates = Array.from({ length: 7 }, (_, index) => nextDate(week, index));
   const monthStart = anchor.slice(0, 7) + "-01";
   const monthEnd = movePeriod("month", monthStart, 1).slice(0, 7) + "-01";
   const monthDates: string[] = [];
   for (let date = monthStart; date < monthEnd; date = nextDate(date, 1)) monthDates.push(date);
-  const firstDayOffset = (new Date(monthStart + "T12:00:00").getDay() + 6) % 7;
+  const firstDayOffset = new Date(monthStart + "T12:00:00").getDay();
   const periodLabel = view === "week" ? dateBR(week) + " a " + dateBR(nextDate(week, 6)) :
     view === "month" ? monthTitle(anchor) : semester?.name ?? "Selecione um semestre";
 
@@ -185,16 +185,22 @@ export function InstructorAgenda({ user }: { user: User }) {
         <p className="text-xs text-slate-600 mt-2">Horas calculadas pelos turnos cadastrados, sem dupla contagem de intervalos simultâneos. Atribuições pedagógicas sem ocupação não entram na soma. Sem limite institucional de carga configurado.</p>
         {!workload.activities && <p className="text-sm text-slate-600 mt-3">Sem atividades registradas no período. Isso não confirma disponibilidade contratual.</p>}
       </Card>
-      {view === "week" && <Card className="overflow-x-auto mb-5"><table className="w-full min-w-[900px] text-sm">
-        <thead><tr><th className="sticky left-0 bg-white p-3 text-left border-b min-w-32">Turno</th>{weekDates.map((date) => <th key={date} className="p-3 text-left border-b min-w-32">{weekDays[new Date(date + "T12:00:00").getDay()]}<span className="block text-xs font-normal">{dateBR(date)}</span></th>)}</tr></thead>
+      {view === "week" && <Card className="overflow-hidden mb-5"><div className="hidden lg:block overflow-x-auto"><table className="w-full min-w-[900px] text-sm">
+        <thead><tr><th className="sticky left-0 bg-white p-3 text-left border-b min-w-32">Turno</th>{weekDates.map((date) => <th key={date} className={`p-3 text-left border-b min-w-32 ${date === localDate(new Date()) ? "bg-sky-50 text-sky-900" : ""}`} aria-current={date === localDate(new Date()) ? "date" : undefined}>{weekDays[new Date(date + "T12:00:00").getDay()]}<span className="block text-xs font-normal">{dateBR(date)}{date === localDate(new Date()) ? " · Hoje" : ""}</span></th>)}</tr></thead>
         <tbody>{data.shifts.map((shift) => <tr key={shift.id}><th scope="row" className="sticky left-0 bg-white p-3 border-b text-left align-top">{shift.name}<span className="block text-xs font-normal text-slate-500">{shift.startsAt.slice(0, 5)}–{shift.endsAt.slice(0, 5)}</span></th>
-          {weekDates.map((date) => { const rows = (byDay.get(date) ?? []).filter((item) => item.shiftId === shift.id); return <td key={date} className="p-2 border-b align-top">{!withinSemester(date) ? <span className="text-xs text-slate-500">Fora do semestre</span> : rows.length ? <div className="space-y-1">{rows.length > 1 && <p className="text-xs font-bold text-rose-800">{rows.length} atividades simultâneas</p>}{rows.map((item) => <Activity key={item.id} item={item} onSelect={setSelected} />)}</div> : <span className="text-xs text-slate-500">Sem aula registrada</span>}</td>; })}</tr>)}</tbody>
-      </table>{!data.shifts.length && <p className="p-4 text-sm">Não há turnos cadastrados para montar a grade.</p>}
+          {weekDates.map((date) => { const rows = (byDay.get(date) ?? []).filter((item) => item.shiftId === shift.id); return <td key={date} className="p-2 border-b align-top">{!withinSemester(date) ? <span className="text-xs text-slate-500">Fora do semestre</span> : rows.length ? <div className="space-y-1">{rows.length > 1 && <p className="text-xs font-bold text-slate-700">{rows.length} ocupações</p>}{rows.map((item) => <Activity key={item.id} item={item} onSelect={setSelected} />)}</div> : <span className="text-xs text-slate-500">Sem aula registrada</span>}</td>; })}</tr>)}</tbody>
+      </table></div><div className="lg:hidden divide-y divide-line">{weekDates.map((date) => <section key={date} className={`p-4 ${date === localDate(new Date()) ? "bg-sky-50" : ""}`} aria-current={date === localDate(new Date()) ? "date" : undefined}>
+        <h3 className="text-sm font-semibold">{weekDays[new Date(date + "T12:00:00").getDay()]} · {dateBR(date)}{date === localDate(new Date()) ? " · Hoje" : ""}</h3>
+        {!withinSemester(date) ? <p className="text-xs text-muted-ink mt-2">Fora do semestre</p> : data.shifts.map((shift) => { const rows = (byDay.get(date) ?? []).filter((item) => item.shiftId === shift.id); return <div key={shift.id} className="mt-3">
+          <p className="text-xs font-semibold text-slate-700 mb-1">{shift.name} · {rows.length} ocupação(ões)</p>
+          {rows.length ? <div className="space-y-1">{rows.map((item) => <Activity key={item.id} item={item} onSelect={setSelected} />)}</div> : <p className="text-xs text-muted-ink">Sem aula registrada</p>}
+        </div>; })}
+      </section>)}</div>{!data.shifts.length && <p className="p-4 text-sm">Não há turnos cadastrados para montar a grade.</p>}
       {(weekDates.flatMap((date) => byDay.get(date) ?? []).filter((item) => item.shiftId === null)).length > 0 && <div className="p-4"><h3 className="font-semibold text-sm mb-2">Atividades sem turno identificado</h3><div className="space-y-2">{weekDates.flatMap((date) => byDay.get(date) ?? []).filter((item) => item.shiftId === null).map((item) => <Activity key={item.id} item={item} onSelect={setSelected} />)}</div></div>}</Card>}
-      {view === "month" && <><Card className="p-4 mb-5"><div className="grid grid-cols-7 gap-1 text-xs text-center font-semibold text-slate-600 mb-2">{["Seg", "Ter", "Qua", "Qui", "Sex", "Sáb", "Dom"].map((name) => <span key={name}>{name}</span>)}</div>
+      {view === "month" && <><Card className="p-4 mb-5"><div className="grid grid-cols-7 gap-1 text-xs text-center font-semibold text-slate-600 mb-2">{["Dom", "Seg", "Ter", "Qua", "Qui", "Sex", "Sáb"].map((name) => <span key={name}>{name}</span>)}</div>
         <div className="grid grid-cols-7 gap-1">{Array.from({ length: firstDayOffset }, (_, index) => <span key={"blank-" + index} />)}{monthDates.map((date) => { const rows = byDay.get(date) ?? []; const count = rows.filter((item) => item.conflicts.length).length; return <button key={date} type="button" onClick={() => setSelectedDay(date)} disabled={!withinSemester(date)} aria-pressed={selectedDay === date}
-          className="min-h-24 rounded-lg border border-slate-200 p-2 text-left text-xs hover:bg-sky-50 focus:ring-2 focus:ring-sky-600 disabled:opacity-40">
-          <strong className="block">{date.slice(8)}</strong><span className="block mt-1">{rows.length} atividade(s)</span>
+          className={`min-h-24 rounded-lg border p-2 text-left text-xs hover:bg-sky-50 focus:ring-2 focus:ring-sky-600 disabled:opacity-40 ${selectedDay === date ? "border-sky-500 bg-sky-50" : date === localDate(new Date()) ? "border-sky-300 bg-sky-50/50" : "border-slate-200"}`} aria-current={date === localDate(new Date()) ? "date" : undefined}>
+          <strong className="block">{date.slice(8)}{date === localDate(new Date()) ? " · Hoje" : ""}</strong><span className="block mt-1">{rows.length} atividade(s)</span>
           {rows.length > 0 && <span className="block text-slate-600">{[...new Set(rows.map((item) => item.shiftName).filter(Boolean))].join(", ")}</span>}
           {count > 0 && <span className="block font-semibold text-rose-800">{count} conflito(s)</span>}
           {[...new Set(rows.map(special).filter(Boolean))].map((label) => <span key={label} className="block text-amber-800">{label}</span>)}
@@ -224,6 +230,10 @@ export function InstructorAgenda({ user }: { user: User }) {
         ["Empréstimo", selected.isBorrowed ? "Professor efetivo de empréstimo aprovado" : null],
         ["Conflitos", selected.conflicts.length ? selected.conflicts.map((entry) => conflictNames[entry] ?? "Inconsistência").join(", ") : "Nenhum indicado"]]
         .filter((pair) => pair[1]).map(([label, value]) => <div key={label}><dt className="font-semibold text-slate-700">{label}</dt><dd>{value}</dd></div>)}
-    </dl></Modal>}
+    </dl><div className="flex flex-wrap gap-2 mt-5">
+      {selected.bookingRequestId && (admin || selected.originalTeacherId === user.id) && <button type="button" className="btn-secondary" onClick={() => onOpenRelated?.("Booking", selected.bookingRequestId!)}>Abrir reserva</button>}
+      {selected.loanId && <button type="button" className="btn-secondary" onClick={() => onOpenRelated?.("Loan", selected.loanId!)}>Abrir empréstimo</button>}
+      {(admin || selected.originalTeacherId === user.id) && onManage && <button type="button" className="btn-secondary" onClick={() => onManage(selected.date, selected.roomId, selected.id)}>Gerenciar esta ocupação</button>}
+    </div></Modal>}
   </>;
 }

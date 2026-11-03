@@ -3,7 +3,7 @@ import { post, read } from "../lib/api";
 import { localDate, nextDate, resultMessage, dateBR } from "../lib/utils";
 import { useData } from "../lib/data";
 import { NeedFields, defaultNeed } from "./NeedFields";
-import { Checkbox, Field, Notice, SubmitButton } from "./UI";
+import { Checkbox, Field, Notice, SearchableSelect, SubmitButton } from "./UI";
 import type { Need, Shift, User } from "../types";
 
 type PedagogicalOption = {
@@ -14,22 +14,21 @@ type PedagogicalOption = {
 };
 
 const names = ["Dom", "Seg", "Ter", "Qua", "Qui", "Sex", "Sáb"];
-const startOfWeek = (date: string) => nextDate(date, -(asDay(date) + 6) % 7);
 const asDay = (d: string) => new Date(`${d}T12:00:00`).getDay();
-function firstSelected(date: string, days: number[]) {
+export function firstSelected(date: string, days: number[]) {
   for (let i = 0; i < 7; i++) {
     const candidate = nextDate(date, i);
     if (days.includes(asDay(candidate))) return candidate;
   }
   return date;
 }
-function actualDates(from: string, to: string, days: number[]) {
+export function actualDates(from: string, to: string, days: number[]) {
   const found: string[] = [];
   for (let d = from, i = 0; d <= to && i < 367; d = nextDate(d, 1), i++)
     if (days.includes(asDay(d))) found.push(d);
   return found;
 }
-export function BookingForm({ onCreated, user }: { onCreated: (qualificationWarning: boolean) => void; user: User }) {
+export function BookingForm({ onCreated, user }: { onCreated: (id: number, qualificationWarning: boolean) => void; user: User }) {
   const { data, reload } = useData();
   const admin = user.roles.includes("Admin");
   const [teacherId, setTeacherId] = useState("");
@@ -66,9 +65,8 @@ export function BookingForm({ onCreated, user }: { onCreated: (qualificationWarn
   const units = classOptions.filter((x, i, all) =>
     all.findIndex((a) => a.curricularUnitId === x.curricularUnitId) === i);
   const selectedUnit = classOptions.find((x) => String(x.curricularUnitId) === unitId);
-  const weekStart = startOfWeek(date);
   const start =
-    recurring && weekdays.length ? firstSelected(weekStart, weekdays) : date;
+    recurring && weekdays.length ? firstSelected(date, weekdays) : date;
   const dates = useMemo(
     () => (recurring ? actualDates(start, repeatUntil, weekdays) : [date]),
     [recurring, start, repeatUntil, weekdays, date],
@@ -93,7 +91,7 @@ export function BookingForm({ onCreated, user }: { onCreated: (qualificationWarn
     }
     setBusy(true);
     try {
-      const created = await post<{ qualificationWarning: boolean }>("/bookings", {
+      const created = await post<{ id: number; qualificationWarning: boolean }>("/bookings", {
         teacherId: admin ? teacherId : null,
         classGroupId: classGroupId ? Number(classGroupId) : null,
         curricularUnitId: pedagogical ? Number(unitId) : null,
@@ -113,7 +111,7 @@ export function BookingForm({ onCreated, user }: { onCreated: (qualificationWarn
         ...need,
       });
       await reload();
-      onCreated(created.qualificationWarning);
+      onCreated(created.id, created.qualificationWarning);
     } catch (err) {
       setError(resultMessage(err));
     } finally {
@@ -137,37 +135,23 @@ export function BookingForm({ onCreated, user }: { onCreated: (qualificationWarn
       {pedagogical && optionsError && <Notice message={optionsError} />}
       {pedagogical && !optionsBusy && options.length === 0 && !optionsError &&
         <Notice type="info" message="Não há turmas e UCs atribuídas ao seu perfil." />}
-      <Field label="Atividade / justificativa">
-        <input
-          className="field"
-          required
-          maxLength={250}
-          value={reason}
-          onChange={(e) => setReason(e.target.value)}
-          placeholder="Ex.: Prática de SolidWorks"
-        />
-      </Field>
       <div className="grid sm:grid-cols-2 gap-3">
-        <Field label="Turma">
-          <select
-            className="field"
-            value={classGroupId}
-            onChange={(e) => {
-              setClassGroupId(e.target.value);
+        <SearchableSelect label={pedagogical ? "Turma obrigatória" : "Turma (opcional)"}
+          value={classGroupId} required={pedagogical}
+          onChange={(value) => {
+              setClassGroupId(value);
               setUnitId(""); setCapabilityId("");
               const c = data.classes.find(
-                (c) => String(c.id) === e.target.value,
+                (c) => String(c.id) === value,
               );
               if (c) setStudents(c.students);
-            }}
-          >
-            <option value="">{pedagogical ? "Selecione uma turma" : "Sem turma vinculada"}</option>
-            {(pedagogical ? data.classes.filter((c) => options.some((x) => x.classGroupId === c.id)) : data.classes).map((c) => (
-              <option key={c.id} value={c.id}>
-                {c.name}
-              </option>
-            ))}
-          </select>
+            }} options={[{ value: "", label: pedagogical ? "Selecione uma turma" : "Sem turma vinculada" },
+              ...(pedagogical ? data.classes.filter((c) => options.some((x) => x.classGroupId === c.id)) : data.classes)
+                .map((c) => ({ value: String(c.id), label: [c.code, c.name,
+                  data.shifts.find((s) => s.id === options.find((x) => x.classGroupId === c.id)?.preferredShiftId)?.name].filter(Boolean).join(" · ") }))]} />
+        <Field label="Atividade / justificativa (obrigatória)">
+          <input className="field" required maxLength={250} value={reason}
+            onChange={(e) => setReason(e.target.value)} placeholder="Ex.: Prática de SolidWorks" />
         </Field>
         {pedagogical && <Field label="Unidade curricular">
           <select className="field" required value={unitId} onChange={(e) => {
@@ -214,8 +198,10 @@ export function BookingForm({ onCreated, user }: { onCreated: (qualificationWarn
             value={date}
             onChange={(e) => {
               setDate(e.target.value);
-              setWeekdays([asDay(e.target.value)]);
-              if (repeatUntil < e.target.value) setRepeatUntil(e.target.value);
+              if (e.target.value) {
+                setWeekdays([asDay(e.target.value)]);
+                if (repeatUntil < e.target.value) setRepeatUntil(e.target.value);
+              }
             }}
           />
         </Field>
@@ -241,10 +227,7 @@ export function BookingForm({ onCreated, user }: { onCreated: (qualificationWarn
       />
       {recurring && (
         <div className="bg-slate-50 rounded-xl border border-slate-200 p-4 space-y-3">
-          <p className="field-label">
-            Selecione os dias da semana de {dateBR(weekStart)} (podem ser
-            estendidos para outras semanas)
-          </p>
+          <p className="field-label">Dias da semana para repetir a partir de {dateBR(date)}</p>
           <div className="flex flex-wrap gap-2">
             {[1, 2, 3, 4, 5, 6, 0].map((d) => (
               <button
@@ -259,11 +242,9 @@ export function BookingForm({ onCreated, user }: { onCreated: (qualificationWarn
                   if (eadDay === String(d)) setEadDay("");
                 }}
                 className={`rounded-lg border px-3 py-2 text-sm font-semibold ${weekdays.includes(d) ? "border-sky-500 bg-sky-100 text-sky-800" : "border-slate-200 bg-white text-slate-600"}`}
+                aria-pressed={weekdays.includes(d)}
               >
                 {names[d]}
-                <span className="block text-[10px] font-normal">
-                  {dateBR(nextDate(weekStart, (d + 6) % 7)).slice(0, 5)}
-                </span>
               </button>
             ))}
           </div>
@@ -290,8 +271,8 @@ export function BookingForm({ onCreated, user }: { onCreated: (qualificationWarn
               ))}
             </select>
           </Field>
-          <p className="text-xs text-slate-600">
-            {dates.length} ocorrência(s).{" "}
+          <p className="text-xs text-slate-600" role="status">
+            {dates.length} data(s) solicitada(s). A disponibilidade será verificada após escolher a sala. {" "}
             {dates.length > 0
               ? `Primeira: ${dateBR(dates[0])}. Última: ${dateBR(dates[dates.length - 1])}.`
               : "Nenhum encontro neste período."}
@@ -323,12 +304,9 @@ export function BookingForm({ onCreated, user }: { onCreated: (qualificationWarn
           onChange={(e) => setLessonPlanLink(e.target.value)}
         />
       </Field>
-      <p className="text-xs text-slate-500">
-        Na próxima etapa você escolhe a sala. A confirmação é feita pelo
-        professor, sem aprovação da coordenação.
-      </p>
+      <p className="text-xs text-slate-500">Após criar a solicitação, escolha uma sala e confira as datas elegíveis antes de confirmar.</p>
       <div className="flex justify-end">
-        <SubmitButton busy={busy}>Escolher sala</SubmitButton>
+        <SubmitButton busy={busy}>Continuar para escolha da sala</SubmitButton>
       </div>
     </form>
   );

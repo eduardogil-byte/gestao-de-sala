@@ -72,6 +72,7 @@ function Workspace({ user, onLogout, onPasswordChanged, institutionalNotice = ""
   const { data, loading, error, reload } = useData();
   const [page, setPage] = useState<Page>("dashboard");
   const [related, setRelated] = useState<{ page: Page; id: number } | null>(null);
+  const [agendaFocus, setAgendaFocus] = useState<{ date: string; roomId: number; occupationId: number } | null>(null);
   const [timelineFilter, setTimelineFilter] = useState<{ semesterId: number; roomId: number; anchor: string; shiftId?: number } | null>(null);
   const [opportunityFilter, setOpportunityFilter] = useState<{ semesterId: number; roomId: number } | null>(null);
   const [exportFilter, setExportFilter] = useState<{ semesterId: number; secondSemesterId: number | null; roomId: number | null } | null>(null);
@@ -84,7 +85,7 @@ function Workspace({ user, onLogout, onPasswordChanged, institutionalNotice = ""
   const accountButtonRef = useRef<HTMLButtonElement>(null);
   const [occupations, setOccupations] = useState<Occupation[]>([]);
   const [agendaError, setAgendaError] = useState("");
-  const [unread, setUnread] = useState(0);
+  const [unread, setUnread] = useState<number | null>(null);
   const [ssoEnabled, setSsoEnabled] = useState(false);
   const [linkBusy, setLinkBusy] = useState(false);
   const [linking, setLinking] = useState(false);
@@ -112,7 +113,7 @@ function Workspace({ user, onLogout, onPasswordChanged, institutionalNotice = ""
         );
         if (active) setUnread(result.count);
       } catch {
-        /* A consulta pode ser repetida na próxima atualização. */
+        if (active) setUnread(null);
       }
     };
     void refresh();
@@ -202,6 +203,7 @@ function Workspace({ user, onLogout, onPasswordChanged, institutionalNotice = ""
   const scrollToTop = () => window.scrollTo({ top: 0, behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth" });
   const open = (p: string) => {
     setRelated(null);
+    setAgendaFocus(null);
     setTimelineFilter(null);
     setOpportunityFilter(null);
     setExportFilter(null);
@@ -404,7 +406,7 @@ function Workspace({ user, onLogout, onPasswordChanged, institutionalNotice = ""
               className="rounded-xl min-w-11 min-h-11 flex items-center justify-center text-slate-600 hover:bg-slate-100 relative"
             >
               <Bell size={19} />
-              {unread > 0 && (
+              {unread !== null && unread > 0 && (
                 <span className="absolute -right-1 -top-1 rounded-full bg-rose-600 text-white text-[10px] font-bold min-w-5 h-5 px-1 flex items-center justify-center">
                   {unread > 99 ? "99+" : unread}
                 </span>
@@ -441,12 +443,13 @@ function Workspace({ user, onLogout, onPasswordChanged, institutionalNotice = ""
           {loading ? (
             <Busy />
           ) : page === "dashboard" ? (
-            <Dashboard user={user} navigate={open} occupations={occupations} openTimeline={openTimeline} openOpportunity={openOpportunity} onExport={openDashboardExport} />
+            <Dashboard user={user} navigate={open} occupations={occupations} openTimeline={openTimeline} openOpportunity={openOpportunity} onExport={openDashboardExport} unread={unread} />
           ) : page === "agenda" ? (
             <Agenda
               user={user}
               occupations={occupations}
               reloadAgenda={reloadAgenda}
+              focus={agendaFocus}
             />
           ) : page === "room-timeline" ? (
             <RoomTimeline user={user} openBookings={() => open("bookings")} initialFilter={timelineFilter} />
@@ -457,7 +460,7 @@ function Workspace({ user, onLogout, onPasswordChanged, institutionalNotice = ""
           ) : page === "exports" && admin ? (
             <ExportData initial={exportFilter} />
           ) : page === "instructor-agenda" ? (
-            <InstructorAgenda user={user} />
+            <InstructorAgenda user={user} onOpenRelated={(type, id) => { const target = type === "Booking" ? "bookings" : "loans"; setRelated({ page: target, id }); setPage(target); }} onManage={(date, roomId, occupationId) => { setAgendaFocus({ date, roomId, occupationId }); setPage("agenda"); }} />
           ) : page === "rooms" ? (
             <Rooms user={user} />
           ) : page === "academic" && admin ? (

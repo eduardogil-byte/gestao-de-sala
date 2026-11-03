@@ -22,8 +22,10 @@ export function Loans({
   const [from, setFrom] = useState(localDate(new Date())),
     [occupations, setOccupations] = useState<Occupation[]>([]);
   const [chosen, setChosen] = useState<number[]>([]),
+    [chosenDetails, setChosenDetails] = useState<Occupation[]>([]),
     [borrower, setBorrower] = useState(""),
     [reason, setReason] = useState("");
+  const [direction, setDirection] = useState<"all" | "received" | "sent">("all");
   const [acceptId, setAcceptId] = useState<number | null>(null),
     [students, setStudents] = useState(25),
     [perComputer, setPerComputer] = useState(1),
@@ -42,7 +44,7 @@ export function Loans({
     return () => window.clearTimeout(timer);
   }, [focusId, data.loans]);
   const teacher = (id: string) =>
-    data.teachers.find((t) => t.id === id)?.displayName || id.slice(0, 8);
+    (id === user.id ? user.displayName : data.teachers.find((t) => t.id === id)?.displayName) || "Professor não identificado";
   async function load() {
     try {
       setOccupations(
@@ -81,8 +83,10 @@ export function Loans({
   }
   async function offer() {
     if (!chosen.length || !borrower || !reason.trim()) return;
+    const preview = [...chosenDetails].sort((a, b) => a.startsAt.localeCompare(b.startsAt));
+    const dates = preview.slice(0, 5).map((o) => `${dateTimeBR(o.startsAt)} · ${data.rooms.find((r) => r.id === o.roomId)?.name ?? `Sala ${o.roomId}`}`).join("; ");
     if (
-      !await ask({ title: "Oferecer empréstimo", message: `Oferecer ${chosen.length} ocorrência(s) para ${teacher(borrower)}? O destinatário precisará aceitar.`, confirmLabel: "Enviar oferta" })
+      !await ask({ title: "Oferecer empréstimo", message: `Oferecer ${chosen.length} data(s) para ${teacher(borrower)}: ${dates}${preview.length > 5 ? `; e mais ${preview.length - 5} data(s) listada(s) no formulário` : ""}. O destinatário precisará aceitar; depois você definirá a situação da sua turma.`, confirmLabel: "Enviar oferta" })
     )
       return;
     if (
@@ -93,11 +97,13 @@ export function Loans({
       )
     ) {
       setChosen([]);
+      setChosenDetails([]);
       setBorrower("");
       setReason("");
     }
   }
   async function accept(l: Loan) {
+    if (!await ask({ title: "Aceitar empréstimo", message: `Aceitar ${data.rooms.find((r) => r.id === l.roomId)?.name ?? `Sala ${l.roomId}`} em ${dateTimeBR(l.startsAt)}? O titular ainda precisará definir a situação da turma antes da efetivação.`, confirmLabel: "Aceitar oferta" })) return;
     const done = await action(
       `/loans/${l.id}/accept`,
       {
@@ -111,6 +117,7 @@ export function Loans({
     if (done) setAcceptId(null);
   }
   async function finalize(l: Loan) {
+    if (!await ask({ title: "Finalizar empréstimo", message: `Confirmar o empréstimo de ${data.rooms.find((r) => r.id === l.roomId)?.name ?? `Sala ${l.roomId}`} em ${dateTimeBR(l.startsAt)}? Sua turma ficará em ${disposition === "Ead" ? "EAD" : disposition === "NaoLetivo" ? "dia não letivo" : "outra sala"}. A alocação original permanecerá no histórico.`, confirmLabel: "Finalizar empréstimo" })) return;
     const done = await action(
       `/loans/${l.id}/finalize`,
       {
@@ -194,18 +201,16 @@ export function Loans({
                   <input
                     type="checkbox"
                     checked={chosen.includes(o.id)}
-                    onChange={(e) =>
-                      setChosen((old) =>
-                        e.target.checked
-                          ? [...old, o.id]
-                          : old.filter((id) => id !== o.id),
-                      )
-                    }
+                    onChange={(e) => {
+                      setChosen((old) => e.target.checked ? [...old, o.id] : old.filter((id) => id !== o.id));
+                      setChosenDetails((old) => e.target.checked ? [...old, o] : old.filter((item) => item.id !== o.id));
+                    }}
                   />
                   <span>
                     {dateTimeBR(o.startsAt)} ·{" "}
                     {data.rooms.find((r) => r.id === o.roomId)?.name} ·{" "}
                     {o.endsAt.slice(11, 16)}
+                    {o.originalClassGroupId && <> · {data.classes.find((c) => c.id === o.originalClassGroupId)?.name ?? "Turma não identificada"}</>}
                   </span>
                 </label>
               ))
@@ -215,6 +220,11 @@ export function Loans({
             {chosen.length} ocorrência(s) selecionada(s). Limite de 150 por
             oferta.
           </p>
+          {chosenDetails.length > 0 && <div className="rounded-xl bg-sky-50 p-3 text-xs text-slate-700" role="status">
+            <p className="font-semibold mb-1">Datas que serão oferecidas:</p>
+            <ul className="max-h-28 overflow-y-auto space-y-1">{[...chosenDetails].sort((a, b) => a.startsAt.localeCompare(b.startsAt)).map((o) =>
+              <li key={o.id}>{dateTimeBR(o.startsAt)} · {data.rooms.find((r) => r.id === o.roomId)?.name ?? `Sala ${o.roomId}`}{o.originalClassGroupId && <> · {data.classes.find((c) => c.id === o.originalClassGroupId)?.name ?? "Turma não identificada"}</>}</li>)}</ul>
+          </div>}
           <Field label="Professor destinatário">
             <select
               className="field"
@@ -262,11 +272,17 @@ export function Loans({
               Cada ocorrência possui aceite e finalização próprios.
             </p>
           </div>
-          {data.loans.length === 0 ? (
+          <div className="flex flex-wrap gap-2 p-4 border-b" aria-label="Filtrar empréstimos">
+            {(["all", "received", "sent"] as const).map((value) => <button key={value} type="button" aria-pressed={direction === value}
+              className={direction === value ? "btn-primary" : "btn-secondary"} onClick={() => setDirection(value)}>
+              {value === "all" ? "Todos" : value === "received" ? "Recebidos" : "Enviados"}
+            </button>)}
+          </div>
+          {data.loans.filter((l) => direction === "all" || (direction === "received" ? l.borrowerId === user.id : l.ownerTeacherId === user.id)).length === 0 ? (
             <Empty title="Nenhum empréstimo ainda" />
           ) : (
             <div className="divide-y divide-slate-100 max-h-[780px] overflow-y-auto">
-              {data.loans.map((l) => (
+              {data.loans.filter((l) => direction === "all" || (direction === "received" ? l.borrowerId === user.id : l.ownerTeacherId === user.id)).map((l) => (
                 <div key={l.id} id={"loan-" + l.id} className={"p-4 space-y-3 " + (focusId === l.id ? "ring-2 ring-inset ring-sky-500" : "")}>
                   <div className="flex justify-between gap-2">
                     <div>
@@ -281,9 +297,10 @@ export function Loans({
                     <Badge status={l.status} />
                   </div>
                   <p className="text-xs text-slate-600">
-                    {l.reason} · Titular: {teacher(l.ownerTeacherId)} ·
-                    Destinatário: {teacher(l.borrowerId)}
+                    {l.ownerTeacherId === user.id ? "Enviado" : l.borrowerId === user.id ? "Recebido" : "Entre professores"} · Titular: {teacher(l.ownerTeacherId)} · Destinatário: {teacher(l.borrowerId)}
                   </p>
+                  {l.classGroupId && <p className="text-xs text-slate-600">Turma destinatária: {data.classes.find((c) => c.id === l.classGroupId)?.name ?? "Não identificada"}</p>}
+                  {l.reason && <p className="text-xs text-slate-600">Motivo: {l.reason}</p>}
                   <button type="button" className="text-xs font-semibold text-sky-700 underline" onClick={() => setHistoryLoanId(historyLoanId === l.id ? null : l.id)}>Histórico do empréstimo</button>
                   {historyLoanId === l.id && <AuditHistory type="Loan" id={l.id} />}
                   {l.status === "AguardandoDestinatario" &&
@@ -325,7 +342,7 @@ export function Loans({
                         disabled={busy}
                         className="btn-quiet !py-2 text-red-700"
                         onClick={() => {
-                          void ask({ title: "Rejeitar oferta", message: "Esta oferta de empréstimo será rejeitada. A sala permanecerá com o titular.", confirmLabel: "Rejeitar oferta", danger: true }).then((confirmed) => {
+                          void ask({ title: l.ownerTeacherId === user.id ? "Cancelar oferta" : "Recusar oferta", message: `A oferta de ${data.rooms.find((r) => r.id === l.roomId)?.name ?? `Sala ${l.roomId}`} em ${dateTimeBR(l.startsAt)} será encerrada. A sala permanecerá com o titular.`, confirmLabel: l.ownerTeacherId === user.id ? "Cancelar oferta" : "Recusar oferta", danger: true }).then((confirmed) => {
                             if (confirmed) {
                               void action(
                                 `/loans/${l.id}/reject`,
@@ -337,7 +354,7 @@ export function Loans({
                         }}
                       >
                         <X size={15} />
-                        Rejeitar
+                        {l.ownerTeacherId === user.id ? "Cancelar" : "Recusar"}
                       </button>
                     )}
                   {acceptId === l.id && (

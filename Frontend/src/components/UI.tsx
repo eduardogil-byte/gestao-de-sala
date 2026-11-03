@@ -56,12 +56,13 @@ export function Field({
     </label>
   );
 }
-export function SearchableSelect({ label, options, value, onChange, searchThreshold = 12 }: {
+export function SearchableSelect({ label, options, value, onChange, searchThreshold = 12, required = false }: {
   label: string;
   options: { value: string; label: string }[];
   value: string;
   onChange: (value: string) => void;
   searchThreshold?: number;
+  required?: boolean;
 }) {
   const [search, setSearch] = useState("");
   const query = search.trim().toLocaleLowerCase("pt-BR");
@@ -71,7 +72,7 @@ export function SearchableSelect({ label, options, value, onChange, searchThresh
       <input className="field" type="search" value={search} onChange={(event) => setSearch(event.target.value)} />
     </Field>}
     <Field label={label}>
-      <select className="field" value={value} onChange={(event) => onChange(event.target.value)}>
+      <select className="field" value={value} required={required} onChange={(event) => onChange(event.target.value)}>
         {visible.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
       </select>
     </Field>

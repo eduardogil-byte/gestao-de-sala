@@ -21,23 +21,28 @@ import {
 import { OccupationManager } from "../components/OccupationManager";
 import type { Occupation, User } from "../types";
 
+const sunday = (date: string) => nextDate(date, -new Date(`${date}T12:00:00`).getDay());
+
 export function Agenda({
   user,
   occupations,
   reloadAgenda,
+  focus,
 }: {
   user: User;
   occupations: Occupation[];
   reloadAgenda: () => Promise<void>;
+  focus?: { date: string; roomId: number; occupationId: number } | null;
 }) {
   const admin = user.roles.includes("Admin");
   const { data } = useData();
   const ask = useConfirmation();
   const [selected, setSelected] = useState<Occupation | null>(null);
   const [chosen, setChosen] = useState<number[]>([]);
-  const [from, setFrom] = useState(localDate(new Date()));
-  const [roomId, setRoomId] = useState("");
-  const [items, setItems] = useState<Occupation[]>(occupations);
+  const [from, setFrom] = useState(sunday(focus?.date ?? localDate(new Date())));
+  const [roomId, setRoomId] = useState(focus ? String(focus.roomId) : "");
+  const [items, setItems] = useState<Occupation[]>(focus ? [] : occupations);
+  const [openedFocusId, setOpenedFocusId] = useState<number | null>(null);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const [modal, setModal] = useState(false);
@@ -64,6 +69,11 @@ export function Agenda({
   useEffect(() => {
     void load();
   }, [from, roomId]);
+  useEffect(() => {
+    if (!focus || loading || openedFocusId === focus.occupationId) return;
+    const match = items.find((o) => o.id === focus?.occupationId);
+    if (match) { setSelected(match); setOpenedFocusId(focus.occupationId); }
+  }, [focus, items, loading, openedFocusId]);
   async function submit(e: React.FormEvent) {
     e.preventDefault();
     setBusy(true);
@@ -119,7 +129,7 @@ export function Agenda({
   return (
     <>
       <Title
-        title="Agenda de salas"
+        title="Agenda dos ambientes"
         subtitle="Visualize a ocupação por dia e acompanhe aulas, reservas e empréstimos."
         action={
           admin ? (
@@ -147,7 +157,7 @@ export function Agenda({
             <button
               className="btn-secondary !px-3"
               title="Semana anterior"
-              onClick={() => setFrom(nextDate(from, -7))}
+              onClick={() => { setFrom(nextDate(from, -7)); setChosen([]); }}
             >
               <ChevronLeft size={18} />
             </button>
@@ -156,13 +166,13 @@ export function Agenda({
                 className="field"
                 type="date"
                 value={from}
-                onChange={(e) => setFrom(e.target.value)}
+                onChange={(e) => { if (e.target.value) { setFrom(sunday(e.target.value)); setChosen([]); } }}
               />
             </Field>
             <button
               className="btn-secondary !px-3"
               title="Próxima semana"
-              onClick={() => setFrom(nextDate(from, 7))}
+              onClick={() => { setFrom(nextDate(from, 7)); setChosen([]); }}
             >
               <ChevronRight size={18} />
             </button>
@@ -171,7 +181,7 @@ export function Agenda({
             <select
               className="field min-w-[200px]"
               value={roomId}
-              onChange={(e) => setRoomId(e.target.value)}
+              onChange={(e) => { setRoomId(e.target.value); setChosen([]); }}
             >
               <option value="">Todas as salas</option>
               {data.rooms.map((r) => (
@@ -184,15 +194,16 @@ export function Agenda({
           <button
             className="btn-quiet"
             onClick={() => {
-              setFrom(localDate(new Date()));
+              setFrom(sunday(localDate(new Date())));
               setRoomId("");
+              setChosen([]);
             }}
           >
             <Filter size={16} /> Limpar filtros
           </button>
         </div>
       </Card>
-      <div className="flex items-center gap-3 mb-4">
+      {chosen.length > 0 && <div className="flex flex-wrap items-center gap-3 mb-4">
         <button
           className="btn-secondary"
           disabled={!chosen.length || busy}
@@ -203,7 +214,7 @@ export function Agenda({
         <p className="text-xs text-slate-500">
           Selecione suas ocorrências na agenda para liberação em lote.
         </p>
-      </div>
+      </div>}
       <div className="grid grid-cols-1 lg:grid-cols-7 gap-3">
         {dates.map((date) => {
           const all = items.filter((o) => o.startsAt.slice(0, 10) === date);
@@ -276,7 +287,7 @@ export function Agenda({
                             >
                               Gerenciar
                             </button>
-                            <label className="flex gap-1.5 items-center text-[10px]">
+                            {!o.isBorrowed && !data.loans.some((l) => l.roomOccupationId === o.id && l.status !== "Rejeitado") && <label className="flex gap-1.5 items-center text-[10px]">
                               <input
                                 type="checkbox"
                                 checked={chosen.includes(o.id)}
@@ -289,7 +300,7 @@ export function Agenda({
                                 }
                               />
                               Liberar em lote
-                            </label>
+                            </label>}
                           </div>
                         )}
                       {admin && o.kind === "Bloqueio" && (

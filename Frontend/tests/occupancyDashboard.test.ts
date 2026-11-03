@@ -131,7 +131,7 @@ test("indicadores gerenciais aparecem só para Admin; visão do professor perman
   const server = await createServer({ configFile: false, server: { middlewareMode: true, hmr: false }, appType: "custom" });
   try {
     const { Dashboard } = await server.ssrLoadModule("/src/pages/Dashboard.tsx");
-    const props = { navigate: () => {}, openTimeline: () => {}, openOpportunity: () => {}, occupations: [] };
+    const props = { navigate: () => {}, openTimeline: () => {}, openOpportunity: () => {}, onExport: () => {}, unread: 2, occupations: [] };
     const admin = renderToStaticMarkup(createElement(Dashboard, {
       ...props, user: { id: "a", displayName: "Admin", email: "", roles: ["Admin"] },
     }));
@@ -140,6 +140,14 @@ test("indicadores gerenciais aparecem só para Admin; visão do professor perman
     }));
     assert.match(admin, /Dashboard gerencial de ocupação/);
     assert.doesNotMatch(teacher, /Dashboard gerencial de ocupação/);
-    assert.match(teacher, /Utilização dos ambientes/);
+    assert.doesNotMatch(teacher, /Utilização dos ambientes|Ambientes cadastrados|Professores<\/span>/);
+    assert.match(teacher, /Próximas aulas e reservas/);
+    assert.match(teacher, /2 aviso\(s\) não lido\(s\)/);
+    assert.match(teacher, /Disponibilidade dos ambientes/);
+    const withoutCount = renderToStaticMarkup(createElement(Dashboard, {
+      ...props, unread: null, user: { id: "p", displayName: "Professor", email: "", roles: ["Professor"] },
+    }));
+    assert.match(withoutCount, /Não foi possível consultar avisos agora/);
+    assert.doesNotMatch(withoutCount, /Nenhum aviso não lido/);
   } finally { await server.close(); }
 });

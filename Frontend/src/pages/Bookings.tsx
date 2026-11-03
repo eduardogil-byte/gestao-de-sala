@@ -54,12 +54,21 @@ export function Bookings({
   const [error, setError] = useState(""),
     [success, setSuccess] = useState("");
   const [historyBookingId, setHistoryBookingId] = useState<number | null>(null);
+  const [createdId, setCreatedId] = useState<number | null>(null);
   useEffect(() => {
     if (!focusId) return;
     setFilter("Todos");
     const timer = window.setTimeout(() => document.getElementById("booking-" + focusId)?.scrollIntoView({ block: "center" }), 0);
     return () => window.clearTimeout(timer);
   }, [focusId, data.bookings]);
+  useEffect(() => {
+    if (createdId === null) return;
+    const created = data.bookings.find((item) => item.id === createdId);
+    if (created) {
+      setCreatedId(null);
+      void choose(created);
+    }
+  }, [createdId, data.bookings]);
   const acceptedDates =
     availability?.days
       .filter(
@@ -179,9 +188,9 @@ export function Bookings({
       setBusy(false);
     }
   }
-  const list = data.bookings.filter(
-    (b) => filter === "Todos" || b.status === filter,
-  );
+  const order: Record<string, number> = { Pendente: 0, Aprovada: 1, Rejeitada: 2 };
+  const list = data.bookings.filter((b) => filter === "Todos" || b.status === filter)
+    .sort((a, b) => (order[a.status] ?? 3) - (order[b.status] ?? 3) || a.startsAt.localeCompare(b.startsAt));
   const selected = suggestions.find((s) => s.id === Number(selectedRoom));
   const possiblyAvailable = acceptedDates.length;
   return (
@@ -230,7 +239,7 @@ export function Bookings({
                   ? "Aguardando sala"
                   : s === "Aprovada"
                     ? "Confirmadas"
-                    : "Descartadas"}
+                    : "Rejeitadas / descartadas"}
             </button>
           ))}
         </div>
@@ -319,10 +328,11 @@ export function Bookings({
         <Modal title="Criar reserva" onClose={() => setForm(false)}>
           <BookingForm
             user={user}
-            onCreated={(qualificationWarning) => {
+            onCreated={(id, qualificationWarning) => {
               setForm(false);
+              setCreatedId(id);
               setSuccess(
-                "Reserva criada! Agora selecione uma sala na lista e confirme a alocação." +
+                "Solicitação criada. Escolha uma sala e confira as datas antes de confirmar." +
                   (qualificationWarning ? " Habilitação para esta UC não cadastrada no perfil." : ""),
               );
             }}
@@ -354,6 +364,7 @@ export function Bookings({
                 <button
                   key={s.id}
                   type="button"
+                  aria-pressed={selectedRoom === String(s.id)}
                   onClick={() => void selectRoom(String(s.id))}
                   className={`rounded-xl border p-3 text-left space-y-1 ${selectedRoom === String(s.id) ? "border-sky-500 bg-sky-50" : "border-slate-200 hover:border-slate-400"}`}
                 >
@@ -385,10 +396,7 @@ export function Bookings({
                   {s.incompatibility && (
                     <p className="text-xs text-rose-700">{s.incompatibility}</p>
                   )}
-                  {s.technicalClassification && <p className="text-xs text-slate-600">
-                    Técnica: {s.technicalClassification === "Compatible" ? "compatível" :
-                      s.technicalClassification === "Partial" ? "parcial" : "incompatível"}. Disponibilidade em separado.
-                  </p>}
+                  {s.availabilityReason && <p className="text-xs text-amber-800">{s.availabilityReason}</p>}
                   {s.conflicts.length > 0 && (
                     <p className="text-xs text-slate-500 line-clamp-2">
                       {conflicts(s.conflicts)}
@@ -420,10 +428,10 @@ export function Bookings({
                   </p>)}
                 {availability && (
                   <div className="rounded-xl bg-slate-50 border p-3">
-                    <p className="text-sm font-bold mb-2">
-                      {availability.available} disponíveis /{" "}
-                      {availability.total} solicitadas
+                    <p className="text-sm font-bold mb-2" role="status">
+                      {availability.total} datas solicitadas, {availability.available} disponíveis e {availability.unavailable} indisponíveis.
                     </p>
+                    {replace && acceptedDates.length > availability.available && <p className="text-xs text-amber-800 mb-2">{acceptedDates.length - availability.available} data(s) adicional(is) elegível(is) para substituir uma alocação própria da mesma turma.</p>}
                     <div className="max-h-36 overflow-y-auto space-y-1">
                       {availability.days.map((d) => (
                         <p
@@ -471,7 +479,7 @@ export function Bookings({
                     onClick={() => void confirm()}
                   >
                     <Check size={17} />
-                    Confirmar até {possiblyAvailable} data(s)
+                    Confirmar {possiblyAvailable} data(s) elegível(is)
                   </button>
                 </div>
               </div>

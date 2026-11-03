@@ -17,7 +17,7 @@ test("notificações mostram assunto, leitura, vínculo e histórico sem expor l
     assert.match(unread, /Não lida/);
     assert.match(unread, /Coordenação/);
     assert.match(unread, /Ver histórico/);
-    assert.match(unread, /Abrir registro relacionado/);
+    assert.doesNotMatch(unread, /Abrir registro relacionado/);
     assert.match(unread, /Lida<\/button>/);
     const read = renderToStaticMarkup(createElement(NotificationItem,
       { ...options, row: { ...base, readAtUtc: "2027-03-15T13:00:00Z" } }));
@@ -25,7 +25,13 @@ test("notificações mostram assunto, leitura, vínculo e histórico sem expor l
     const legacy = renderToStaticMarkup(createElement(NotificationItem,
       { ...options, row: { ...base, subject: null, relatedType: null, relatedId: null } }));
     assert.match(legacy, /Aviso do SalaGest/);
-    assert.doesNotMatch(legacy, /Abrir registro relacionado/);
+    assert.doesNotMatch(legacy, /Abrir empréstimo|Abrir reserva/);
+    const loan = renderToStaticMarkup(createElement(NotificationItem,
+      { ...options, row: { ...base, relatedType: "Loan", relatedId: 3 } }));
+    assert.match(loan, /Abrir empréstimo/);
+    const booking = renderToStaticMarkup(createElement(NotificationItem,
+      { ...options, row: { ...base, relatedType: "Booking", relatedId: 4 } }));
+    assert.match(booking, /Abrir reserva/);
     const opened = renderToStaticMarkup(createElement(NotificationItem, { ...options, showHistory: true }));
     assert.match(opened, /Carregando dados/);
     const page = renderToStaticMarkup(createElement(Notifications, { openRelated: () => {} }));
