@@ -265,7 +265,7 @@ export function Dashboard({
           </Card>
         </div>
       </div>
-      {admin ? <ManagerDashboard onTimeline={openTimeline} onOpportunity={openOpportunity}
+      {admin ? <ManagerDashboard admin={admin} onTimeline={openTimeline} onOpportunity={openOpportunity}
         onExport={onExport} /> : <UsagePanel />}
     </>
   );

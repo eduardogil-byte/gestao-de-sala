@@ -130,7 +130,7 @@ export function Agenda({
     <>
       <Title
         title="Agenda dos ambientes"
-        subtitle="Visualize a ocupação por dia e acompanhe aulas, reservas e empréstimos."
+        subtitle="Operação diária: acompanhe reservas, empréstimos e ações sobre as ocupações. Para analisar ambientes por período, use o Cronograma; para carga docente, a Agenda dos Instrutores."
         action={
           admin ? (
             <button

@@ -46,36 +46,36 @@ export function ExportData({ initial }: { initial?: { semesterId: number; second
   const needsRange = report === "Ocupacoes" && !semester;
   return <div className="space-y-5">
     <Title title="Exportar Dados" subtitle="Gere relatórios Excel somente leitura a partir dos dados e indicadores oficiais." />
-    <Card className="space-y-4">
+    <Card className="p-5 space-y-4">
       <Field label="Relatório">
-        <select className="input" value={report} disabled={busy} onChange={(e) => { setReport(e.target.value as Report); setError(""); }}>
+        <select className="field" value={report} disabled={busy} onChange={(e) => { setReport(e.target.value as Report); setError(""); }}>
           {choices.map(([key, label]) => <option key={key} value={key}>{label}</option>)}
         </select>
       </Field>
       <p className="text-sm text-slate-600">{description}</p>
       <div className="grid md:grid-cols-2 gap-4">
-        {(needsSemester || report === "Ocupacoes") && <Field label={report === "Comparacao" ? "Primeiro semestre" : "Semestre (opcional para ocupações)"}>
-          <select className="input" value={semester} disabled={busy} onChange={(e) => setSemester(e.target.value)}>
+        {(needsSemester || report === "Ocupacoes") && <Field label={report === "Comparacao" ? "Primeiro semestre" : report === "Ocupacoes" ? "Semestre (opcional)" : "Semestre"}>
+          <select className="field" value={semester} disabled={busy} onChange={(e) => setSemester(e.target.value)}>
             <option value="">Selecione</option>{data.semesters.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
           </select>
         </Field>}
         {report === "Comparacao" && <Field label="Segundo semestre">
-          <select className="input" value={secondSemester} disabled={busy} onChange={(e) => setSecondSemester(e.target.value)}>
+          <select className="field" value={secondSemester} disabled={busy} onChange={(e) => setSecondSemester(e.target.value)}>
             <option value="">Selecione</option>{data.semesters.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
           </select>
         </Field>}
         {!["Docentes", "Catalogo"].includes(report) && <Field label="Ambiente (opcional)">
-          <select className="input" value={room} disabled={busy} onChange={(e) => setRoom(e.target.value)}>
+          <select className="field" value={room} disabled={busy} onChange={(e) => setRoom(e.target.value)}>
             <option value="">Todos os ambientes</option>{data.rooms.map((r) => <option key={r.id} value={r.id}>{r.name}</option>)}
           </select>
         </Field>}
-        {report === "Ocupacoes" && <Field label="Turno (opcional)"><select className="input" value={shift} disabled={busy} onChange={(e) => setShift(e.target.value)}>
+        {report === "Ocupacoes" && <Field label="Turno (opcional)"><select className="field" value={shift} disabled={busy} onChange={(e) => setShift(e.target.value)}>
           <option value="">Todos</option>{data.shifts.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
         </select></Field>}
-        {needsRange && <><Field label="Data inicial"><input type="date" className="input" value={from} disabled={busy} onChange={(e) => setFrom(e.target.value)} /></Field>
-          <Field label="Data final"><input type="date" className="input" value={to} disabled={busy} onChange={(e) => setTo(e.target.value)} /></Field></>}
+        {needsRange && <><Field label="Data inicial"><input type="date" className="field" value={from} disabled={busy} onChange={(e) => setFrom(e.target.value)} /></Field>
+          <Field label="Data final"><input type="date" className="field" value={to} disabled={busy} onChange={(e) => setTo(e.target.value)} /></Field></>}
         {report === "Planejamento" && <Field label="Estado da proposta (opcional)">
-          <select className="input" value={status} disabled={busy} onChange={(e) => setStatus(e.target.value)}>
+          <select className="field" value={status} disabled={busy} onChange={(e) => setStatus(e.target.value)}>
             <option value="">Todos</option><option value="Rascunho">Rascunhos</option><option value="Enviada">Enviadas</option>
             <option value="Aprovada">Aprovadas</option><option value="Rejeitada">Rejeitadas</option><option value="Publicada">Publicadas</option>
           </select>

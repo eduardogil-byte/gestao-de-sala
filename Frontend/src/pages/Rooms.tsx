@@ -1,6 +1,5 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import {
-  Cpu,
   DoorOpen,
   MapPin,
   Monitor,
@@ -9,11 +8,11 @@ import {
   Search,
   Settings2,
   Wifi,
-  X,
 } from "lucide-react";
-import type { ComputerGroup, Room, User } from "../types";
+import type { Room, RoomInventory, RoomResource, User } from "../types";
 import { useData } from "../lib/data";
-import { post, put } from "../lib/api";
+import { post, put, read } from "../lib/api";
+import { RoomInventoryFields } from "../components/RoomInventoryFields";
 import { resultMessage, roomKind } from "../lib/utils";
 import {
   Card,
@@ -24,9 +23,10 @@ import {
   Notice,
   SubmitButton,
   Title,
+  useConfirmation,
 } from "../components/UI";
 
-type RoomInput = Omit<Room, "id">;
+type RoomInput = Omit<Room, "id"> & { resources: RoomResource[] };
 const emptyRoom: RoomInput = {
   code: "",
   name: "",
@@ -40,17 +40,15 @@ const emptyRoom: RoomInput = {
   hasInternet: true,
   active: true,
   computerGroups: [],
+  resources: [],
 };
-const emptyGroup: ComputerGroup = {
-  description: "Computadores dos alunos",
-  quantity: 25,
-  ramGb: 8,
-  tier: "Basico",
-  dedicatedGpu: false,
-  software: [],
-};
-
 export function Rooms({ user }: { user: User }) {
+  const confirm = useConfirmation();
+  const openingRequest = useRef(0);
+  const persistedSoftware = useRef<Record<number, number[]>>({});
+  const [opening, setOpening] = useState(false);
+  const [removedGroupIds, setRemovedGroupIds] = useState<number[]>([]);
+  const [removedSoftwareIds, setRemovedSoftwareIds] = useState<Record<number, number[]>>({});
   const admin = user.roles.includes("Admin");
   const { data, reload } = useData();
   const [search, setSearch] = useState("");
@@ -64,36 +62,32 @@ export function Rooms({ user }: { user: User }) {
   const set = <K extends keyof RoomInput>(k: K, v: RoomInput[K]) =>
     setForm((prev) => (prev ? { ...prev, [k]: v } : prev));
   const groups = form?.computerGroups || [];
-  function changeGroup(i: number, patch: Partial<ComputerGroup>) {
-    set(
-      "computerGroups",
-      groups.map((g, index) => (index === i ? { ...g, ...patch } : g)),
-    );
+  async function open(room?: Room) {
+    const request = ++openingRequest.current;
+    setError(""); setForm(null); setOpening(true);
+    setRemovedGroupIds([]); setRemovedSoftwareIds({});
+    try {
+      const inventory = room ? await read<RoomInventory>(`/rooms/${room.id}/inventory`) : { computerGroups: [], resources: [] };
+      if (request !== openingRequest.current) return;
+      persistedSoftware.current = Object.fromEntries(inventory.computerGroups.filter((g) => g.id != null)
+        .map((g) => [g.id!, g.software.map((s) => s.softwareId)]));
+      setEditing(room?.id ?? null);
+      setForm(room ? { ...room, ...inventory } : { ...emptyRoom, computerGroups: [], resources: [] });
+    } catch (cause) { if (request === openingRequest.current) setError(resultMessage(cause)); }
+    finally { if (request === openingRequest.current) setOpening(false); }
   }
-  function open(room?: Room) {
-    setEditing(room?.id ?? null);
-    setForm(
-      room
-        ? {
-            code: room.code || "",
-            name: room.name,
-            location: room.location,
-            purpose: room.purpose || "",
-            kind: room.kind,
-            seats: room.seats,
-            desks: room.desks,
-            hasProjector: room.hasProjector,
-            hasTeacherComputer: room.hasTeacherComputer,
-            hasInternet: room.hasInternet,
-            active: room.active,
-            computerGroups: room.computerGroups.map((g) => ({
-              ...g,
-              software: g.software.map((s) => ({ ...s })),
-            })),
-          }
-        : { ...emptyRoom, computerGroups: [] },
-    );
-    setError("");
+  async function removeGroup(index: number) {
+    const group = groups[index];
+    if (!await confirm({ title: "Remover grupo de computadores", message: `O grupo ${group.description || index + 1} e suas instalações serão removidos ao salvar. O histórico de auditoria será preservado.`, confirmLabel: "Remover grupo", danger: true })) return;
+    if (group.id) setRemovedGroupIds((ids) => [...ids, group.id!]);
+    set("computerGroups", groups.filter((_, i) => i !== index));
+  }
+  async function removeSoftware(index: number, softwareId: number) {
+    const group = groups[index];
+    if (!await confirm({ title: "Remover software do grupo", message: "A instalação e os dados de licença deste software serão removidos do grupo ao salvar. O catálogo de softwares e o histórico serão preservados.", confirmLabel: "Remover software", danger: true })) return;
+    if (group.id && persistedSoftware.current[group.id]?.includes(softwareId))
+      setRemovedSoftwareIds((ids) => ({ ...ids, [group.id!]: [...new Set([...(ids[group.id!] ?? []), softwareId])] }));
+    set("computerGroups", groups.map((g, i) => i === index ? { ...g, software: g.software.filter((s) => s.softwareId !== softwareId) } : g));
   }
   async function submit(e: React.FormEvent) {
     e.preventDefault();
@@ -101,15 +95,20 @@ export function Rooms({ user }: { user: User }) {
     setBusy(true);
     setError("");
     try {
+      const { computerGroups, resources, ...room } = form;
       const body = {
-        ...form,
-        computerGroups: form.computerGroups.map((g) => ({
-          ...g,
-          software: g.software.map((s) => ({
-            softwareId: s.softwareId,
-            installedQuantity: s.installedQuantity,
+        ...room,
+        computerGroups: [],
+        inventory: {
+          computerGroups: computerGroups.map(({ id, software, ...details }) => ({
+            id: id ?? null,
+            details: { ...details, operationalQuantity: details.operationalQuantity ?? null },
+            software: software.map((s) => ({ ...s, licenseQuantity: s.licenseQuantity ?? null, licenseExpiresOn: s.licenseExpiresOn || null })),
+            removedSoftwareIds: (id ? removedSoftwareIds[id] ?? [] : []).filter((id) => !software.some((s) => s.softwareId === id)),
           })),
-        })),
+          resources: resources.map(({ id, ...details }) => ({ id: id ?? null, details })),
+          removedGroupIds,
+        },
       };
       if (editing) await put(`/rooms/${editing}`, body);
       else await post("/rooms", body);
@@ -147,7 +146,7 @@ export function Rooms({ user }: { user: User }) {
         subtitle="Gerencie salas comuns, laboratórios e equipamentos."
         action={
           admin ? (
-            <button className="btn-primary" onClick={() => open()}>
+            <button className="btn-primary" disabled={opening} onClick={() => void open()}>
               <Plus size={17} /> Nova sala
             </button>
           ) : undefined
@@ -182,6 +181,7 @@ export function Rooms({ user }: { user: User }) {
           </select>
         </div>
       </Card>
+      {opening && <p role="status">Carregando inventário técnico...</p>}
       {list.length === 0 ? (
         <Card>
           <Empty
@@ -238,7 +238,11 @@ export function Rooms({ user }: { user: User }) {
                     <b className="text-xl text-slate-800">{pcs}</b>
                   </div>
                 </div>
-                <p className="mt-2 text-xs text-slate-500">Carteiras: {r.desks}. Quantidades operacionais e equipamentos: consulte o inventário.</p>
+                <p className="mt-2 text-xs text-slate-500">
+                  Operacionais informados: {r.computerGroups.reduce((sum, g) => sum + (g.operationalQuantity ?? 0), 0)}.
+                  {r.computerGroups.some((g) => g.operationalQuantity == null) && " Há grupos com quantidade operacional desconhecida."}
+                  {` Carteiras: ${r.desks}.`}
+                </p>
                 <div className="flex flex-wrap gap-2 mt-4 text-[11px] text-slate-500">
                   {r.hasProjector && (
                     <span className="inline-flex gap-1 items-center">
@@ -261,7 +265,7 @@ export function Rooms({ user }: { user: User }) {
                 </div>
                 {admin && (
                   <button
-                    onClick={() => open(r)}
+                    disabled={opening} onClick={() => void open(r)}
                     className="btn-secondary w-full mt-5"
                   >
                     <Settings2 size={15} />
@@ -311,9 +315,10 @@ export function Rooms({ user }: { user: User }) {
         <Modal
           width="max-w-3xl"
           title={editing ? "Editar sala" : "Cadastrar sala"}
-          onClose={() => setForm(null)}
+          onClose={() => { if (!busy) setForm(null); }}
         >
           <form className="space-y-5" onSubmit={submit}>
+            <fieldset disabled={busy} className="space-y-5">
             {error && <Notice message={error} />}
             <div className="grid sm:grid-cols-2 gap-3">
               <Field label="Código do ambiente">
@@ -403,187 +408,9 @@ export function Rooms({ user }: { user: User }) {
                 onChange={(v) => set("active", v)}
               />
             </div>
-            <div className="border-t pt-4">
-              <div className="flex items-center justify-between gap-3 mb-4">
-                <h3 className="font-semibold text-sm">
-                  Grupos de computadores
-                </h3>
-                <button
-                  type="button"
-                  className="btn-secondary !py-1.5"
-                  onClick={() =>
-                    set("computerGroups", [
-                      ...groups,
-                      { ...emptyGroup, software: [] },
-                    ])
-                  }
-                >
-                  <Plus size={15} />
-                  Adicionar grupo
-                </button>
-              </div>
-              <p className="text-xs text-slate-500 mb-3">
-                Uma sala pode ter grupos de máquinas diferentes. Softwares são
-                vinculados a cada grupo.
-              </p>
-              <div className="space-y-3">
-                {groups.map((g, i) => (
-                  <div
-                    className="p-4 bg-slate-50 border border-slate-100 rounded-xl"
-                    key={i}
-                  >
-                    <div className="flex justify-between mb-3">
-                      <span className="font-semibold text-sm flex items-center gap-2">
-                        <Cpu size={16} />
-                        Grupo {i + 1}
-                      </span>
-                      <button
-                        title="Excluir grupo"
-                        type="button"
-                        onClick={() =>
-                          set(
-                            "computerGroups",
-                            groups.filter((_, j) => i !== j),
-                          )
-                        }
-                        className="text-slate-500 hover:text-red-600"
-                      >
-                        <X size={17} />
-                      </button>
-                    </div>
-                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-                      <Field label="Descrição">
-                        <input
-                          className="field"
-                          value={g.description}
-                          onChange={(e) =>
-                            changeGroup(i, { description: e.target.value })
-                          }
-                        />
-                      </Field>
-                      <Field label="Quantidade">
-                        <input
-                          className="field"
-                          min="1"
-                          max="1000"
-                          type="number"
-                          value={g.quantity}
-                          onChange={(e) =>
-                            changeGroup(i, {
-                              quantity: Number(e.target.value),
-                              software: g.software.map((s) => ({
-                                ...s,
-                                installedQuantity: Math.min(
-                                  s.installedQuantity,
-                                  Number(e.target.value),
-                                ),
-                              })),
-                            })
-                          }
-                        />
-                      </Field>
-                      <Field label="RAM (GB)">
-                        <input
-                          className="field"
-                          min="1"
-                          type="number"
-                          value={g.ramGb}
-                          onChange={(e) =>
-                            changeGroup(i, { ramGb: Number(e.target.value) })
-                          }
-                        />
-                      </Field>
-                      <Field label="Desempenho">
-                        <select
-                          className="field"
-                          value={g.tier}
-                          onChange={(e) =>
-                            changeGroup(i, { tier: e.target.value })
-                          }
-                        >
-                          <option value="Basico">Básico</option>
-                          <option value="Intermediario">Intermediário</option>
-                          <option value="Alto">Alto</option>
-                        </select>
-                      </Field>
-                    </div>
-                    <div className="mt-3">
-                      <Checkbox
-                        label="Possui GPU dedicada"
-                        checked={g.dedicatedGpu}
-                        onChange={(v) => changeGroup(i, { dedicatedGpu: v })}
-                      />
-                    </div>
-                    {data.software.length > 0 && (
-                      <div className="mt-3 border-t border-slate-200 pt-3">
-                        <span className="field-label">
-                          Softwares instalados e quantidade de
-                          licenças/instalações
-                        </span>
-                        <div className="grid sm:grid-cols-2 gap-2">
-                          {data.software.map((s) => {
-                            const found = g.software.find(
-                              (x) => x.softwareId === s.id,
-                            );
-                            return (
-                              <div
-                                className="flex gap-3 items-center"
-                                key={s.id}
-                              >
-                                <Checkbox
-                                  label={s.name}
-                                  checked={!!found}
-                                  onChange={(yes) =>
-                                    changeGroup(i, {
-                                      software: yes
-                                        ? [
-                                            ...g.software,
-                                            {
-                                              softwareId: s.id,
-                                              name: s.name,
-                                              installedQuantity: g.quantity,
-                                            },
-                                          ]
-                                        : g.software.filter(
-                                            (x) => x.softwareId !== s.id,
-                                          ),
-                                    })
-                                  }
-                                />
-                                {found && (
-                                  <input
-                                    aria-label={`Instalações de ${s.name}`}
-                                    className="field !w-20 !py-1"
-                                    type="number"
-                                    min="1"
-                                    max={g.quantity}
-                                    value={found.installedQuantity}
-                                    onChange={(e) =>
-                                      changeGroup(i, {
-                                        software: g.software.map((x) =>
-                                          x.softwareId === s.id
-                                            ? {
-                                                ...x,
-                                                installedQuantity: Number(
-                                                  e.target.value,
-                                                ),
-                                              }
-                                            : x,
-                                        ),
-                                      })
-                                    }
-                                  />
-                                )}
-                              </div>
-                            );
-                          })}
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                ))}
-              </div>
-            </div>
+            <RoomInventoryFields groups={groups} resources={form.resources} software={data.software}
+              onGroups={(next) => set("computerGroups", next)} onResources={(next) => set("resources", next)}
+              onRemoveGroup={(index) => void removeGroup(index)} onRemoveSoftware={(index, id) => void removeSoftware(index, id)} />
             <div className="flex justify-end gap-2 pt-1">
               <button
                 type="button"
@@ -596,6 +423,7 @@ export function Rooms({ user }: { user: User }) {
                 {editing ? "Salvar alterações" : "Cadastrar sala"}
               </SubmitButton>
             </div>
+            </fieldset>
           </form>
         </Modal>
       )}

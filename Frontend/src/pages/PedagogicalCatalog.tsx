@@ -6,7 +6,8 @@ import {
   canEditCatalog, catalogErrorMessage, catalogPath, formatHours, parseHours, parseOrder,
   shiftHours, workloadText,
 } from "../lib/pedagogicalCatalog";
-import { Badge, Busy, Card, Empty, Field, Notice, SubmitButton, Title } from "../components/UI";
+import { Badge, Busy, Card, Empty, Field, Modal, Notice, SubmitButton, Title } from "../components/UI";
+import { CapabilityRequirements } from "../components/CapabilityRequirements";
 import type {
   Course, CourseModule, CurricularCapability, CurricularUnit, User, WorkloadSummary,
 } from "../types";
@@ -54,6 +55,7 @@ export function PedagogicalCatalog({ user }: { user: User }) {
   const submitting = useRef(false);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
+  const [requirementsCapability, setRequirementsCapability] = useState<CurricularCapability | null>(null);
 
   const level: Level = unitId !== null ? "capability" : moduleId !== null ? "unit" :
     courseId !== null ? "module" : "course";
@@ -388,13 +390,19 @@ export function PedagogicalCatalog({ user }: { user: User }) {
             <div className="min-w-0"><p className="font-semibold text-slate-800">{item.description}</p>
               <p className="text-sm text-slate-600 whitespace-pre-wrap mt-1">{item.contents}</p>
               <p className="text-xs text-slate-500 mt-2">Ordem {item.order} · {formatHours(item.requiredHours)} h</p></div>
+            <div className="flex flex-wrap gap-2">
+            <button type="button" className="btn-secondary" onClick={() => setRequirementsCapability(item)}>Requisitos técnicos</button>
             {admin && <button className="btn-secondary" onClick={() => beginForm(item.id, {
               description: item.description, contents: item.contents,
               requiredHours: String(item.requiredHours), order: String(item.order),
             })}>Editar</button>}
+            </div>
           </div>)}
         </div>}
       </Card>
+      {requirementsCapability && unitPath && <Modal title={`Requisitos técnicos · ${requirementsCapability.description}`} onClose={() => setRequirementsCapability(null)} width="max-w-3xl">
+        <CapabilityRequirements key={`${unitPath}|${requirementsCapability.id}`} path={`${unitPath}/capabilities/${requirementsCapability.id}`} admin={admin} />
+      </Modal>}
     </>
   );
 }

@@ -160,8 +160,9 @@ export function RoomOpportunities({ initial, onTimeline }: {
         {suggestionLoading && <Busy />}{suggestionError && <Notice type="error" message={suggestionError} />}
         {visibleSuggestions?.length === 0 && <Notice message="Nenhuma capacidade cadastrada neste filtro." />}
         {visibleSuggestions && visibleSuggestions.length > 0 && <div className="max-h-80 overflow-y-auto space-y-2">{visibleSuggestions.map((item) => <button type="button" key={item.capabilityId}
+          aria-pressed={capabilityId === String(item.capabilityId)} aria-label={`Selecionar capacidade: ${item.description} · ${item.courseName} · ${item.unitName}`}
           onClick={() => setCapabilityId(String(item.capabilityId))} className={`block w-full text-left border rounded-xl p-3 text-sm focus-visible:outline focus-visible:outline-2 ${capabilityId === String(item.capabilityId) ? "border-sky-500 bg-sky-50" : "border-slate-200"}`}>
-          <b>{item.description}</b><span className="block text-xs text-slate-600 mt-1">{item.courseName} · {item.unitName} · CH {number(item.requiredHours)} h · {className[item.classification]}</span>
+          <b>{item.description}</b>{capabilityId === String(item.capabilityId) && <span className="ml-2 font-semibold">Selecionada</span>}<span className="block text-xs text-slate-600 mt-1">{item.courseName} · {item.unitName} · CH {number(item.requiredHours)} h · {className[item.classification]}</span>
         </button>)}</div>}
         {selected && <div className="rounded-xl bg-slate-50 p-4 text-sm"><b>{className[selected.classification]}</b>
           <p className="mt-1 text-slate-600">Recursos e limitações avaliados pela SG-14:</p>
