@@ -330,7 +330,7 @@ export function RoomTimeline({ user, openBookings, initialFilter }: { user: User
   }
 
   return <>
-    <Title title="Cronograma de Ambientes" subtitle={`Consulta institucional · ${periodName}`}
+    <Title title="Cronograma de Ambientes" subtitle={`Ocupações por ambiente, turno e período · ${periodName}. Para ações do dia, use a Agenda; para carga docente, a Agenda dos Instrutores.`}
       action={<div className="flex flex-wrap gap-2"><button type="button" className="btn-secondary" onClick={openBookings}>Abrir reservas</button>
         {admin && <button type="button" className="btn-secondary" disabled={!range || exportBusy} onClick={() => void exportCurrentPeriod()}>{exportBusy ? "Gerando Excel..." : "Exportar ocupações"}</button>}</div>} />
     {exportError && <div className="mb-4"><Notice type="error" message={exportError} onClose={() => setExportError("")} /></div>}
@@ -344,13 +344,13 @@ export function RoomTimeline({ user, openBookings, initialFilter }: { user: User
           className={view === choice ? "btn-primary" : "btn-secondary"}>
           {{ week: "Semana", month: "Mês", semester: "Semestre" }[choice]}
         </button>)}
-        <div className="ml-auto flex items-center gap-2">
+        <div className="w-full sm:w-auto sm:ml-auto flex items-center gap-2 min-w-0">
           <button type="button" className="btn-secondary" onClick={() => navigate(-1)} aria-label="Período anterior">‹</button>
-          <span className="text-sm font-semibold text-slate-700 min-w-40 text-center capitalize">{periodName}</span>
+          <span className="text-sm font-semibold text-slate-700 flex-1 min-w-0 text-center capitalize">{periodName}</span>
           <button type="button" className="btn-secondary" onClick={() => navigate(1)} aria-label="Próximo período">›</button>
         </div>
       </div>
-      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-3">
+      <fieldset className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-3"><legend className="font-semibold text-sm mb-3">Filtros do cronograma</legend>
         <Field label="Semestre"><select className="field" value={semesterId} onChange={(e) => { setSemesterId(e.target.value); setClassGroupId(""); }}>
           <option value="">Todos</option>{data.semesters.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
         </select></Field>
@@ -369,7 +369,7 @@ export function RoomTimeline({ user, openBookings, initialFilter }: { user: User
         <Field label="Tipo"><select className="field" value={kind} onChange={(e) => setKind(e.target.value)}>
           <option value="">Todos</option><option value="Aula">Aula</option><option value="Avulsa">Avulsa</option><option value="Bloqueio">Bloqueio</option>
         </select></Field>
-      </div>
+      </fieldset>
       <button type="button" className="btn-quiet" onClick={clearFilters}>Limpar filtros</button>
     </Card>
     <p className="text-xs text-slate-600 mb-4">Legenda: <strong>Ocupado</strong> · <strong>Conflito</strong> · <strong>Sem registro</strong> (disponibilidade desconhecida) · <strong>Dia especial</strong>. Dias especiais aparecem quando vinculados a ocupações retornadas pela API. A confirmação de uma nova reserva ocorre na tela Reservas.</p>
@@ -382,7 +382,7 @@ export function RoomTimeline({ user, openBookings, initialFilter }: { user: User
     {!loading && !error && items && loadedQuery === queryKey && !catalogError && <>
       {items.length === 0 && <div className="mb-4"><Notice type="info" message="Nenhuma ocupação registrada no período e filtros selecionados. Isso não confirma disponibilidade para novas reservas." /></div>}
       {view === "week" && <Card className="overflow-x-auto mb-5">
-        <table className="w-full min-w-[930px] text-sm border-collapse">
+        <table className="hidden lg:table w-full min-w-[930px] text-sm border-collapse">
           <thead><tr><th className="sticky left-0 z-10 bg-white p-3 text-left border-b border-r border-slate-200 min-w-44">Ambiente / turno</th>
             {visibleDates.map((date) => <th key={date} className="p-3 border-b border-slate-200 text-left min-w-36">{new Date(`${date}T12:00:00`).toLocaleDateString("pt-BR", { weekday: "short", day: "2-digit", month: "2-digit" })}</th>)}</tr></thead>
           <tbody>{rooms.flatMap((room) => shifts.map((shift) => <tr key={`${room.id}-${shift.id}`}>
@@ -399,6 +399,18 @@ export function RoomTimeline({ user, openBookings, initialFilter }: { user: User
               </td>;
             })}</tr>))}</tbody>
         </table>
+        <div className="lg:hidden divide-y divide-line">{visibleDates.map((date) => <section key={date} className="p-4 space-y-3">
+          <h2 className="font-semibold">{new Date(`${date}T12:00:00`).toLocaleDateString("pt-BR", { weekday: "long", day: "2-digit", month: "2-digit" })}</h2>
+          {range && date >= range.from && date < range.to ? rooms.flatMap((room) => shifts.map((shift) => {
+            const rows = bySlot.get(`${room.id}|${date}|${shift.id}`) ?? [];
+            return <div key={`${room.id}|${shift.id}`} className="space-y-1">
+              <h3 className="text-sm font-semibold">{room.name} · {shift.name}</h3>
+              {rows.length > 1 && <p className="text-sm text-rose-700">{rows.length} ocupações simultâneas</p>}
+              {rows.length ? rows.map((item) => <OccupationButton key={item.id} item={item} onSelect={setSelected} />)
+                : <p className="text-xs text-muted-ink">Sem registro · aplicabilidade do turno desconhecida</p>}
+            </div>;
+          })) : <p className="muted">Fora do semestre</p>}
+        </section>)}</div>
         {!rooms.length || !shifts.length ? <p className="p-4 text-sm text-slate-600">Cadastre ambientes e turnos para visualizar a grade.</p> : null}
       </Card>}
       {view === "week" && items.some((item) => item.shiftId === null || !rooms.some((room) => room.id === item.roomId) || !shifts.some((shift) => shift.id === item.shiftId)) && <Card className="p-4 mb-5 space-y-2"><h2 className="font-semibold">Ocupações fora da grade visível</h2>

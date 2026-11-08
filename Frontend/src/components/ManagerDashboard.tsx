@@ -4,7 +4,8 @@ import { useData } from "../lib/data";
 import { comparisonPath, indicatorErrorMessage, indicatorPath, isSemesterIndicators, orderedRooms, settleCurrent, shiftDistribution, variationPoints,
   type RoomIndicator, type SemesterComparison, type SemesterIndicators } from "../lib/occupancyIndicators";
 import { localDate, roomKind } from "../lib/utils";
-import { Busy, Card, Field, Notice } from "./UI";
+import { Busy, Card, Field, Modal, Notice } from "./UI";
+import { OperatingShiftEditor } from "./OperatingShiftEditor";
 
 const hours = (value: number | null) => value === null ? "Não comprovada" :
   `${new Intl.NumberFormat("pt-BR", { maximumFractionDigits: 2 }).format(value)} h`;
@@ -67,8 +68,19 @@ export function OccupancyView({ report, onTimeline, onOpportunity }: { report: S
   const maxMonthHours = Math.max(1, ...report.months.map((month) => month.physicalOccupiedHours));
   const bottlenecks = rooms.filter((r) => r.classification === "Bottleneck");
   const opportunities = rooms.filter((r) => r.classification === "Opportunity");
+  const pending = rooms.filter((room) => room.capacityHours === null || room.unclassifiedOccupations > 0 || room.conflictPairs > 0 || room.warnings.length > 0);
   return <div className="space-y-5">
     <Summary report={report} />
+    <Card className="p-5"><h3 className="section-title">Pendências gerenciais do período</h3>
+      <p className="muted mt-1">Capacidade é a base de horas oferecidas para o cálculo. Equipamentos operacionais são avaliados separadamente na compatibilidade técnica.</p>
+      {pending.length ? <ul className="mt-3 space-y-3">{pending.map((room) => <li key={room.roomId} className="text-sm border-t border-line pt-3">
+        <strong>{room.roomName}</strong>
+        {room.capacityHours === null && <p>Capacidade em horas não comprovada: configure ou revise os turnos oferecidos e o calendário.</p>}
+        {room.unclassifiedOccupations > 0 && <p>{room.unclassifiedOccupations} ocupação(ões) sem turno identificável.</p>}
+        {room.conflictPairs > 0 && <p>{room.conflictPairs} par(es) de conflitos registrados.</p>}
+        {room.warnings.map((warning) => <p key={warning}>{warning}</p>)}
+      </li>)}</ul> : <p className="muted mt-3">Nenhuma pendência indicada pelos dados deste relatório.</p>}
+    </Card>
     <Card className="p-5"><h3 className="section-title">Ocupação por ambiente</h3>
       <p className="text-xs text-slate-600 mt-1">Percentual fornecido pela SG-23. Gargalo a partir de {percent(report.thresholds.bottleneckPercent)}; oportunidade abaixo de {percent(report.thresholds.opportunityPercent)}.</p>
       {rooms.length ? rooms.map((room) => <RoomLine key={room.roomId} room={room} onTimeline={onTimeline} />) : <p className="text-sm text-slate-600 mt-4">Nenhum ambiente para exibir.</p>}
@@ -128,8 +140,10 @@ export function ComparisonView({ first, second, firstName, secondName }: Semeste
   </Card>;
 }
 
-export function ManagerDashboard({ onTimeline, onOpportunity, onExport }: { onTimeline: (semesterId: number, roomId: number) => void; onOpportunity: (semesterId: number, roomId: number) => void; onExport: (semesterId: number, secondSemesterId: number | null, roomId: number | null) => void }) {
-  const { data } = useData();
+export function ManagerDashboard({ onTimeline, onOpportunity, onExport, admin = false }: { onTimeline: (semesterId: number, roomId: number) => void; onOpportunity: (semesterId: number, roomId: number) => void; onExport: (semesterId: number, secondSemesterId: number | null, roomId: number | null) => void; admin?: boolean }) {
+  const { data, revision } = useData();
+  const [configuring, setConfiguring] = useState(false);
+  const [indicatorRevision, setIndicatorRevision] = useState(0);
   const [semesterId, setSemesterId] = useState("");
   const [roomId, setRoomId] = useState("");
   const [secondId, setSecondId] = useState("");
@@ -141,14 +155,16 @@ export function ManagerDashboard({ onTimeline, onOpportunity, onExport }: { onTi
   const [compareError, setCompareError] = useState("");
   const [loading, setLoading] = useState(false);
   const [compareLoading, setCompareLoading] = useState(false);
+  const inventoryPending = data.rooms.filter((room) => (!roomId || room.id === Number(roomId)) &&
+    room.computerGroups.some((group) => group.operationalQuantity == null));
   useEffect(() => {
     if (!semesterId && data.semesters.length) {
       const today = localDate(new Date());
       setSemesterId(String((data.semesters.find((s) => s.startDate <= today && today <= s.endDate) ?? data.semesters[0]).id));
     }
   }, [data.semesters, semesterId]);
-  const key = `${semesterId}|${roomId}`;
-  const compareKey = `${semesterId}|${secondId}|${roomId}`;
+  const key = `${semesterId}|${roomId}|${revision}|${indicatorRevision}`;
+  const compareKey = `${semesterId}|${secondId}|${roomId}|${revision}|${indicatorRevision}`;
   useEffect(() => {
     let active = true;
     if (!semesterId) return;
@@ -183,6 +199,11 @@ export function ManagerDashboard({ onTimeline, onOpportunity, onExport }: { onTi
         <option value="">Todos</option>{data.rooms.map((r) => <option key={r.id} value={r.id}>{r.name}</option>)}
       </select></Field>
     </Card>
+    {inventoryPending.length > 0 && <Notice type="info" message={`Quantidade operacional de computadores não informada em: ${inventoryPending.map((room) => room.name).join(", ")}. Confira o inventário em Ambientes; o cadastro de máquinas não comprova adequação técnica.`} />}
+    {admin && <button type="button" className="btn-secondary" disabled={!semesterId} onClick={() => setConfiguring(true)}>Configurar turnos oferecidos</button>}
+    {admin && configuring && semesterId && <Modal title="Turnos oferecidos por ambiente" onClose={() => setConfiguring(false)}>
+      <OperatingShiftEditor key={semesterId} semesterId={Number(semesterId)} roomId={roomId} onSaved={() => setIndicatorRevision((value) => value + 1)} />
+    </Modal>}
     {!data.semesters.length && <Notice message="Nenhum semestre cadastrado para consultar." />}
     {error && <Notice type="error" message={error} />}
     {loading && <Busy />}

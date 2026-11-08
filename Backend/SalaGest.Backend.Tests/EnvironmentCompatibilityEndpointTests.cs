@@ -22,6 +22,37 @@ namespace SalaGest.Backend.Tests;
 public sealed class EnvironmentCompatibilityEndpointTests
 {
     [Fact]
+    public async Task EditingAndRemovingIndividualRequirementsChangesCompatibilityAndPreservesCapability()
+    {
+        await using var host = await Host.CreateAsync();
+        host.AsAdmin();
+        var path = host.Route + "/environment-requirements";
+        var input = new CapabilityEnvironmentInput(RoomKind.Laboratorio, false, 30, 16, true, [], []);
+        Assert.Equal(HttpStatusCode.Created, (await host.Client.PostAsJsonAsync(path, input)).StatusCode);
+        async Task<List<EnvironmentCompatibilityResponse>> Results() =>
+            (await host.Client.GetFromJsonAsync<List<EnvironmentCompatibilityResponse>>(host.Route + "/compatibility/rooms"))!;
+        Assert.DoesNotContain(await Results(), r => r.Classification == "Compatible");
+        host.AsTeacher();
+        Assert.Equal(HttpStatusCode.Forbidden, (await host.Client.PutAsJsonAsync(path, input with { RequiredComputers = 20 })).StatusCode);
+        host.AsAdmin();
+        Assert.Equal(HttpStatusCode.NoContent, (await host.Client.PutAsJsonAsync(path, input with { RequiredComputers = 20 })).StatusCode);
+        Assert.Contains(await Results(), r => r.RoomName == "A" && r.Classification == "Compatible");
+        var withItems = input with { RequiredComputers = 20, Resources = [new("Máquina", "Equipamento", 1, true)],
+            Software = [new(host.SoftwareId, 20, true)] };
+        Assert.Equal(HttpStatusCode.NoContent, (await host.Client.PutAsJsonAsync(path, withItems)).StatusCode);
+        Assert.DoesNotContain(await Results(), r => r.Classification == "Compatible");
+        Assert.Equal(HttpStatusCode.NoContent, (await host.Client.PutAsJsonAsync(path, input with { RequiredComputers = 20 })).StatusCode);
+        var saved = await host.Client.GetFromJsonAsync<System.Text.Json.JsonElement>(path);
+        Assert.Equal(0, saved.GetProperty("resources").GetArrayLength());
+        Assert.Equal(0, saved.GetProperty("software").GetArrayLength());
+        Assert.True(saved.GetProperty("registered").GetBoolean());
+        Assert.Contains(await Results(), r => r.RoomName == "A" && r.Classification == "Compatible");
+        Assert.Equal(HttpStatusCode.OK, (await host.Client.GetAsync(host.Route)).StatusCode);
+        Assert.Equal(HttpStatusCode.BadRequest, (await host.Client.PutAsJsonAsync(path, input with { RequiredComputers = null })).StatusCode);
+        Assert.Equal(HttpStatusCode.NotFound, (await host.Client.PutAsJsonAsync(path.Replace("courses/1", "courses/99999"), input)).StatusCode);
+    }
+
+    [Fact]
     public async Task RequirementsAreScopedValidatedAndAdminOnly()
     {
         await using var host = await Host.CreateAsync();

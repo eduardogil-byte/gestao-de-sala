@@ -127,10 +127,10 @@ export function InstitutionalImport() {
   return (
     <div className="space-y-6">
       <Title title="Importar Dados" subtitle="Analise o arquivo antes de confirmar. A prévia não altera os cadastros." />
-      <Card className="space-y-5">
+      <Card className="p-5 space-y-5">
         <div className="grid gap-4 md:grid-cols-2">
           <Field label="Tipo de cadastro">
-            <select className="input" value={kind} disabled={busy} onChange={(event) => {
+            <select className="field" value={kind} disabled={busy} onChange={(event) => {
               setKind(event.target.value as Kind); setFile(null);
               if (fileInput.current) fileInput.current.value = "";
               reset();
@@ -140,7 +140,7 @@ export function InstitutionalImport() {
             </select>
           </Field>
           <Field label="Arquivo CSV ou Excel (.xlsx). Limites padrão: 2 MB e 1.000 registros">
-            <input ref={fileInput} className="input" type="file" accept=".csv,.xlsx" disabled={busy}
+            <input ref={fileInput} className="field" type="file" accept=".csv,.xlsx" disabled={busy}
               onChange={(event) => { setFile(event.target.files?.[0] ?? null); reset(); }} />
           </Field>
         </div>
@@ -163,7 +163,7 @@ export function InstitutionalImport() {
         {error && <Notice type="error" message={error} />}
       </Card>
 
-      {preview && <Card className="space-y-5">
+      {preview && <Card className="p-5 space-y-5">
         <div>
           <h2 className="text-lg font-semibold text-slate-800">Prévia da importação</h2>
           <p className="text-sm text-slate-500">{preview.fileName} · {preview.total} linhas analisadas</p>
@@ -202,7 +202,7 @@ export function InstitutionalImport() {
           onClick={() => void confirm()}>Confirmar importação</button>
       </Card>}
 
-      {report && <Card className="space-y-3">
+      {report && <Card className="p-5 space-y-3">
         <h2 className="text-lg font-semibold text-slate-800">Importação concluída</h2>
         <p className="text-sm text-slate-600">{report.kind}: {report.total} analisados · {report.created} criados · {report.updated} atualizados · {report.unchanged} sem alterações · {report.skipped} ignorados.</p>
         {report.skipped > 0 && <>

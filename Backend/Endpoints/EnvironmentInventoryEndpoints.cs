@@ -244,7 +244,7 @@ public static partial class ApiEndpoints
         group.RoomId, group.Description, group.Quantity, group.OperationalQuantity,
         group.RamGb, group.Tier, group.DedicatedGpu, group.Processor, group.Storage,
         group.GraphicsCard, group.OperatingSystem, group.Virtualization, group.DockerWsl,
-        group.CadCompatible, group.SimulatorCompatible, group.InternetAvailable
+        group.CadCompatible, group.SimulatorCompatible, group.NetworkDetails, group.InternetAvailable
     };
 
     private static object GroupView(ComputerGroup group) => new

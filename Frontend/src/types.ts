@@ -43,6 +43,9 @@ export type InstalledSoftware = {
   softwareId: number;
   name: string;
   installedQuantity: number;
+  version?: string | null;
+  licenseQuantity?: number | null;
+  licenseExpiresOn?: string | null;
 };
 export type ComputerGroup = {
   id?: number;
@@ -51,8 +54,25 @@ export type ComputerGroup = {
   ramGb: number;
   tier: string;
   dedicatedGpu: boolean;
+  operationalQuantity?: number | null;
+  processor?: string | null;
+  storage?: string | null;
+  graphicsCard?: string | null;
+  operatingSystem?: string | null;
+  virtualization?: boolean | null;
+  dockerWsl?: boolean | null;
+  cadCompatible?: boolean | null;
+  simulatorCompatible?: boolean | null;
+  networkDetails?: string | null;
+  internetAvailable?: boolean | null;
   software: InstalledSoftware[];
 };
+export type RoomResource = {
+  id?: number; name: string; type: string; quantity: number; operationalQuantity: number | null;
+  description: string | null; condition: string | null; technicalDetails: string | null;
+  voltage: number | null; warrantyExpiresOn: string | null; licenseExpiresOn: string | null;
+};
+export type RoomInventory = { computerGroups: ComputerGroup[]; resources: RoomResource[] };
 export type Room = {
   id: number;
   code?: string | null;

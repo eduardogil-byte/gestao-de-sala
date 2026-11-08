@@ -4,7 +4,7 @@ import { useData } from "../lib/data";
 import { agendaErrorMessage, assignmentConflicts, loadSemesterAgenda, teacherActivities, teacherWorkload } from "../lib/instructorAgenda";
 import { movePeriod, type TimelineView } from "../lib/roomTimeline";
 import { dateBR, localDate, nextDate, statusText } from "../lib/utils";
-import { Busy, Card, Field, Modal, Notice, Title } from "../components/UI";
+import { Busy, Card, Field, Modal, Notice, SearchableSelect, Title } from "../components/UI";
 import type { AgendaOccupation, User } from "../types";
 
 const viewNames: Record<TimelineView, string> = { week: "Semana", month: "Mês", semester: "Semestre" };
@@ -107,6 +107,8 @@ export function InstructorAgenda({ user, onOpenRelated, onManage }: { user: User
   const pedagogicalConflicts = useMemo(() => assignmentConflicts(assignments), [assignments]);
   const week = nextDate(anchor, -new Date(anchor + "T12:00:00").getDay());
   const weekDates = Array.from({ length: 7 }, (_, index) => nextDate(week, index));
+  const weeklyWorkload = useMemo(() => teacherWorkload(activities.filter((item) => item.date >= week && item.date < nextDate(week, 7)),
+    data.shifts, teacherId), [activities, data.shifts, teacherId, week]);
   const monthStart = anchor.slice(0, 7) + "-01";
   const monthEnd = movePeriod("month", monthStart, 1).slice(0, 7) + "-01";
   const monthDates: string[] = [];
@@ -135,7 +137,7 @@ export function InstructorAgenda({ user, onOpenRelated, onManage }: { user: User
   const withinSemester = (date: string) => Boolean(semester && date >= semester.startDate && date <= semester.endDate);
 
   return <>
-    <Title title={admin ? "Agenda dos Instrutores" : "Minha Agenda"} subtitle={periodLabel}
+    <Title title={admin ? "Agenda dos Instrutores" : "Minha Agenda"} subtitle={`Aulas e carga por docente · ${periodLabel}`}
       action={<button type="button" className="btn-secondary" onClick={() => setRevision((value) => value + 1)}>Atualizar agenda</button>} />
     <Card className="p-4 mb-5 space-y-4">
       <div className="flex flex-wrap gap-2 items-center">
@@ -151,9 +153,8 @@ export function InstructorAgenda({ user, onOpenRelated, onManage }: { user: User
         <Field label="Semestre"><select className="field" value={semesterId} onChange={(event) => selectSemester(event.target.value)}>
           <option value="">Selecione</option>{data.semesters.map((entry) => <option key={entry.id} value={entry.id}>{entry.name}</option>)}
         </select></Field>
-        {admin && <Field label="Instrutor"><select className="field" value={teacherId} onChange={(event) => { setTeacherId(event.target.value); setSelectedDay(""); }}>
-          <option value="">Visão geral dos instrutores</option>{data.teachers.map((entry) => <option key={entry.id} value={entry.id}>{entry.displayName}</option>)}
-        </select></Field>}
+        {admin && <SearchableSelect label="Instrutor" value={teacherId} onChange={(value) => { setTeacherId(value); setSelectedDay(""); }}
+          options={[{ value: "", label: "Visão geral dos instrutores" }, ...data.teachers.map((entry) => ({ value: entry.id, label: entry.displayName }))]} />}
       </div>
     </Card>
     {catalogError && <Notice message={"Não foi possível carregar os cadastros: " + catalogError} />}
@@ -164,7 +165,7 @@ export function InstructorAgenda({ user, onOpenRelated, onManage }: { user: User
       <h2 className="font-semibold text-slate-800 mb-3">Carga horária por instrutor</h2>
       <p className="text-sm text-slate-600 mb-4">Horas de ocupações efetivas com turno cadastrado. Sem limite institucional configurado.</p>
       {!data.teachers.length ? <p className="text-sm text-slate-600">Nenhum instrutor cadastrado para consulta.</p> :
-        <div className="overflow-x-auto"><table className="w-full text-sm"><thead><tr className="text-left border-b"><th className="p-2">Instrutor</th><th className="p-2">Horas</th><th className="p-2">Atividades</th><th className="p-2">Situação</th></tr></thead>
+        <div className="overflow-x-auto"><table className="w-full text-sm"><thead><tr className="text-left border-b"><th className="p-2">Instrutor</th><th className="p-2">Horas no semestre</th><th className="p-2">Atividades</th><th className="p-2">Situação</th></tr></thead>
           <tbody>{overview.map(({ teacher: entry, total }) => <tr key={entry.id} className="border-b">
             <td className="p-2"><button type="button" className="text-sky-700 font-medium underline" onClick={() => setTeacherId(entry.id)}>{entry.displayName}</button></td>
             <td className="p-2">{formatHours(total.hours)}{(total.withoutRegisteredShift > 0 || total.withoutApprovedBooking > 0) && " + horas não contabilizadas"}</td><td className="p-2">{total.activities}</td>
@@ -177,6 +178,7 @@ export function InstructorAgenda({ user, onOpenRelated, onManage }: { user: User
         <h2 className="font-semibold text-slate-800">{teacher?.displayName ?? "Instrutor selecionado"}</h2>
         <div className="flex flex-wrap gap-x-6 gap-y-1 mt-2 text-sm text-slate-700">
           <span><strong>{formatHours(workload.hours)}</strong> de ocupações efetivas no semestre</span>
+          <span><strong>{formatHours(weeklyWorkload.hours)}</strong> na semana de {dateBR(week)} a {dateBR(nextDate(week, 6))}</span>
           <span>{workload.activities} atividades registradas</span>
           <span>{workload.conflicts} atividades com conflito</span>
         </div>

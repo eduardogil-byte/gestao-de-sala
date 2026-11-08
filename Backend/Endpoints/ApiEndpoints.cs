@@ -71,16 +71,7 @@ public static partial class ApiEndpoints
         r.HasTeacherComputer,
         r.HasInternet,
         r.Active,
-        ComputerGroups = r.ComputerGroups.Select(g => new
-        {
-            g.Id,
-            g.Description,
-            g.Quantity,
-            g.RamGb,
-            g.Tier,
-            g.DedicatedGpu,
-            Software = g.Software.Select(s => new { s.SoftwareId, Name = s.Software.Name, s.InstalledQuantity })
-        })
+        ComputerGroups = r.ComputerGroups.Select(GroupView)
     };
 
     private static async Task<List<Room>> AllRooms(AppDbContext db)
@@ -213,9 +204,14 @@ public static partial class ApiEndpoints
             if (!string.IsNullOrEmpty(normalizedCode) && await db.Rooms.AnyAsync(r => r.NormalizedCode == normalizedCode))
                 return Results.Conflict(new ApiError("Já existe um ambiente com este código."));
             var room = CreateRoom(input);
+            if (input.ComputerGroups.Any(g => g.Id.HasValue)) return Error("Grupos novos não devem informar IDs existentes.");
+            if (input.Inventory is not null && await ValidateInventory(db, input.Inventory, room) is string inventoryError)
+                return Error(inventoryError);
             await using var createTx = await db.Database.BeginTransactionAsync();
             db.Rooms.Add(room);
+            if (input.Inventory is not null) ApplyInventory(db, room, input.Inventory, UserId(current));
             await db.SaveChangesAsync();
+            if (input.Inventory is not null) AuditNewInventory(db, room, UserId(current));
             AuditTrail.Add(db, "Room", room.Id.ToString(), "Criado", UserId(current), null,
                 new { room.Code, room.Name, room.Location, room.Kind, room.Seats, room.Desks,
                     room.HasProjector, room.HasTeacherComputer, room.HasInternet, room.Active,
@@ -230,9 +226,20 @@ public static partial class ApiEndpoints
         {
             var validation = await ValidateRoom(db, input);
             if (validation is not null) return Error(validation);
-            var existing = await db.Rooms.Include(r => r.ComputerGroups)
+            var existing = await db.Rooms.Include(r => r.Resources).Include(r => r.ComputerGroups)
                 .ThenInclude(g => g.Software).FirstOrDefaultAsync(r => r.Id == id);
             if (existing is null) return Results.NotFound();
+            if (input.Inventory is not null && await ValidateInventory(db, input.Inventory, existing) is string inventoryError)
+                return Error(inventoryError);
+            if (input.ComputerGroups.Any(g => g.Id.HasValue && !existing.ComputerGroups.Any(x => x.Id == g.Id)))
+                return Error("O grupo de computadores não pertence ao ambiente.");
+            if (input.ComputerGroups.Any(g => !g.Id.HasValue && existing.ComputerGroups.Any(x =>
+                string.Equals(x.Description.Trim(), g.Description.Trim(), StringComparison.OrdinalIgnoreCase))))
+                return Error("Para editar um grupo existente, informe seu ID ou utilize o inventário técnico.");
+            if (input.ComputerGroups.Any(g => g.Id.HasValue && existing.ComputerGroups.Any(x => x.Id == g.Id &&
+                (x.OperationalQuantity > g.Quantity || x.Software.Any(s => s.InstalledQuantity > g.Quantity)))))
+                return Error("A quantidade do grupo não pode ficar abaixo dos computadores operacionais ou instalações preservadas.");
+            await using var updateTx = await db.Database.BeginTransactionAsync();
             var normalizedCode = string.IsNullOrWhiteSpace(input.Code) ? null : input.Code.Trim().ToUpperInvariant();
             if (!string.IsNullOrEmpty(normalizedCode) && await db.Rooms.AnyAsync(r => r.Id != id && r.NormalizedCode == normalizedCode))
                 return Results.Conflict(new ApiError("Já existe um ambiente com este código."));
@@ -250,6 +257,9 @@ public static partial class ApiEndpoints
             existing.HasTeacherComputer = input.HasTeacherComputer;
             existing.HasInternet = input.HasInternet; existing.Active = input.Active;
             UpdateComputerGroups(existing.ComputerGroups, input.ComputerGroups);
+            if (input.Inventory is not null) ApplyInventory(db, existing, input.Inventory, UserId(current));
+            var newGroups = existing.ComputerGroups.Where(g => g.Id == 0).ToList();
+            var newResources = existing.Resources.Where(r => r.Id == 0).ToList();
             AuditTrail.Add(db, "Room", existing.Id.ToString(), "Alterado", UserId(current), before,
                 new { existing.Code, existing.Name, existing.Location, existing.Purpose, existing.Kind,
                     existing.Seats, existing.Desks, existing.HasProjector, existing.HasTeacherComputer,
@@ -268,6 +278,12 @@ public static partial class ApiEndpoints
                         "Room", existing.Id);
             }
             await db.SaveChangesAsync();
+            foreach (var group in newGroups)
+                AuditTrail.Add(db, "ComputerGroup", group.Id.ToString(), "Criado", UserId(current), null, InventoryGroupAudit(group));
+            foreach (var resource in newResources)
+                AuditTrail.Add(db, "Resource", resource.Id.ToString(), "Criado", UserId(current), null, ResourceAudit(resource));
+            if (newGroups.Count > 0 || newResources.Count > 0) await db.SaveChangesAsync();
+            await updateTx.CommitAsync();
             return Results.NoContent();
         }).RequireAuthorization("Admin");
 
@@ -368,11 +384,17 @@ public static partial class ApiEndpoints
 
     private static async Task<string?> ValidateRoom(AppDbContext db, RoomInput input)
     {
+        if (input.Inventory is not null && input.ComputerGroups is { Count: > 0 })
+            return "Envie os grupos pelo inventário técnico ou pelo cadastro básico, sem misturar os dois contratos.";
         if ((input.Code?.Trim().Length ?? 0) > 30) return "O código do ambiente deve ter até 30 caracteres.";
         if (string.IsNullOrWhiteSpace(input.Name) || input.Name.Length > 120 ||
             !Enum.IsDefined(input.Kind) || input.Seats < 1 || input.Desks < 1 ||
             input.Seats > 1000 || input.Desks > 1000 ||
-            input.ComputerGroups is null || (input.Purpose?.Length ?? 0) > 350) return "Informações da sala inválidas";
+            input.Location is null || input.ComputerGroups is null || (input.Purpose?.Length ?? 0) > 350) return "Informações da sala inválidas";
+        if (input.ComputerGroups.Any(g => g is null || string.IsNullOrWhiteSpace(g.Description)) ||
+            input.ComputerGroups.Select(g => g.Description.Trim()).Distinct(StringComparer.OrdinalIgnoreCase).Count() != input.ComputerGroups.Count ||
+            input.ComputerGroups.Where(g => g.Id.HasValue).Select(g => g.Id).Distinct().Count() != input.ComputerGroups.Count(g => g.Id.HasValue))
+            return "Grupos devem ter descrições e IDs distintos.";
         foreach (var group in input.ComputerGroups)
         {
             if (group.Quantity < 1 || group.Quantity > 1000 || group.RamGb < 1 ||
@@ -419,8 +441,7 @@ public static partial class ApiEndpoints
     {
         foreach (var input in inputs)
         {
-            var group = existing.FirstOrDefault(g => string.Equals(g.Description.Trim(),
-                input.Description.Trim(), StringComparison.OrdinalIgnoreCase));
+            var group = input.Id is int id ? existing.FirstOrDefault(g => g.Id == id) : null;
             if (group is null)
             {
                 existing.Add(NewComputerGroups(new[] { input })[0]);

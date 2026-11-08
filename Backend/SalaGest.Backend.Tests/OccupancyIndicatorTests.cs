@@ -22,6 +22,37 @@ namespace SalaGest.Backend.Tests;
 public sealed class OccupancyIndicatorTests
 {
     [Fact]
+    public async Task OfferedShiftConfigurationIsAdminOnlyScopedAndCanBeClearedWithoutDeletingOccupations()
+    {
+        await using var host = await Host.CreateAsync();
+        var path = $"/api/semesters/{host.SemesterId}/rooms/{host.RoomAId}/operating-shifts";
+        host.AsTeacher();
+        Assert.Equal(HttpStatusCode.Forbidden, (await host.Client.GetAsync(path)).StatusCode);
+        Assert.Equal(HttpStatusCode.Forbidden, (await host.Client.PutAsJsonAsync(path,
+            new[] { new { shiftId = host.MorningId, weekdaysMask = 2 } })).StatusCode);
+        host.AsAdmin();
+        await host.Configure(host.RoomAId);
+        var configured = await host.Client.GetFromJsonAsync<System.Text.Json.JsonElement>(path);
+        Assert.Equal(2, configured.GetArrayLength());
+        Assert.True((await host.Report(host.RoomAId)).GetProperty("capacityHours").GetDecimal() > 0);
+        var otherSemester = await host.Client.GetFromJsonAsync<System.Text.Json.JsonElement>(
+            $"/api/semesters/{host.SecondSemesterId}/rooms/{host.RoomAId}/operating-shifts");
+        Assert.Equal(0, otherSemester.GetArrayLength());
+        using (var scope = host.App.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+            db.Occupations.Add(host.Occ(host.RoomAId, 1, 8, 12));
+            await db.SaveChangesAsync();
+        }
+        Assert.Equal(HttpStatusCode.NoContent, (await host.Client.PutAsJsonAsync(path, Array.Empty<object>())).StatusCode);
+        var report = await host.Report(host.RoomAId);
+        Assert.Equal(System.Text.Json.JsonValueKind.Null, report.GetProperty("capacityHours").ValueKind);
+        Assert.Equal(System.Text.Json.JsonValueKind.Null, report.GetProperty("occupancyPercent").ValueKind);
+        Assert.Equal(4m, report.GetProperty("physicalOccupiedHours").GetDecimal());
+        Assert.Equal(0, (await host.Client.GetFromJsonAsync<System.Text.Json.JsonElement>(path)).GetArrayLength());
+    }
+
+    [Fact]
     public async Task CapacityUsesConfiguredDaysAndDifferentDurationsWithoutDoubleCounting()
     {
         await using var host = await Host.CreateAsync();

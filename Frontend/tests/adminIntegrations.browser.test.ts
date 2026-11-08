@@ -1,0 +1,154 @@
+import assert from "node:assert/strict";
+import test from "node:test";
+import { mkdtemp, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { chromePath, openAdminFixture } from "./helpers/browser.ts";
+
+test("integrações administrativas usam contratos existentes e preservam estado", { skip: !chromePath, timeout: 120000 }, async (t) => {
+  const { evaluate, waitFor, command, close } = await openAdminFixture("adminIntegrations");
+  const requirement = "/api/courses/1/modules/2/curricular-units/3/capabilities/4/environment-requirements";
+  const operating = "/api/semesters/1/rooms/10/operating-shifts";
+  const reportPath = "/api/occupancy-indicators/semesters/1?roomId=10";
+  const comparePath = "/api/occupancy-indicators/compare?firstSemesterId=1&secondSemesterId=2&roomId=10";
+  const reply = (path: string, data: unknown, status = 200) => evaluate(`adminTest.reply(${JSON.stringify(path)}, ${JSON.stringify(data)}, ${status})`);
+  const reset = async (mode: string, role = "Admin") => {
+    await evaluate(`adminTest.reset(${JSON.stringify(mode)}, ${JSON.stringify(role)})`);
+    await waitFor("!document.body.innerText.includes('Carregando dados...')");
+  };
+  const screenshotDir = await mkdtemp(join(tmpdir(), "salagest-etapa5b-"));
+  const capture = async (name: string) => {
+    const screenshot = await command("Page.captureScreenshot", { format: "png", captureBeyondViewport: false });
+    await writeFile(join(screenshotDir, `${name}.png`), Buffer.from(screenshot.data, "base64"));
+  };
+  try {
+    await t.test("turnos e indicadores: atualizar preserva filtros, comparação e oferta não enviada", async () => {
+      await waitFor("document.body.innerText.includes('Pendências gerenciais')");
+      await capture("dashboard-desktop");
+      await evaluate("adminTest.select('Ambiente', '10'); adminTest.select('Comparar com outro semestre', '2')");
+      await waitFor(`adminTest.calls.some(r => r.path === ${JSON.stringify(comparePath)})`);
+      await evaluate("adminTest.click('Configurar turnos oferecidos')");
+      await waitFor(`adminTest.pending.some(r => r.path === ${JSON.stringify(operating)})`);
+      await reply(operating, [{ shiftId: 1, weekdaysMask: 2 }]);
+      await waitFor("document.querySelector('[role=dialog]')?.innerText.includes('Quarta')");
+      await evaluate("[...document.querySelectorAll('[role=dialog] label')].find(l => l.textContent.trim() === 'Quarta').querySelector('input').click()");
+      const before = await evaluate<number>(`adminTest.calls.filter(r => r.path === ${JSON.stringify(reportPath)}).length`);
+      const compareBefore = await evaluate<number>(`adminTest.calls.filter(r => r.path === ${JSON.stringify(comparePath)}).length`);
+      await evaluate(`adminTest.catalog[${JSON.stringify(reportPath)}].physicalOccupiedHours = 8;
+        adminTest.catalog['/api/rooms'][0].computerGroups = [{quantity: 10, operationalQuantity: null}]; adminTest.click('Atualizar dados')`);
+      await waitFor(`adminTest.calls.filter(r => r.path === ${JSON.stringify(reportPath)}).length > ${before}`);
+      await waitFor(`adminTest.calls.filter(r => r.path === ${JSON.stringify(comparePath)}).length > ${compareBefore}`);
+      assert.equal(await evaluate("document.body.innerText.includes('Quantidade operacional de computadores não informada em: Laboratório sintético')"), true);
+      assert.equal(await evaluate("[...document.querySelectorAll('[role=dialog] label')].find(l => l.textContent.trim() === 'Quarta').querySelector('input').checked"), true);
+      assert.equal(await evaluate("[...document.querySelectorAll('label')].find(l => l.querySelector('span')?.textContent === 'Ambiente').querySelector('select').value"), "10");
+      assert.equal(await evaluate("[...document.querySelectorAll('label')].find(l => l.querySelector('span')?.textContent === 'Comparar com outro semestre').querySelector('select').value"), "2");
+      await evaluate("adminTest.click('Salvar turnos oferecidos')");
+      await waitFor("document.querySelectorAll('[role=dialog]').length === 2");
+      await evaluate("adminTest.click('Confirmar turnos')");
+      await waitFor(`adminTest.pending.some(r => r.path === ${JSON.stringify(operating)})`);
+      assert.deepEqual(await evaluate(`adminTest.pending.find(r => r.path === ${JSON.stringify(operating)}).body`), [{ shiftId: 1, weekdaysMask: 10 }]);
+      await reply(operating, null, 204);
+      await waitFor("document.body.innerText.includes('Turnos oferecidos salvos')");
+      await waitFor("document.body.innerText.includes('Indeterminado')");
+      await capture("turnos-desktop");
+      const beforeFailure = await evaluate<number>(`adminTest.calls.filter(r => r.path === ${JSON.stringify(reportPath)}).length`);
+      await evaluate("adminTest.deferred.push('/api/software'); adminTest.click('Atualizar dados')");
+      await waitFor("adminTest.pending.some(r => r.path === '/api/software')");
+      await reply('/api/software', { error: "Falha sintética no catálogo" }, 500);
+      await waitFor(`adminTest.calls.filter(r => r.path === ${JSON.stringify(reportPath)}).length > ${beforeFailure}`);
+      assert.equal(await evaluate("[...document.querySelectorAll('[role=dialog] label')].find(l => l.textContent.trim() === 'Quarta').querySelector('input').checked"), true);
+      await evaluate("adminTest.click('Salvar turnos oferecidos')");
+      await waitFor("document.querySelectorAll('[role=dialog]').length === 2");
+      await evaluate("adminTest.click('Confirmar turnos')");
+      await waitFor(`adminTest.pending.some(r => r.path === ${JSON.stringify(operating)})`);
+      const beforeClose = await evaluate<number>(`adminTest.calls.filter(r => r.path === ${JSON.stringify(reportPath)}).length`);
+      await evaluate("document.querySelector('[aria-label=Fechar]').click()");
+      await reply(operating, null, 204);
+      await waitFor(`adminTest.calls.filter(r => r.path === ${JSON.stringify(reportPath)}).length > ${beforeClose}`);
+    });
+    await t.test("requisitos são cadastrados e critérios removidos por PUT, sem DELETE", async () => {
+      await reset("requirements"); await waitFor("document.body.innerText.includes('Computadores necessários')");
+      await evaluate("adminTest.select('Tipo de ambiente exigido', 'Laboratorio'); adminTest.input('Computadores necessários (opcional)', '20'); adminTest.input('RAM mínima por computador (GB, opcional)', '16')");
+      await evaluate("adminTest.click('Adicionar requisito de recurso')");
+      await waitFor("document.body.innerText.includes('Nome do recurso')");
+      await evaluate("adminTest.input('Nome do recurso', 'Bancada'); adminTest.input('Tipo do recurso', 'Equipamento'); adminTest.select('Adicionar software exigido', '1')");
+      await waitFor("document.body.innerText.includes('Licenças necessárias')");
+      await evaluate("adminTest.input('Licenças necessárias (opcional)', '20'); adminTest.click('Salvar requisitos técnicos')");
+      await waitFor(`adminTest.pending.some(r => r.path === ${JSON.stringify(requirement)})`);
+      const body = await evaluate<any>(`adminTest.pending.find(r => r.path === ${JSON.stringify(requirement)}).body`);
+      assert.equal(body.requiredComputers, 20); assert.equal(body.minRamGb, 16);
+      assert.equal(body.resources[0].name, "Bancada"); assert.equal(body.software[0].requiredLicenses, 20);
+      await capture("requisitos-desktop");
+      assert.equal(await evaluate(`adminTest.pending.find(r => r.path === ${JSON.stringify(requirement)}).method`), "POST");
+      await reply(requirement, { registered: true }, 201);
+      await waitFor("document.body.innerText.includes('Requisitos técnicos salvos')");
+      await evaluate("adminTest.click('Remover requisito de recurso 1'); adminTest.click('Remover requisito de software CAD')");
+      await evaluate("adminTest.click('Salvar requisitos técnicos')");
+      await waitFor(`adminTest.pending.some(r => r.path === ${JSON.stringify(requirement)})`);
+      const update = await evaluate<any>(`adminTest.pending.find(r => r.path === ${JSON.stringify(requirement)})`);
+      assert.equal(update.method, "PUT"); assert.deepEqual(update.body.resources, []); assert.deepEqual(update.body.software, []);
+      assert.equal(update.body.requiredComputers, 20);
+      await reply(requirement, null, 204);
+    });
+    await t.test("catálogo mantém caminho completo e Professor somente consulta requisitos", async () => {
+      await reset("catalog", "Professor");
+      await waitFor("document.body.innerText.includes('Curso sintético')");
+      await evaluate("adminTest.click('Ver módulos')"); await waitFor("document.body.innerText.includes('Módulo sintético')");
+      await evaluate("adminTest.click('Ver UCs')"); await waitFor("document.body.innerText.includes('UC sintética')");
+      await evaluate("adminTest.click('Ver capacidades')"); await waitFor("document.body.innerText.includes('Capacidade sintética')");
+      await evaluate("adminTest.click('Requisitos técnicos')");
+      await waitFor("document.body.innerText.includes('Somente Admin')");
+      assert.equal(await evaluate("!!document.querySelector('[role=dialog] input:not(:disabled)')"), false);
+      assert.equal(await evaluate("document.body.innerText.includes('Salvar requisitos técnicos')"), false);
+      assert.equal(await evaluate(`adminTest.calls.some(r => r.path === ${JSON.stringify(requirement)} && r.method === 'GET')`), true);
+      assert.equal(await evaluate("adminTest.calls.some(r => r.method !== 'GET')"), false);
+      await reset("dashboard", "Professor");
+      await waitFor("document.body.innerText.includes('Dashboard gerencial')");
+      assert.equal(await evaluate("document.body.innerText.includes('Configurar turnos oferecidos')"), false);
+    });
+    await t.test("cronograma móvel mantém ocupações, filtros e detalhes sem rolagem da página", async () => {
+      await command("Emulation.setDeviceMetricsOverride", { width: 390, height: 844, deviceScaleFactor: 1, mobile: true });
+      await reset("timeline"); await waitFor("document.body.innerText.includes('Filtros do cronograma')");
+      await evaluate("adminTest.click('Semana')");
+      await waitFor("document.querySelector('[class~=\"lg:hidden\"]')?.innerText.includes('Turma sintética')");
+      await capture("cronograma-mobile");
+      assert.equal(await evaluate("document.documentElement.scrollWidth <= window.innerWidth + 1"), true);
+      const mobileOccupations = "[...document.querySelectorAll('[class~=\"lg:hidden\"] button')].filter(b => b.textContent.includes('Turma sintética'))";
+      assert.equal(await evaluate(`${mobileOccupations}.length`), 1);
+      await evaluate(`${mobileOccupations}[0].click()`);
+      await waitFor("document.querySelector('[role=dialog]')?.innerText.includes('Detalhes da ocupação')");
+      await capture("cronograma-mobile-detalhes");
+    });
+    await t.test("oportunidades seleciona capacidade com Enter e anuncia seleção por texto", async () => {
+      await reset("opportunities"); await waitFor("document.body.innerText.includes('Buscar atividades')");
+      await evaluate("adminTest.click('Buscar atividades')");
+      await waitFor("!!document.querySelector('[aria-label^=\"Selecionar capacidade:\"]')");
+      await command("Page.bringToFront");
+      await evaluate("document.querySelector('[aria-label^=\"Selecionar capacidade:\"]').focus()");
+      await command("Input.dispatchKeyEvent", { type: "keyDown", key: "Enter", code: "Enter", windowsVirtualKeyCode: 13, nativeVirtualKeyCode: 13, text: "\r", unmodifiedText: "\r" });
+      await command("Input.dispatchKeyEvent", { type: "keyUp", key: "Enter", code: "Enter", windowsVirtualKeyCode: 13 });
+      await waitFor("document.querySelector('[aria-label^=\"Selecionar capacidade:\"]')?.getAttribute('aria-pressed') === 'true'");
+      assert.equal(await evaluate("document.querySelector('[aria-pressed=true]').textContent.includes('Selecionada')"), true);
+    });
+    await t.test("agenda busca docentes e diferencia horas semanais das semestrais", async () => {
+      await reset("instructor"); await waitFor("document.body.innerText.includes('Carga horária por instrutor')");
+      await evaluate("adminTest.input('Buscar instrutor', 'Docente 0'); adminTest.select('Instrutor', 't0')");
+      await waitFor("document.body.innerText.includes('de ocupações efetivas no semestre')");
+      assert.equal(await evaluate("document.body.innerText.includes('na semana de')"), true);
+      assert.equal(await evaluate("document.body.innerText.includes('8 h de ocupações efetivas no semestre')"), true);
+      assert.equal(await evaluate("document.body.innerText.includes('4 h na semana de')"), true);
+      assert.equal(await evaluate("document.documentElement.scrollWidth <= window.innerWidth + 1"), true);
+    });
+    await t.test("Importação e Exportação usam os campos do design system em mobile", async () => {
+      for (const mode of ["import", "export"]) {
+        await reset(mode);
+        await waitFor("!!document.querySelector('select.field')");
+        assert.equal(await evaluate("document.querySelectorAll('.input').length"), 0);
+        if (mode === "export") assert.equal(await evaluate("[...document.querySelectorAll('label span')].some(l => l.textContent === 'Semestre')"), true);
+        assert.equal(await evaluate("document.documentElement.scrollWidth <= window.innerWidth + 1"), true);
+        await capture(`${mode}-mobile`);
+      }
+    });
+    console.log(`Capturas sintéticas: ${screenshotDir}`);
+  } finally { await close(); }
+});

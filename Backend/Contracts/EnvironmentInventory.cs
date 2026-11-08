@@ -16,3 +16,10 @@ public record ComputerGroupInventoryInput(string Description, int Quantity, int 
 
 public record GroupSoftwareInventoryInput(int SoftwareId, int InstalledQuantity,
     string? Version = null, int? LicenseQuantity = null, DateOnly? LicenseExpiresOn = null);
+
+// Omitted collections preserve persisted records; only explicit IDs request removal.
+public record RoomInventoryInput(List<InventoryGroupUpdate>? ComputerGroups = null,
+    List<InventoryResourceUpdate>? Resources = null, List<int>? RemovedGroupIds = null);
+public record InventoryGroupUpdate(int? Id, ComputerGroupInventoryInput Details,
+    List<GroupSoftwareInventoryInput>? Software = null, List<int>? RemovedSoftwareIds = null);
+public record InventoryResourceUpdate(int? Id, RoomResourceInput Details);

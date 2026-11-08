@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { post, put, read } from "../lib/api";
 import { useData } from "../lib/data";
 import { dateBR, resultMessage } from "../lib/utils";
@@ -26,8 +26,25 @@ const statusLabel: Record<string, string> = {
 
 export function SemesterPlanning({ user, reloadAgenda }: { user: User; reloadAgenda: () => Promise<void> }) {
   const { data } = useData();
-  const admin = user.roles.includes("Admin");
   const [semesterId, setSemesterId] = useState("");
+  return <div className="space-y-5">
+    <Title title="Planejamento Semestral" subtitle="Propostas e aprovação não ocupam ambientes. Apenas a publicação confirmada cria ocupações efetivas." />
+    <Card className="p-5"><Field label="Semestre"><select className="field" value={semesterId} onChange={(e) => setSemesterId(e.target.value)}>
+      <option value="">Selecione</option>{data.semesters.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+    </select></Field></Card>
+    {semesterId && <SemesterPlan key={semesterId} semesterId={semesterId} user={user} reloadAgenda={reloadAgenda} />}
+  </div>;
+}
+
+// Each selection owns its form, filters and pending requests, including A → B → A.
+function SemesterPlan({ semesterId, user, reloadAgenda }: {
+  semesterId: string; user: User; reloadAgenda: () => Promise<void>;
+}) {
+  const { data } = useData();
+  const admin = user.roles.includes("Admin");
+  const request = useRef(0);
+  const mounted = useRef(false);
+  const operationPending = useRef(false);
   const [plan, setPlan] = useState<Plan | null>(null);
   const [assignmentId, setAssignmentId] = useState("");
   const [roomId, setRoomId] = useState("");
@@ -44,10 +61,12 @@ export function SemesterPlanning({ user, reloadAgenda }: { user: User; reloadAge
   const [reason, setReason] = useState<Record<number, string>>({});
   const [preview, setPreview] = useState<Preview | null>(null);
   const [history, setHistory] = useState<History[]>([]);
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [loaded, setLoaded] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
+  const ready = loaded && !loading && (!plan || plan.semesterId === Number(semesterId));
   const assignments = data.assignments.filter((a) => a.semesterId === Number(semesterId) &&
     a.endedAtUtc === null && a.curricularUnitId !== null && (admin || a.teacherId === user.id));
   const visible = (plan?.proposals ?? []).filter((p) =>
@@ -57,32 +76,48 @@ export function SemesterPlanning({ user, reloadAgenda }: { user: User; reloadAge
     (!statusFilter || p.status === statusFilter));
 
   async function load(semester: string) {
-    if (!semester) { setPlan(null); setHistory([]); return; }
-    setLoading(true); setError(""); setPreview(null);
+    const id = ++request.current;
+    const current = () => mounted.current && id === request.current;
+    setLoading(true); setLoaded(false); setError(""); setPreview(null); setPlan(null); setHistory([]);
     try {
       const plans = await read<{ id: number }[]>(`/semester-plans?semesterId=${semester}`);
-      if (!plans.length) { setPlan(null); setHistory([]); return; }
+      if (!current()) return false;
+      if (!plans.length) { setLoaded(true); return true; }
       const next = await read<Plan>(`/semester-plans/${plans[0].id}`);
+      if (!current()) return false;
+      if (next.semesterId !== Number(semester)) throw new Error("O planejamento recebido não corresponde ao semestre selecionado.");
+      const events = await read<History[]>(`/semester-plans/${next.id}/history`);
+      if (!current()) return false;
       setPlan(next);
-      setHistory(await read<History[]>(`/semester-plans/${next.id}/history`));
-    } catch (cause) { setError(resultMessage(cause)); }
-    finally { setLoading(false); }
+      setHistory(events); setLoaded(true);
+      return true;
+    } catch (cause) { if (current()) setError(resultMessage(cause)); return false; }
+    finally { if (current()) setLoading(false); }
   }
-  useEffect(() => { void load(semesterId); }, [semesterId]);
   useEffect(() => {
-    if (!plan || !assignmentId) { setCapabilities([]); return; }
+    mounted.current = true;
+    void load(semesterId);
+    return () => { mounted.current = false; request.current++; };
+  }, [semesterId]);
+  useEffect(() => {
+    setCapabilities([]);
+    if (!ready || !plan || !assignmentId) return;
     let active = true;
     read<{ id: number; description: string }[]>(`/semester-plans/${plan.id}/capabilities?assignmentId=${assignmentId}`)
       .then((rows) => { if (active) setCapabilities(rows); })
       .catch((cause) => { if (active) setError(resultMessage(cause)); });
     return () => { active = false; };
-  }, [plan?.id, assignmentId]);
+  }, [plan?.id, assignmentId, ready]);
   async function run(operation: () => Promise<unknown>, message: string) {
-    if (busy) return;
+    if (!mounted.current || !ready || operationPending.current) return;
+    operationPending.current = true;
     setBusy(true); setError(""); setSuccess("");
-    try { await operation(); await load(semesterId); setSuccess(message); }
-    catch (cause) { setError(resultMessage(cause)); }
-    finally { setBusy(false); }
+    try {
+      await operation();
+      if (mounted.current && await load(semesterId) && mounted.current) setSuccess(message);
+    }
+    catch (cause) { if (mounted.current) setError(resultMessage(cause)); }
+    finally { operationPending.current = false; if (mounted.current) setBusy(false); }
   }
   function clearForm() {
     setEditingId(null); setAssignmentId(""); setCapabilityId(""); setRoomId("");
@@ -104,38 +139,39 @@ export function SemesterPlanning({ user, reloadAgenda }: { user: User; reloadAge
     } catch { return null; }
   }
   async function save() {
-    if (!plan || !assignmentId || !roomId || !shiftId || !startDate || !endDate) return;
+    if (!ready || !plan || !assignmentId || !roomId || !shiftId || !startDate || !endDate) return;
     const input = { assignmentId: Number(assignmentId), curricularCapabilityId: capabilityId ? Number(capabilityId) : null,
       roomId: Number(roomId), shiftId: Number(shiftId), startDate, endDate };
     await run(async () => {
       if (editingId) await put(`/semester-plans/${plan.id}/proposals/${editingId}`, input);
       else await post(`/semester-plans/${plan.id}/proposals`, input);
-      clearForm();
+      if (mounted.current) clearForm();
     }, "Rascunho salvo. Nenhuma sala foi ocupada.");
   }
   async function previewPublication() {
-    if (!plan || busy) return;
+    if (!mounted.current || !ready || !plan || operationPending.current) return;
+    operationPending.current = true;
     setBusy(true); setError(""); setPreview(null);
-    try { setPreview(await read<Preview>(`/semester-plans/${plan.id}/publish-preview`)); }
-    catch (cause) { setError(resultMessage(cause)); }
-    finally { setBusy(false); }
+    try {
+      const result = await read<Preview>(`/semester-plans/${plan.id}/publish-preview`);
+      if (mounted.current) setPreview(result);
+    }
+    catch (cause) { if (mounted.current) setError(resultMessage(cause)); }
+    finally { operationPending.current = false; if (mounted.current) setBusy(false); }
   }
 
   return <div className="space-y-5">
-    <Title title="Planejamento Semestral" subtitle="Propostas e aprovação não ocupam ambientes. Apenas a publicação confirmada cria ocupações efetivas." />
     {error && <Notice message={error} onClose={() => setError("")} />}
     {success && <Notice type="success" message={success} onClose={() => setSuccess("")} />}
-    <Card className="p-5"><Field label="Semestre"><select className="field" value={semesterId} onChange={(e) => { setSemesterId(e.target.value); clearForm(); }}>
-      <option value="">Selecione</option>{data.semesters.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
-    </select></Field></Card>
     {loading && <p role="status">Carregando planejamento...</p>}
-    {semesterId && !loading && !plan && <Card className="p-5 space-y-3">
+    {!loading && !loaded && <button type="button" className="btn-secondary" onClick={() => void load(semesterId)}>Tentar novamente</button>}
+    {ready && !plan && <Card className="p-5 space-y-3">
       <p>Nenhum planejamento criado para este semestre. Reservas cotidianas continuam disponíveis.</p>
       <button type="button" className="btn-primary" disabled={busy} onClick={() => void run(async () => {
         await post(`/semester-plans/${semesterId}`);
       }, "Planejamento criado.")}>Criar planejamento</button>
     </Card>}
-    {plan && <>
+    {ready && plan && <>
       <Card className="p-5 space-y-3">
         <h2 className="font-semibold">Planejamento {plan.published ? "publicado" : "em preparação"}</h2>
         <p className="text-sm">{plan.proposals.length} proposta(s). {plan.published ? "As ocupações estão no cronograma e na agenda." : "Nenhuma proposta é ocupação confirmada."}</p>
@@ -194,7 +230,8 @@ export function SemesterPlanning({ user, reloadAgenda }: { user: User; reloadAge
           <div className="max-h-48 overflow-y-auto">{preview.checks.map((c, i) => <p key={i} className="text-xs">Proposta {c.proposalId} · {new Date(c.startsAt).toLocaleDateString("pt-BR")} · {c.existingOccupationId ? "ocupação existente" : "nova ocupação"}{c.blocks.length ? ` · ${c.blocks.join("; ")}` : ""}</p>)}</div>
           <button type="button" className="btn-primary" disabled={busy || !preview.allowed || preview.revision !== plan.revision} onClick={() => void run(async () => {
             await post(`/semester-plans/${plan.id}/publish`, { confirm: true, expectedRevision: preview.revision, expectedSignature: preview.signature });
-            setPreview(null); await reloadAgenda();
+            if (mounted.current) setPreview(null);
+            await reloadAgenda();
           }, "Planejamento publicado. O cronograma e a agenda foram atualizados.")}>Confirmar publicação</button>
         </>}
       </Card>}

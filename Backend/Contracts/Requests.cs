@@ -7,10 +7,11 @@ public record LoginRequest(string Email, string Password);
 public record SoftwareCreate(string Name);
 public record GroupSoftwareInput(int SoftwareId, int InstalledQuantity);
 public record ComputerGroupInput(string Description, int Quantity, int RamGb, HardwareTier Tier,
-    bool DedicatedGpu, List<GroupSoftwareInput> Software);
+    bool DedicatedGpu, List<GroupSoftwareInput> Software, int? Id = null);
 public record RoomInput(string Name, string Location, RoomKind Kind, int Seats, int Desks,
     bool HasProjector, bool HasTeacherComputer, bool HasInternet, bool Active,
-    List<ComputerGroupInput> ComputerGroups, string? Purpose = null, string? Code = null);
+    List<ComputerGroupInput> ComputerGroups, string? Purpose = null, string? Code = null,
+    RoomInventoryInput? Inventory = null);
 public record ShiftInput(string Name, TimeOnly StartsAt, TimeOnly EndsAt);
 public record SemesterCreate(string Name, DateOnly StartDate, DateOnly EndDate);
 public record ClassCreate(int SemesterId, string Name, int Students, int? CourseId = null, string? Code = null);
