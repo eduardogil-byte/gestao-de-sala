@@ -14,6 +14,19 @@ var builder = WebApplication.CreateBuilder(args);
 
 var connectionString = builder.Configuration.GetConnectionString("DefaultConnection")
     ?? throw new InvalidOperationException("ConnectionStrings:DefaultConnection não configurada");
+if (builder.Environment.IsEnvironment(HomologationSafety.EnvironmentName))
+{
+    var manifest = HomologationSafety.LoadManifest();
+    connectionString = HomologationSafety.RequiredConnection(manifest,
+        Environment.GetEnvironmentVariable("ConnectionStrings__DefaultConnection"),
+        Environment.GetEnvironmentVariable("Bootstrap__EnableDevelopmentSeed"),
+        Environment.GetEnvironmentVariable("Authentication__InstitutionalSso__Enabled"), DateTimeOffset.UtcNow);
+    if (builder.Configuration.GetValue<bool>("Bootstrap:EnableDevelopmentSeed") ||
+        builder.Configuration.GetValue<bool>("Authentication:InstitutionalSso:Enabled"))
+        throw new InvalidOperationException("Seed ou SSO habilitado no ambiente de homologação.");
+    await using var inspection = new Microsoft.Data.SqlClient.SqlConnection(connectionString);
+    await HomologationSafety.VerifyAsync(inspection, manifest);
+}
 SqlServerConnectionPolicy.Validate(connectionString, builder.Environment);
 
 var institutionalSso = builder.Configuration.GetSection("Authentication:InstitutionalSso")
