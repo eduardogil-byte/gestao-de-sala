@@ -17,5 +17,6 @@
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="../SalaGest.Api.csproj" />
+    <ProjectReference Include="../../tools/homologacao/SalaGest.Homologacao.csproj" />
   </ItemGroup>
 </Project>

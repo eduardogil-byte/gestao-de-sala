@@ -1,0 +1,13 @@
+{
+  "approvedForSyntheticUse": false,
+  "reservationId": "",
+  "serverEndpoint": "",
+  "serverName": "",
+  "database": "SalaGest_Etapa6_Testes",
+  "applicationSid": "",
+  "maintenanceSid": "",
+  "installerSid": "",
+  "blockedEndpoints": [],
+  "approvedBy": "",
+  "expiresAtUtc": "2000-01-01T00:00:00Z"
+}
