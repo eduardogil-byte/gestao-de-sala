@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { post, put, read } from "../lib/api";
 import { useData } from "../lib/data";
 import { dateBR, resultMessage } from "../lib/utils";
-import { Card, Field, Notice, Title } from "../components/UI";
+import { Card, Field, FilterBar, Notice, SectionHeading, Title } from "../components/UI";
 import type { User } from "../types";
 
 type Proposal = {
@@ -29,9 +29,9 @@ export function SemesterPlanning({ user, reloadAgenda }: { user: User; reloadAge
   const [semesterId, setSemesterId] = useState("");
   return <div className="space-y-5">
     <Title title="Planejamento Semestral" subtitle="Propostas e aprovação não ocupam ambientes. Apenas a publicação confirmada cria ocupações efetivas." />
-    <Card className="p-5"><Field label="Semestre"><select className="field" value={semesterId} onChange={(e) => setSemesterId(e.target.value)}>
+    <FilterBar><Field label="Semestre"><select className="field" value={semesterId} onChange={(e) => setSemesterId(e.target.value)}>
       <option value="">Selecione</option>{data.semesters.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
-    </select></Field></Card>
+    </select></Field></FilterBar>
     {semesterId && <SemesterPlan key={semesterId} semesterId={semesterId} user={user} reloadAgenda={reloadAgenda} />}
   </div>;
 }
@@ -173,7 +173,8 @@ function SemesterPlan({ semesterId, user, reloadAgenda }: {
     </Card>}
     {ready && plan && <>
       <Card className="p-5 space-y-3">
-        <h2 className="font-semibold">Planejamento {plan.published ? "publicado" : "em preparação"}</h2>
+        <SectionHeading title={`Planejamento ${plan.published ? "publicado" : "em preparação"}`}
+          subtitle={plan.published ? "As ocupações publicadas estão disponíveis no cronograma e na agenda." : "Propostas em preparação ainda não ocupam ambientes."} />
         <p className="text-sm">{plan.proposals.length} proposta(s). {plan.published ? "As ocupações estão no cronograma e na agenda." : "Nenhuma proposta é ocupação confirmada."}</p>
         {!plan.published && assignments.length === 0 && <p>Nenhuma atribuição pedagógica ativa disponível para você neste semestre.</p>}
         {!plan.published && assignments.length > 0 && <div className="grid sm:grid-cols-3 gap-3">
@@ -197,7 +198,7 @@ function SemesterPlan({ semesterId, user, reloadAgenda }: {
             {editingId && <button type="button" className="btn-secondary" disabled={busy} onClick={clearForm}>Cancelar edição</button>}</div>
         </div>}
       </Card>
-      <Card className="p-5 space-y-4"><h2 className="font-semibold">Propostas do semestre</h2>
+      <Card className="p-5 space-y-4"><SectionHeading title="Propostas do semestre" subtitle="Aprovação e publicação são etapas distintas e permanecem identificadas pelo estado." />
         <div className="grid sm:grid-cols-4 gap-2">
           {admin && <select aria-label="Filtrar professor" className="field" value={teacherFilter} onChange={(e) => setTeacherFilter(e.target.value)}><option value="">Todos os professores</option>{data.teachers.map((t) => <option key={t.id} value={t.id}>{t.displayName}</option>)}</select>}
           <select aria-label="Filtrar turma" className="field" value={classFilter} onChange={(e) => setClassFilter(e.target.value)}><option value="">Todas as turmas</option>{data.classes.filter((c) => c.semesterId === plan.semesterId).map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}</select>
@@ -221,7 +222,7 @@ function SemesterPlan({ semesterId, user, reloadAgenda }: {
           </div>}
         </div>)}
       </Card>
-      {admin && !plan.published && <Card className="p-5 space-y-3"><h2 className="font-semibold">Publicação</h2>
+      {admin && !plan.published && <Card className="p-5 space-y-3"><SectionHeading title="Publicação" subtitle="A prévia revalida todas as propostas aprovadas antes de criar ocupações." />
         <button type="button" className="btn-secondary" disabled={busy} onClick={() => void previewPublication()}>Consultar prévia</button>
         {preview && <><p>{preview.proposalCount} propostas · {preview.approved} aprovadas · {preview.toCreate} ocupações a criar · {preview.existing} ocupações equivalentes existentes.</p>
           <p className={preview.allowed ? "text-emerald-700" : "text-rose-700"}>{preview.allowed ? "Publicação permitida" : "Publicação bloqueada"}</p>
@@ -235,7 +236,7 @@ function SemesterPlan({ semesterId, user, reloadAgenda }: {
           }, "Planejamento publicado. O cronograma e a agenda foram atualizados.")}>Confirmar publicação</button>
         </>}
       </Card>}
-      <Card className="p-5"><h2 className="font-semibold mb-3">Histórico</h2>
+      <Card className="p-5"><SectionHeading title="Histórico" subtitle="Registro das ações realizadas sobre este planejamento." />
         {history.length === 0 ? <p>Sem eventos registrados.</p> : <ol className="space-y-2 text-sm">{history.map((h) => <li key={h.id} className="border-b pb-2">
           {new Date(h.createdAtUtc).toLocaleString("pt-BR")} · {h.actorName} · {h.action} · {h.entityType} #{h.entityId}{h.reason ? ` · ${h.reason}` : ""}
           {publishedDistribution(h)?.map((item) => <p key={item.Id} className="text-slate-600 ml-3">

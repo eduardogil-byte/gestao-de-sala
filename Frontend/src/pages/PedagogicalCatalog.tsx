@@ -6,7 +6,7 @@ import {
   canEditCatalog, catalogErrorMessage, catalogPath, formatHours, parseHours, parseOrder,
   shiftHours, workloadText,
 } from "../lib/pedagogicalCatalog";
-import { Badge, Busy, Card, Empty, Field, Modal, Notice, SubmitButton, Title } from "../components/UI";
+import { Badge, Busy, Card, Empty, Field, MetricCard, Modal, Notice, SectionHeading, SubmitButton, Title } from "../components/UI";
 import { CapabilityRequirements } from "../components/CapabilityRequirements";
 import type {
   Course, CourseModule, CurricularCapability, CurricularUnit, User, WorkloadSummary,
@@ -224,7 +224,7 @@ export function PedagogicalCatalog({ user }: { user: User }) {
           <Plus size={16} /> Novo {levelNames[level]}
         </button> : undefined} />
 
-      <nav aria-label="Caminho no catálogo" className="flex flex-wrap items-center gap-2 text-sm mb-5">
+      <nav aria-label="Caminho no catálogo" className="card flex flex-wrap items-center gap-2 p-3 text-sm mb-5">
         <button className="text-skybrand-700 font-semibold hover:underline" onClick={goCourses}
           disabled={busy !== ""}>Cursos</button>
         {courseId !== null && <><ChevronRight size={15} className="text-slate-400" />
@@ -248,7 +248,7 @@ export function PedagogicalCatalog({ user }: { user: User }) {
       {loadError && <div className="mb-4"><Notice message={loadError} /></div>}
 
       {formOpen && admin && <Card className="p-5 mb-5">
-        <h2 className="section-title mb-4">{editId === null ? "Cadastrar" : "Editar"} {levelNames[level]}</h2>
+        <SectionHeading title={`${editId === null ? "Cadastrar" : "Editar"} ${levelNames[level]}`} subtitle="Os dados permanecem vinculados ao nível pedagógico exibido no caminho acima." />
         <form onSubmit={(event) => void saveEntry(event)} className="space-y-4">
           <div className="grid gap-4 md:grid-cols-2">
             {(level === "course" || level === "unit") && <Field label="Código">
@@ -293,7 +293,7 @@ export function PedagogicalCatalog({ user }: { user: User }) {
       </Card>}
 
       {level === "capability" && <Card className="p-5 mb-5">
-        <h2 className="section-title mb-4">Carga horária da UC</h2>
+        <SectionHeading title="Carga horária da UC" subtitle="Compare a carga prevista com a soma das capacidades e a duração do turno." />
         {admin && <form onSubmit={(event) => void saveWorkload(event)} className="flex flex-wrap items-end gap-3 mb-5">
           <Field label="CH prevista (horas; vazio = indefinida)" className="w-full sm:w-64">
             <input className="field" inputMode="decimal" placeholder="Ex.: 40,5"
@@ -328,23 +328,19 @@ export function PedagogicalCatalog({ user }: { user: User }) {
         {summaryLoading && <Busy />}
         {!summaryLoading && summary && <div aria-label="Resumo da carga horária"
           className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5 text-sm">
-          <div><p className="text-slate-500">CH prevista</p><p className="font-semibold">
-            {summary.plannedHours === null ? "Indefinida" : `${formatHours(summary.plannedHours)} h`}</p></div>
-          <div><p className="text-slate-500">Soma das capacidades</p><p className="font-semibold">
-            {formatHours(summary.capabilityHours)} h</p></div>
+          <MetricCard label="CH prevista" value={summary.plannedHours === null ? "Indefinida" : `${formatHours(summary.plannedHours)} h`} tone="blue" />
+          <MetricCard label="Soma das capacidades" value={`${formatHours(summary.capabilityHours)} h`} tone="violet" />
           <div><p className="text-slate-500">Diferença</p><p className="font-semibold">
             {summary.status === "Undefined" ? "Indefinida" : summary.status === "MissingHours"
               ? `${formatHours(summary.missingHours)} h faltantes` : summary.status === "ExcessHours"
                 ? `${formatHours(summary.excessHours)} h excedentes` : "0 h"}</p></div>
-          <div><p className="text-slate-500">Situação</p><p className="font-semibold">
-            {workloadText(summary)}</p></div>
-          <div><p className="text-slate-500">Encontros estimados</p><p className="font-semibold">
-            {summary.requiredMeetings === null ? "Indefinidos" : summary.requiredMeetings}</p></div>
+          <MetricCard label="Situação" value={workloadText(summary)} tone={summary.status === "Balanced" ? "emerald" : "amber"} />
+          <MetricCard label="Encontros estimados" value={summary.requiredMeetings === null ? "Indefinidos" : summary.requiredMeetings} tone="slate" />
         </div>}
       </Card>}
 
       <Card className="overflow-hidden">
-        <div className="px-5 py-4 border-b border-slate-100 flex items-center justify-between gap-3">
+        <div className="px-5 py-4 border-b border-line flex items-center justify-between gap-3">
           <h2 className="section-title">{level === "course" ? "Cursos" : level === "module" ? "Módulos" :
             level === "unit" ? "Unidades curriculares" : "Capacidades"}</h2>
           {!loading && !loadError && <span className="text-xs text-slate-500">{count} registro(s)</span>}

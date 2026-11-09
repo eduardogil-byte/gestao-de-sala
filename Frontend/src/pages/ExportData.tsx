@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Card, Field, Notice, Title } from "../components/UI";
+import { Card, Field, FilterBar, Notice, SectionHeading, Title } from "../components/UI";
 import { downloadFile } from "../lib/api";
 import { useData } from "../lib/data";
 import { resultMessage } from "../lib/utils";
@@ -47,13 +47,14 @@ export function ExportData({ initial }: { initial?: { semesterId: number; second
   return <div className="space-y-5">
     <Title title="Exportar Dados" subtitle="Gere relatórios Excel somente leitura a partir dos dados e indicadores oficiais." />
     <Card className="p-5 space-y-4">
+      <SectionHeading title="Configurar exportação" subtitle="Escolha o relatório e restrinja o conteúdo pelos filtros compatíveis." />
       <Field label="Relatório">
         <select className="field" value={report} disabled={busy} onChange={(e) => { setReport(e.target.value as Report); setError(""); }}>
           {choices.map(([key, label]) => <option key={key} value={key}>{label}</option>)}
         </select>
       </Field>
       <p className="text-sm text-slate-600">{description}</p>
-      <div className="grid md:grid-cols-2 gap-4">
+      <FilterBar embedded>
         {(needsSemester || report === "Ocupacoes") && <Field label={report === "Comparacao" ? "Primeiro semestre" : report === "Ocupacoes" ? "Semestre (opcional)" : "Semestre"}>
           <select className="field" value={semester} disabled={busy} onChange={(e) => setSemester(e.target.value)}>
             <option value="">Selecione</option>{data.semesters.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
@@ -80,14 +81,14 @@ export function ExportData({ initial }: { initial?: { semesterId: number; second
             <option value="Aprovada">Aprovadas</option><option value="Rejeitada">Rejeitadas</option><option value="Publicada">Publicadas</option>
           </select>
         </Field>}
-      </div>
+      </FilterBar>
       {error && <Notice message={error} />}
       <button type="button" className="btn-primary" disabled={busy || (needsSemester && !semester) ||
         (report === "Comparacao" && (!secondSemester || semester === secondSemester)) ||
         (needsRange && (!from || !to))} onClick={() => void exportReport()}>
         {busy ? "Gerando arquivo..." : "Exportar Excel"}
       </button>
-      <p className="text-xs text-slate-500">Limite: 10.000 linhas por relatório. As exportações não alteram cadastros ou ocupações.</p>
+      <p className="rounded-control bg-slate-50 px-3 py-2 text-xs text-muted-ink">Limite: 10.000 linhas por relatório. As exportações não alteram cadastros ou ocupações.</p>
     </Card>
   </div>;
 }

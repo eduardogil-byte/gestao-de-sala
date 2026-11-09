@@ -4,7 +4,7 @@ import { useData } from "../lib/data";
 import { comparisonPath, indicatorErrorMessage, indicatorPath, isSemesterIndicators, orderedRooms, settleCurrent, shiftDistribution, variationPoints,
   type RoomIndicator, type SemesterComparison, type SemesterIndicators } from "../lib/occupancyIndicators";
 import { localDate, roomKind } from "../lib/utils";
-import { Busy, Card, Field, Modal, Notice } from "./UI";
+import { Busy, Card, Field, FilterBar, MetricCard, Modal, Notice, SectionHeading } from "./UI";
 import { OperatingShiftEditor } from "./OperatingShiftEditor";
 
 const hours = (value: number | null) => value === null ? "Não comprovada" :
@@ -18,21 +18,20 @@ function Summary({ report }: { report: SemesterIndicators }) {
   const knownRooms = report.rooms.filter((room) => room.capacityHours !== null && room.availableHours !== null);
   const knownCapacity = knownRooms.length ? hours(knownRooms.reduce((sum, room) => sum + room.capacityHours!, 0)) : "Não comprovada";
   const knownAvailable = knownRooms.length ? hours(knownRooms.reduce((sum, room) => sum + room.availableHours!, 0)) : "Não comprovadas";
-  const cards = [
-    ["Ocupação geral", percent(report.occupancyPercent)],
-    ["Horas ocupadas fisicamente", hours(report.physicalOccupiedHours)],
-    ["Horas disponíveis comprovadas", report.availableHours === null ? knownAvailable : hours(report.availableHours)],
-    ["Capacidade comprovada", report.capacityHours === null ? knownCapacity : hours(report.capacityHours)],
-    ["Ambientes analisados", String(report.rooms.length)],
-    ["Gargalos", String(report.rooms.filter((r) => r.classification === "Bottleneck").length)],
-    ["Oportunidades", String(report.rooms.filter((r) => r.classification === "Opportunity").length)],
-    ["Pares de conflitos", String(report.conflictPairs)],
+  const cards: { label: string; value: string; tone: "blue" | "violet" | "amber" | "emerald" | "rose" | "slate" }[] = [
+    { label: "Ocupação geral", value: percent(report.occupancyPercent), tone: report.occupancyPercent === null ? "slate" : "blue" },
+    { label: "Horas ocupadas fisicamente", value: hours(report.physicalOccupiedHours), tone: "violet" },
+    { label: "Horas disponíveis comprovadas", value: report.availableHours === null ? knownAvailable : hours(report.availableHours), tone: "emerald" },
+    { label: "Capacidade comprovada", value: report.capacityHours === null ? knownCapacity : hours(report.capacityHours), tone: "blue" },
+    { label: "Ambientes analisados", value: String(report.rooms.length), tone: "slate" },
+    { label: "Gargalos", value: String(report.rooms.filter((r) => r.classification === "Bottleneck").length), tone: "rose" },
+    { label: "Oportunidades", value: String(report.rooms.filter((r) => r.classification === "Opportunity").length), tone: "emerald" },
+    { label: "Pares de conflitos", value: String(report.conflictPairs), tone: report.conflictPairs ? "amber" : "slate" },
   ];
   return <section aria-label="Resumo do semestre" className="space-y-3">
-    <h3 className="section-title">Resumo do semestre</h3>
-    <div className="grid grid-cols-2 xl:grid-cols-4 gap-3">
-      {cards.map(([label, value]) => <Card key={label} className="p-4"><p className="text-xs text-slate-600">{label}</p>
-        <p className="mt-2 text-xl font-bold text-slate-800">{value}</p></Card>)}
+    <SectionHeading title="Resumo do semestre" subtitle="Indicadores calculados somente com a capacidade e os registros disponíveis." />
+    <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-3">
+      {cards.map((card) => <MetricCard key={card.label} {...card} />)}
     </div>
     {report.roomsWithUnknownCapacity > 0 && <Notice message={`${report.roomsWithUnknownCapacity} ambiente(s) sem capacidade comprovada. Capacidade e horas disponíveis acima cobrem apenas ${knownRooms.length} ambiente(s); o percentual geral está indeterminado. As horas físicas permanecem visíveis.`} />}
     {report.rooms.length === 0 && <Notice message="Nenhum ambiente cadastrado para este filtro." />}
@@ -188,19 +187,18 @@ export function ManagerDashboard({ onTimeline, onOpportunity, onExport, admin = 
     return () => { active = false; };
   }, [compareKey, semesterId, secondId, roomId]);
   return <div className="mt-6 space-y-5">
-    <div className="flex justify-end"><button type="button" className="btn-secondary" disabled={!semesterId} onClick={() => onExport(Number(semesterId), secondId ? Number(secondId) : null, roomId ? Number(roomId) : null)}>Exportar indicadores e relatórios</button></div>
-    <div><h2 className="text-xl font-bold text-slate-800">Dashboard gerencial de ocupação</h2>
-      <p className="text-sm text-slate-600 mt-1">Indicadores oficiais da SG-23 para ocupações registradas no semestre.</p></div>
-    <Card className="p-5 grid sm:grid-cols-2 gap-3">
+    <SectionHeading title="Dashboard gerencial de ocupação"
+      subtitle="Indicadores oficiais para as ocupações registradas no semestre. Valores sem base comprovada são identificados explicitamente."
+      action={<button type="button" className="btn-secondary" disabled={!semesterId} onClick={() => onExport(Number(semesterId), secondId ? Number(secondId) : null, roomId ? Number(roomId) : null)}>Exportar relatórios</button>} />
+    <FilterBar actions={admin ? <button type="button" className="btn-secondary" disabled={!semesterId} onClick={() => setConfiguring(true)}>Configurar turnos oferecidos</button> : undefined}>
       <Field label="Semestre"><select className="field" value={semesterId} onChange={(e) => { setSemesterId(e.target.value); if (e.target.value === secondId) setSecondId(""); }}>
         <option value="">Selecione</option>{data.semesters.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
       </select></Field>
       <Field label="Ambiente"><select className="field" value={roomId} onChange={(e) => setRoomId(e.target.value)}>
         <option value="">Todos</option>{data.rooms.map((r) => <option key={r.id} value={r.id}>{r.name}</option>)}
       </select></Field>
-    </Card>
+    </FilterBar>
     {inventoryPending.length > 0 && <Notice type="info" message={`Quantidade operacional de computadores não informada em: ${inventoryPending.map((room) => room.name).join(", ")}. Confira o inventário em Ambientes; o cadastro de máquinas não comprova adequação técnica.`} />}
-    {admin && <button type="button" className="btn-secondary" disabled={!semesterId} onClick={() => setConfiguring(true)}>Configurar turnos oferecidos</button>}
     {admin && configuring && semesterId && <Modal title="Turnos oferecidos por ambiente" onClose={() => setConfiguring(false)}>
       <OperatingShiftEditor key={semesterId} semesterId={Number(semesterId)} roomId={roomId} onSaved={() => setIndicatorRevision((value) => value + 1)} />
     </Modal>}

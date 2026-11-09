@@ -10,7 +10,7 @@ import {
 } from "lucide-react";
 import { useData } from "../lib/data";
 import { dateTimeBR, roomKind } from "../lib/utils";
-import { Card, Empty, Title, Badge } from "../components/UI";
+import { Card, Empty, Title, Badge, MetricCard, SectionHeading } from "../components/UI";
 import { UsagePanel } from "../components/UsagePanel";
 import { ManagerDashboard } from "../components/ManagerDashboard";
 import type { Occupation, User } from "../types";
@@ -39,28 +39,32 @@ export function Dashboard({
       title: "Ambientes cadastrados",
       value: data.rooms.length,
       icon: DoorOpen,
-      color: "bg-sky-50 text-sky-700",
+      tone: "blue" as const,
+      detail: "Recursos e capacidade física",
       page: "rooms",
     },
     {
       title: "Professores",
       value: data.teachers.length,
       icon: Users,
-      color: "bg-violet-50 text-violet-700",
+      tone: "violet" as const,
+      detail: "Perfis pedagógicos cadastrados",
       page: "teachers",
     },
     {
       title: "Turmas",
       value: data.classes.length,
       icon: GraduationCap,
-      color: "bg-amber-50 text-amber-700",
+      tone: "amber" as const,
+      detail: "Ofertas acadêmicas cadastradas",
       page: "academic",
     },
     {
       title: admin ? "Reservas registradas" : "Minhas reservas",
       value: data.bookings.length,
       icon: Clock3,
-      color: "bg-emerald-50 text-emerald-700",
+      tone: "emerald" as const,
+      detail: admin ? "Todos os estados registrados" : "Solicitações vinculadas à sua conta",
       page: "bookings",
     },
   ];
@@ -119,7 +123,7 @@ export function Dashboard({
         title={`Olá, ${user.displayName.split(" ")[0]}!`}
         subtitle="Acompanhe salas, aulas e solicitações da instituição."
       />
-      <div className="rounded-2xl bg-gradient-to-r from-navy-900 via-navy-800 to-[#315a82] text-white p-6 md:p-8 mb-6 relative overflow-hidden">
+      <div className="rounded-panel bg-navy-900 text-white p-6 md:p-8 mb-6 relative overflow-hidden shadow-soft border border-navy-700">
         <div className="absolute right-0 top-0 w-60 h-60 rounded-full border-[40px] border-white/5 translate-x-1/3 -translate-y-1/3" />
         <div className="relative z-10 max-w-xl">
           <span className="uppercase tracking-wider text-xs font-semibold text-blue-200">
@@ -141,47 +145,22 @@ export function Dashboard({
           </button>
         </div>
       </div>
-      <div className="grid grid-cols-2 xl:grid-cols-4 gap-3 md:gap-4 mb-6">
+      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-3 md:gap-4 mb-6">
         {stats.map((s) => (
-          <button
-            onClick={() => navigate(s.page)}
-            key={s.title}
-            className="card p-4 text-left hover:border-skybrand-200 transition"
-          >
-            <div className="flex items-center justify-between gap-2 mb-5">
-              <span className="text-xs font-medium text-slate-500">
-                {s.title}
-              </span>
-              <span
-                className={`w-9 h-9 shrink-0 rounded-xl flex items-center justify-center ${s.color}`}
-              >
-                <s.icon size={18} />
-              </span>
-            </div>
-            <div className="flex items-end justify-between">
-              <div className="text-3xl font-bold tracking-tight text-slate-800">
-                {s.value}
-              </div>
-              <ArrowUpRight className="text-slate-300" size={18} />
-            </div>
-          </button>
+          <MetricCard key={s.title} label={s.title} value={s.value} detail={s.detail}
+            icon={s.icon} tone={s.tone} onClick={() => navigate(s.page)} />
         ))}
       </div>
       <div className="grid xl:grid-cols-[1.6fr_1fr] gap-5">
         <Card className="overflow-hidden">
-          <div className="px-5 py-4 border-b border-slate-100 flex items-center justify-between">
-            <div>
-              <h3 className="section-title">Próximas ocupações</h3>
-              <p className="text-xs text-slate-500 mt-0.5">
-                Aulas, reservas e bloqueios
-              </p>
-            </div>
-            <button
+          <div className="px-5 py-4 border-b border-line">
+            <SectionHeading title="Próximas ocupações" subtitle="Aulas, reservas e bloqueios"
+              action={<button
               className="text-sm font-semibold text-skybrand-700 flex gap-1 items-center"
               onClick={() => navigate("agenda")}
             >
               Ver agenda <MoveRight size={15} />
-            </button>
+            </button>} />
           </div>
           {soon.length === 0 ? (
             <Empty text="Nenhuma ocupação encontrada nos próximos dias. Consulte a agenda para outro período." />

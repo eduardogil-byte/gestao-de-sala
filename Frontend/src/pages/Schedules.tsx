@@ -3,7 +3,7 @@ import { CalendarCheck2, Sparkles, Send, AlertTriangle } from "lucide-react";
 import { useData } from "../lib/data";
 import { post, read } from "../lib/api";
 import { dayNames, hour, resultMessage } from "../lib/utils";
-import { Badge, Card, Empty, Field, Notice, Title, useConfirmation } from "../components/UI";
+import { Badge, Card, Empty, Field, FilterBar, Notice, SectionHeading, Title, useConfirmation } from "../components/UI";
 import type { ScheduleDetails, User } from "../types";
 
 export function Schedules({
@@ -95,8 +95,12 @@ export function Schedules({
           />
         </div>
       )}
-      <Card className="p-5 mb-5">
-        <div className="flex flex-wrap gap-4 items-end">
+      <div className="mb-5">
+        <FilterBar actions={admin && (
+            <button onClick={() => void generate()} disabled={!semesterId || busy} className="btn-primary">
+              <Sparkles size={16} />{busy ? "Processando..." : "Gerar nova grade"}
+            </button>
+          )}>
           <Field className="flex-1" label="Semestre">
             <select
               className="field"
@@ -114,27 +118,17 @@ export function Schedules({
               ))}
             </select>
           </Field>
-          {admin && (
-            <button
-              onClick={() => void generate()}
-              disabled={!semesterId || busy}
-              className="btn-primary"
-            >
-              <Sparkles size={16} />
-              {busy ? "Processando..." : "Gerar nova grade"}
-            </button>
-          )}
-        </div>
+        </FilterBar>
         <p className="text-xs text-slate-500 mt-3">
           O algoritmo atual é heurístico: gera aulas semanais completas conforme
           disponibilidade e salas compatíveis. Ainda não realiza otimização
           global.
         </p>
-      </Card>
+      </div>
       <div className="grid lg:grid-cols-[300px_1fr] gap-5">
         <Card className="overflow-hidden self-start">
-          <div className="p-4 border-b border-slate-100">
-            <h3 className="section-title">Versões da grade</h3>
+          <div className="p-4 border-b border-line">
+            <SectionHeading title="Versões da grade" subtitle="Rascunhos e publicações do semestre." />
           </div>
           {schedules.length === 0 ? (
             <Empty
@@ -209,7 +203,7 @@ export function Schedules({
               {details.lessons.length === 0 ? (
                 <Empty text="Não foi possível alocar aulas neste rascunho." />
               ) : (
-                <div className="overflow-x-auto">
+                <div className="data-table-wrap border-0 rounded-none">
                   <table className="min-w-full">
                     <thead>
                       <tr className="table-head">

@@ -6,7 +6,7 @@ import { indicatorErrorMessage, indicatorPath, isSemesterIndicators, orderedRoom
 import { capabilitiesPath, periodsPath, validCapabilities, validPeriods,
   type CapabilityOpportunity, type OpportunityPeriods } from "../lib/roomOpportunities";
 import { dateBR, localDate, roomKind } from "../lib/utils";
-import { Busy, Card, Field, Notice, Title } from "../components/UI";
+import { Busy, Card, Field, FilterBar, Notice, SectionHeading, Title } from "../components/UI";
 import type { Course } from "../types";
 
 const weekdays = ["Dom", "Seg", "Ter", "Qua", "Qui", "Sex", "Sáb"];
@@ -129,14 +129,14 @@ export function RoomOpportunities({ initial, onTimeline }: {
   const rows = report && reportKey === semesterId ? orderedRooms(report.rooms) : [];
   return <div className="space-y-5">
     <Title title="Oportunidades de Ambientes" subtitle="Análise técnica e de períodos para a coordenação. Nenhuma consulta cria reserva." />
-    <Card className="p-5 space-y-4"><div className="grid sm:grid-cols-2 gap-3">
+    <Card className="p-5 space-y-4"><SectionHeading title="Ambiente para análise" subtitle="Selecione o semestre e um ambiente com indicadores disponíveis." /><FilterBar embedded>
       <Field label="Semestre"><select className="field" value={semesterId} onChange={(event) => { setSemesterId(event.target.value); setRoomId(""); }}>
         <option value="">Selecione</option>{data.semesters.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
       </select></Field>
       <Field label="Ambiente"><select className="field" value={roomId} onChange={(event) => setRoomId(event.target.value)}>
         <option value="">Selecione</option>{rows.map((item) => <option key={item.roomId} value={item.roomId}>{item.roomName}</option>)}
       </select></Field>
-    </div>
+    </FilterBar>
       {!data.semesters.length && <Notice message="Nenhum semestre cadastrado." />}
       {reportLoading && <Busy />}{reportError && <Notice type="error" message={reportError} />}
       {report && reportKey === semesterId && rows.length === 0 && <Notice message="Nenhum ambiente cadastrado." />}
@@ -151,7 +151,7 @@ export function RoomOpportunities({ initial, onTimeline }: {
       {room && reportKey === semesterId && <button type="button" className="btn-secondary" onClick={() => onTimeline(Number(semesterId), room.id)}>Ver cronograma do ambiente</button>}
     </Card>
     {room && reportKey === semesterId && <>
-      <Card className="p-5 space-y-3"><h2 className="section-title">Atividades pedagógicas cadastradas</h2>
+      <Card className="p-5 space-y-3"><SectionHeading title="Atividades pedagógicas cadastradas" subtitle="Compare requisitos reais com o inventário do ambiente selecionado." />
         <p className="text-sm text-slate-600">A compatibilidade da lista considera os recursos até o fim do semestre; a análise de períodos reavalia a data final. Uma capacidade compatível não comprova a viabilidade de um curso inteiro.</p>
         <div className="grid sm:grid-cols-2 gap-3"><Field label="Alunos"><input className="field" type="number" min="1" max="1000" value={students} onChange={(event) => setStudents(event.target.value)} /></Field>
           <Field label="Curso"><select className="field" value={courseId} onChange={(event) => setCourseId(event.target.value)}><option value="">Todos</option>{courses.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></Field></div>
@@ -170,7 +170,7 @@ export function RoomOpportunities({ initial, onTimeline }: {
             {finding.detail} · {finding.status === "Met" ? "atendido" : finding.status === "Unknown" ? "não comprovado" : "requer atenção"}</li>)}</ul>
         </div>}
       </Card>
-      {selected && <Card className="p-5 space-y-3"><h2 className="section-title">Períodos concretos para análise</h2>
+      {selected && <Card className="p-5 space-y-3"><SectionHeading title="Períodos concretos para análise" subtitle="A consulta não cria reserva e cada data ainda exige validação no fluxo oficial." />
         <div className="grid sm:grid-cols-3 gap-3"><Field label="Início"><input className="field" type="date" value={from} onChange={(event) => setFrom(event.target.value)} /></Field>
           <Field label="Fim"><input className="field" type="date" value={to} onChange={(event) => setTo(event.target.value)} /></Field>
           <Field label="Turno"><select className="field" value={shiftId} onChange={(event) => setShiftId(event.target.value)}><option value="">Selecione</option>{data.shifts.map((item) => <option key={item.id} value={item.id}>{item.name} · {item.startsAt.slice(0, 5)}–{item.endsAt.slice(0, 5)}</option>)}</select></Field></div>

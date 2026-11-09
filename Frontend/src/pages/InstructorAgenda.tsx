@@ -4,7 +4,7 @@ import { useData } from "../lib/data";
 import { agendaErrorMessage, assignmentConflicts, loadSemesterAgenda, teacherActivities, teacherWorkload } from "../lib/instructorAgenda";
 import { movePeriod, type TimelineView } from "../lib/roomTimeline";
 import { dateBR, localDate, nextDate, statusText } from "../lib/utils";
-import { Busy, Card, Field, Modal, Notice, SearchableSelect, Title } from "../components/UI";
+import { Busy, Card, Field, FilterBar, MetricCard, Modal, Notice, SearchableSelect, SectionHeading, Title } from "../components/UI";
 import type { AgendaOccupation, User } from "../types";
 
 const viewNames: Record<TimelineView, string> = { week: "Semana", month: "Mês", semester: "Semestre" };
@@ -140,6 +140,7 @@ export function InstructorAgenda({ user, onOpenRelated, onManage }: { user: User
     <Title title={admin ? "Agenda dos Instrutores" : "Minha Agenda"} subtitle={`Aulas e carga por docente · ${periodLabel}`}
       action={<button type="button" className="btn-secondary" onClick={() => setRevision((value) => value + 1)}>Atualizar agenda</button>} />
     <Card className="p-4 mb-5 space-y-4">
+      <SectionHeading title="Período da agenda" subtitle="Consulte semana, mês ou semestre mantendo o instrutor e o contexto selecionados." />
       <div className="flex flex-wrap gap-2 items-center">
         {(["week", "month", "semester"] as TimelineView[]).map((choice) => <button key={choice} type="button"
           aria-pressed={view === choice} onClick={() => changeView(choice)} className={view === choice ? "btn-primary" : "btn-secondary"}>{viewNames[choice]}</button>)}
@@ -149,23 +150,22 @@ export function InstructorAgenda({ user, onOpenRelated, onManage }: { user: User
           <button type="button" className="btn-secondary" onClick={() => navigate(1)} aria-label="Próximo período">›</button>
         </div>
       </div>
-      <div className="grid sm:grid-cols-2 gap-3">
+      <FilterBar embedded>
         <Field label="Semestre"><select className="field" value={semesterId} onChange={(event) => selectSemester(event.target.value)}>
           <option value="">Selecione</option>{data.semesters.map((entry) => <option key={entry.id} value={entry.id}>{entry.name}</option>)}
         </select></Field>
         {admin && <SearchableSelect label="Instrutor" value={teacherId} onChange={(value) => { setTeacherId(value); setSelectedDay(""); }}
           options={[{ value: "", label: "Visão geral dos instrutores" }, ...data.teachers.map((entry) => ({ value: entry.id, label: entry.displayName }))]} />}
-      </div>
+      </FilterBar>
     </Card>
     {catalogError && <Notice message={"Não foi possível carregar os cadastros: " + catalogError} />}
     {!catalogLoading && !catalogError && !semester && <Notice message="Selecione um semestre cadastrado para consultar a agenda." />}
     {error && <Notice message={error} />}
     {(catalogLoading || loading) && <Busy />}
     {ready && admin && !teacherId && <Card className="p-4 mb-5">
-      <h2 className="font-semibold text-slate-800 mb-3">Carga horária por instrutor</h2>
-      <p className="text-sm text-slate-600 mb-4">Horas de ocupações efetivas com turno cadastrado. Sem limite institucional configurado.</p>
+      <SectionHeading title="Carga horária por instrutor" subtitle="Carga semestral baseada em ocupações efetivas com turno cadastrado. Sem limite institucional configurado." />
       {!data.teachers.length ? <p className="text-sm text-slate-600">Nenhum instrutor cadastrado para consulta.</p> :
-        <div className="overflow-x-auto"><table className="w-full text-sm"><thead><tr className="text-left border-b"><th className="p-2">Instrutor</th><th className="p-2">Horas no semestre</th><th className="p-2">Atividades</th><th className="p-2">Situação</th></tr></thead>
+        <div className="data-table-wrap mt-4"><table className="w-full text-sm"><thead><tr className="table-head"><th className="p-3 text-left">Instrutor</th><th className="p-3 text-left">Carga semestral</th><th className="p-3 text-left">Atividades</th><th className="p-3 text-left">Situação</th></tr></thead>
           <tbody>{overview.map(({ teacher: entry, total }) => <tr key={entry.id} className="border-b">
             <td className="p-2"><button type="button" className="text-sky-700 font-medium underline" onClick={() => setTeacherId(entry.id)}>{entry.displayName}</button></td>
             <td className="p-2">{formatHours(total.hours)}{(total.withoutRegisteredShift > 0 || total.withoutApprovedBooking > 0) && " + horas não contabilizadas"}</td><td className="p-2">{total.activities}</td>
@@ -175,19 +175,19 @@ export function InstructorAgenda({ user, onOpenRelated, onManage }: { user: User
     </Card>}
     {ready && teacherId && <>
       <Card className="p-4 mb-5">
-        <h2 className="font-semibold text-slate-800">{teacher?.displayName ?? "Instrutor selecionado"}</h2>
-        <div className="flex flex-wrap gap-x-6 gap-y-1 mt-2 text-sm text-slate-700">
-          <span><strong>{formatHours(workload.hours)}</strong> de ocupações efetivas no semestre</span>
-          <span><strong>{formatHours(weeklyWorkload.hours)}</strong> na semana de {dateBR(week)} a {dateBR(nextDate(week, 6))}</span>
-          <span>{workload.activities} atividades registradas</span>
-          <span>{workload.conflicts} atividades com conflito</span>
+        <SectionHeading title={teacher?.displayName ?? "Instrutor selecionado"} subtitle="Carga calculada a partir das ocupações efetivas e dos turnos cadastrados." />
+        <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+          <MetricCard label="Carga semestral" value={`${formatHours(workload.hours)} de ocupações efetivas no semestre`} tone="blue" />
+          <MetricCard label="Carga semanal" value={`${formatHours(weeklyWorkload.hours)} na semana de ${dateBR(week)} a ${dateBR(nextDate(week, 6))}`} tone="violet" />
+          <MetricCard label="Atividades" value={workload.activities} tone="slate" />
+          <MetricCard label="Com conflito" value={workload.conflicts} tone={workload.conflicts ? "rose" : "emerald"} />
         </div>
         {workload.withoutRegisteredShift > 0 && <p className="text-sm text-amber-800 mt-2">{workload.withoutRegisteredShift} atividade(s) sem turno válido não entram na soma de horas.</p>}
         {workload.withoutApprovedBooking > 0 && <p className="text-sm text-amber-800 mt-2">{workload.withoutApprovedBooking} ocupação(ões) vinculada(s) a reserva não aprovada não entram na soma de horas confirmadas.</p>}
         <p className="text-xs text-slate-600 mt-2">Horas calculadas pelos turnos cadastrados, sem dupla contagem de intervalos simultâneos. Atribuições pedagógicas sem ocupação não entram na soma. Sem limite institucional de carga configurado.</p>
         {!workload.activities && <p className="text-sm text-slate-600 mt-3">Sem atividades registradas no período. Isso não confirma disponibilidade contratual.</p>}
       </Card>
-      {view === "week" && <Card className="overflow-hidden mb-5"><div className="hidden lg:block overflow-x-auto"><table className="w-full min-w-[900px] text-sm">
+      {view === "week" && <Card className="overflow-hidden mb-5"><div className="hidden lg:block data-table-wrap border-0 rounded-none"><table className="w-full min-w-[900px] text-sm">
         <thead><tr><th className="sticky left-0 bg-white p-3 text-left border-b min-w-32">Turno</th>{weekDates.map((date) => <th key={date} className={`p-3 text-left border-b min-w-32 ${date === localDate(new Date()) ? "bg-sky-50 text-sky-900" : ""}`} aria-current={date === localDate(new Date()) ? "date" : undefined}>{weekDays[new Date(date + "T12:00:00").getDay()]}<span className="block text-xs font-normal">{dateBR(date)}{date === localDate(new Date()) ? " · Hoje" : ""}</span></th>)}</tr></thead>
         <tbody>{data.shifts.map((shift) => <tr key={shift.id}><th scope="row" className="sticky left-0 bg-white p-3 border-b text-left align-top">{shift.name}<span className="block text-xs font-normal text-slate-500">{shift.startsAt.slice(0, 5)}–{shift.endsAt.slice(0, 5)}</span></th>
           {weekDates.map((date) => { const rows = (byDay.get(date) ?? []).filter((item) => item.shiftId === shift.id); return <td key={date} className="p-2 border-b align-top">{!withinSemester(date) ? <span className="text-xs text-slate-500">Fora do semestre</span> : rows.length ? <div className="space-y-1">{rows.length > 1 && <p className="text-xs font-bold text-slate-700">{rows.length} ocupações</p>}{rows.map((item) => <Activity key={item.id} item={item} onSelect={setSelected} />)}</div> : <span className="text-xs text-slate-500">Sem aula registrada</span>}</td>; })}</tr>)}</tbody>

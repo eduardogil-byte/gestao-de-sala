@@ -5,6 +5,7 @@ import {
   LoaderCircle,
   X,
   Inbox,
+  type LucideIcon,
 } from "lucide-react";
 import { statusText } from "../lib/utils";
 
@@ -18,18 +19,60 @@ export function Title({
   action?: ReactNode;
 }) {
   return (
-    <div className="flex flex-wrap items-center justify-between gap-4 mb-6">
-      <div>
-        <h1 className="text-2xl md:text-[28px] leading-tight font-bold tracking-tight text-ink">
+    <div className="flex flex-col gap-4 border-b border-line pb-5 mb-6 sm:flex-row sm:items-end sm:justify-between">
+      <div className="min-w-0">
+        <h1 className="text-[1.75rem] md:text-[2rem] leading-tight font-extrabold tracking-[-.025em] text-ink text-balance">
           {title}
         </h1>
         {subtitle && (
-          <p className="text-muted-ink mt-1.5 text-sm">{subtitle}</p>
+          <p className="text-muted-ink mt-2 max-w-3xl text-sm leading-6">{subtitle}</p>
         )}
       </div>
-      {action}
+      {action && <div className="flex shrink-0 flex-wrap items-center gap-2">{action}</div>}
     </div>
   );
+}
+
+export function SectionHeading({ title, subtitle, action }: { title: string; subtitle?: string; action?: ReactNode }) {
+  return <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+    <div className="min-w-0">
+      <h2 className="section-title">{title}</h2>
+      {subtitle && <p className="muted mt-1 max-w-3xl leading-5">{subtitle}</p>}
+    </div>
+    {action && <div className="flex shrink-0 flex-wrap gap-2">{action}</div>}
+  </div>;
+}
+
+export function FilterBar({ children, actions, embedded = false }: { children: ReactNode; actions?: ReactNode; embedded?: boolean }) {
+  return <section aria-label="Filtros" className={embedded ? "flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-end" : "filter-bar"}>
+    <div className="filter-group">{children}</div>
+    {actions && <div className="flex flex-wrap gap-2 sm:ml-auto">{actions}</div>}
+  </section>;
+}
+
+const metricTones = {
+  blue: "border-l-skybrand-600 bg-skybrand-50/45 text-skybrand-700",
+  violet: "border-l-violet-600 bg-violet-50/45 text-violet-700",
+  amber: "border-l-amber-500 bg-amber-50/45 text-amber-700",
+  emerald: "border-l-emerald-600 bg-emerald-50/45 text-emerald-700",
+  rose: "border-l-rose-600 bg-rose-50/45 text-rose-700",
+  slate: "border-l-slate-500 bg-slate-50 text-slate-700",
+};
+
+export function MetricCard({ label, value, detail, icon: Icon, tone = "blue", onClick }: {
+  label: string; value: ReactNode; detail?: string; icon?: LucideIcon;
+  tone?: keyof typeof metricTones; onClick?: () => void;
+}) {
+  const content = <>
+    <div className="flex items-start justify-between gap-3">
+      <p className="text-xs font-bold uppercase tracking-[.06em] text-muted-ink">{label}</p>
+      {Icon && <span className={`rounded-lg p-2 ${metricTones[tone]}`}><Icon aria-hidden="true" size={19} /></span>}
+    </div>
+    <p className="mt-2 text-2xl font-extrabold tracking-tight text-ink tabular-nums">{value}</p>
+    {detail && <p className="mt-1 text-xs leading-5 text-muted-ink">{detail}</p>}
+  </>;
+  const className = `card min-h-[116px] border-l-[3px] p-4 text-left ${metricTones[tone]} ${onClick ? "card-interactive w-full cursor-pointer" : ""}`;
+  return onClick ? <button type="button" className={className} onClick={onClick}>{content}</button> : <div className={className}>{content}</div>;
 }
 export function Card({
   children,

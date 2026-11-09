@@ -3,15 +3,16 @@
 @tailwind utilities;
 
 :root {
-  --color-canvas: #f7f9fc;
+  --color-canvas: #f4f7fb;
   --color-surface: #ffffff;
-  --color-ink: #213047;
-  --color-muted-ink: #475569;
-  --color-line: #dbe3ec;
+  --color-ink: #15243a;
+  --color-muted-ink: #526176;
+  --color-line: #d8e1ec;
   --color-focus: #2473c7;
-  --radius-panel: 1rem;
-  --radius-control: .75rem;
-  --shadow-soft: 0 4px 24px rgba(25, 47, 77, .05);
+  --radius-panel: .875rem;
+  --radius-control: .625rem;
+  --shadow-soft: 0 8px 28px rgba(22, 39, 59, .055);
+  --shadow-raised: 0 14px 36px rgba(22, 39, 59, .09);
   font-family: Inter, ui-sans-serif, system-ui, "Segoe UI", sans-serif;
   color: var(--color-ink);
   background: var(--color-canvas);
@@ -20,6 +21,9 @@
 body {
   margin: 0;
   min-width: 320px;
+  min-height: 100vh;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
 }
 * {
   box-sizing: border-box;
@@ -55,8 +59,15 @@ button:disabled {
   .card {
     @apply bg-surface border border-line rounded-panel shadow-soft;
   }
+  .card-interactive {
+    @apply bg-surface border border-line rounded-panel transition duration-150 hover:-translate-y-0.5 hover:border-skybrand-100;
+    box-shadow: var(--shadow-soft);
+  }
+  .card-interactive:hover {
+    box-shadow: var(--shadow-raised);
+  }
   .section-title {
-    @apply text-[17px] font-semibold tracking-tight text-ink;
+    @apply text-[17px] font-bold tracking-tight text-ink;
   }
   .muted {
     @apply text-sm text-muted-ink;
@@ -71,7 +82,7 @@ button:disabled {
     @apply inline-flex min-h-11 items-center justify-center gap-2 px-4 py-2.5 rounded-control text-sm font-semibold transition duration-150 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-skybrand-600;
   }
   .btn-primary {
-    @apply btn bg-skybrand-600 text-white hover:bg-skybrand-700;
+    @apply btn bg-skybrand-600 text-white shadow-sm hover:bg-skybrand-700;
   }
   .btn-secondary {
     @apply btn bg-surface text-ink border border-line hover:bg-slate-50;
@@ -90,5 +101,14 @@ button:disabled {
   }
   .table-cell {
     @apply py-3.5 px-4 text-sm border-b border-slate-100;
+  }
+  .filter-bar {
+    @apply card flex flex-col gap-3 p-4 sm:flex-row sm:flex-wrap sm:items-end;
+  }
+  .filter-group {
+    @apply grid min-w-0 flex-1 gap-3 sm:grid-cols-2 xl:grid-cols-4;
+  }
+  .data-table-wrap {
+    @apply overflow-x-auto rounded-panel border border-line bg-surface;
   }
 }

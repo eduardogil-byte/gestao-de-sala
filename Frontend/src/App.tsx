@@ -251,16 +251,17 @@ function Workspace({ user, onLogout, onPasswordChanged, institutionalNotice = ""
         id="primary-navigation"
         ref={menuRef}
         aria-label="Menu principal"
-        className={`fixed top-0 bottom-0 left-0 z-40 w-[255px] ${collapsed ? "lg:w-[76px]" : "lg:w-[255px]"} bg-navy-900 text-white flex flex-col transition-[width,transform] lg:translate-x-0 ${menu ? "visible translate-x-0" : "invisible -translate-x-full lg:visible"}`}
+        className={`fixed top-0 bottom-0 left-0 z-40 w-[264px] ${collapsed ? "lg:w-[76px]" : "lg:w-[264px]"} bg-navy-950 text-white flex flex-col border-r border-white/10 shadow-2xl shadow-slate-950/10 transition-[width,transform] lg:translate-x-0 ${menu ? "visible translate-x-0" : "invisible -translate-x-full lg:visible"}`}
       >
         <div className={`h-[83px] flex items-center justify-between border-b border-white/10 ${collapsed ? "px-4 lg:px-3 lg:justify-center" : "px-6"}`}>
           <div className={`flex items-center gap-2.5 ${collapsed ? "lg:hidden" : ""}`}>
-            <div className="h-10 w-10 rounded-xl bg-skybrand-500 flex items-center justify-center">
+            <div className="h-10 w-10 rounded-xl bg-skybrand-600 ring-1 ring-white/15 flex items-center justify-center shadow-lg shadow-sky-950/20">
               <Layers3 size={23} />
             </div>
-            <span className={`text-[22px] font-bold tracking-tight ${collapsed ? "lg:hidden" : ""}`}>
-              SalaGest
-            </span>
+            <div className={collapsed ? "lg:hidden" : ""}>
+              <span className="block text-[21px] font-extrabold tracking-tight">SalaGest</span>
+              <span className="block text-[10px] font-medium tracking-wide text-slate-400">Gestão de ambientes</span>
+            </div>
           </div>
           <button
             type="button"
@@ -277,14 +278,11 @@ function Workspace({ user, onLogout, onPasswordChanged, institutionalNotice = ""
             {collapsed ? <PanelLeftOpen size={19} /> : <PanelLeftClose size={19} />}
           </button>
         </div>
-        <div className={`${collapsed ? "lg:px-2" : ""} px-4 py-7 flex-1 overflow-y-auto overflow-x-hidden`}>
-          <p className={`text-[11px] font-semibold tracking-[.15em] text-slate-400 px-4 mb-3 uppercase ${collapsed ? "lg:hidden" : ""}`}>
-            Menu principal
-          </p>
-          <nav aria-label="Navegação principal" className="space-y-5">
+        <div className={`${collapsed ? "lg:px-2" : ""} px-3 py-5 flex-1 overflow-y-auto overflow-x-hidden`}>
+          <nav aria-label="Navegação principal" className="space-y-4">
             {navigation.map((section) => (
               <section key={section.title} aria-label={section.title}>
-                <p className={`text-[11px] font-semibold tracking-[.12em] text-slate-400 px-4 mb-2 uppercase ${collapsed ? "lg:sr-only" : ""}`}>
+                <p className={`text-[10px] font-bold tracking-[.14em] text-slate-500 px-3 mb-1.5 uppercase ${collapsed ? "lg:sr-only" : ""}`}>
                   {section.title}
                 </p>
                 <div className="space-y-1">
@@ -299,7 +297,7 @@ function Workspace({ user, onLogout, onPasswordChanged, institutionalNotice = ""
                         title={collapsed ? (item.teacherLabel && !admin ? item.teacherLabel : item.label) : undefined}
                         aria-current={active ? "page" : undefined}
                         onClick={() => open(item.page)}
-                        className={`w-full min-h-11 flex items-center gap-3 rounded-xl px-4 py-3 text-[13px] text-left font-medium transition ${collapsed ? "lg:justify-center lg:px-2" : ""} ${active ? "bg-skybrand-600 text-white" : "text-slate-300 hover:bg-white/10 hover:text-white"}`}
+                        className={`w-full min-h-11 flex items-center gap-3 rounded-control px-3 py-2.5 text-[13px] text-left font-semibold transition ${collapsed ? "lg:justify-center lg:px-2" : ""} ${active ? "bg-skybrand-600 text-white shadow-md shadow-sky-950/25" : "text-slate-300 hover:bg-white/[.07] hover:text-white"}`}
                       >
                         <Icon aria-hidden="true" size={19} />
                         <span className={collapsed ? "lg:sr-only" : ""}>{item.teacherLabel && !admin ? item.teacherLabel : item.label}</span>
@@ -360,8 +358,8 @@ function Workspace({ user, onLogout, onPasswordChanged, institutionalNotice = ""
           </div>
         </div>
       </aside>
-      <div className={`flex-1 min-w-0 ${collapsed ? "lg:pl-[76px]" : "lg:pl-[255px]"}`}>
-        <header className="h-[83px] bg-surface border-b border-line px-3 sm:px-5 md:px-9 flex items-center justify-between gap-3 sticky top-0 z-20">
+      <div className={`flex-1 min-w-0 ${collapsed ? "lg:pl-[76px]" : "lg:pl-[264px]"}`}>
+        <header className="h-[76px] bg-surface/95 backdrop-blur border-b border-line px-3 sm:px-5 md:px-8 flex items-center justify-between gap-3 sticky top-0 z-20">
           <div className="flex min-w-0 items-center gap-3">
             <button
               type="button"
@@ -375,8 +373,8 @@ function Workspace({ user, onLogout, onPasswordChanged, institutionalNotice = ""
               <Menu size={23} />
             </button>
             <div>
-              <p className="text-[11px] uppercase font-bold tracking-wide text-slate-600">
-                Plataforma institucional
+              <p className="text-[10px] uppercase font-bold tracking-[.12em] text-slate-500">
+                SalaGest · Plataforma institucional
               </p>
               <p className="text-sm font-semibold text-ink mt-1 truncate max-w-[28vw] sm:max-w-none">
                 {(current?.teacherLabel && !admin ? current.teacherLabel : current?.label) || "Painel"}
@@ -427,7 +425,7 @@ function Workspace({ user, onLogout, onPasswordChanged, institutionalNotice = ""
             </button>
           </div>
         </header>
-        <main id="main-content" tabIndex={-1} className="max-w-[1500px] mx-auto p-4 sm:p-5 md:p-8 lg:p-9">
+        <main id="main-content" tabIndex={-1} className="max-w-[1540px] mx-auto p-4 sm:p-6 lg:p-8 xl:p-10">
           {institutionalNotice && <div className="mb-5"><Notice type="success" message={institutionalNotice} /></div>}
           {institutionalError && <div className="mb-5"><Notice type="error" message={institutionalError} /></div>}
           {error && (

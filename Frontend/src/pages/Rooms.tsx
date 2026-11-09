@@ -19,6 +19,7 @@ import {
   Checkbox,
   Empty,
   Field,
+  FilterBar,
   Modal,
   Notice,
   SubmitButton,
@@ -152,35 +153,33 @@ export function Rooms({ user }: { user: User }) {
           ) : undefined
         }
       />
-      <Card className="p-4 mb-5">
-        <div className="flex flex-wrap gap-3">
-          <div className="flex-1 min-w-[220px] relative">
+      <div className="mb-5">
+        <FilterBar>
+          <div className="relative sm:col-span-2 xl:col-span-3">
+            <span className="field-label">Buscar ambiente</span>
             <Search
               size={17}
-              className="absolute left-3 top-3 text-slate-400"
+              className="absolute left-3 bottom-3 text-slate-400"
             />
             <input
               aria-label="Buscar sala"
               className="field !pl-10"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              placeholder="Buscar nome ou localização..."
+              placeholder="Nome, código ou localização"
             />
           </div>
-          <select
-            aria-label="Tipo de sala"
-            className="field !w-auto"
-            value={kind}
-            onChange={(e) => setKind(e.target.value)}
-          >
-            <option value="">Todos os tipos</option>
-            <option value="Comum">Sala comum</option>
-            <option value="Laboratorio">Laboratório</option>
-            <option value="Hibrida">Híbrida</option>
-            <option value="Oficina">Oficina</option>
-          </select>
-        </div>
-      </Card>
+          <Field label="Tipo de ambiente">
+            <select className="field" value={kind} onChange={(e) => setKind(e.target.value)}>
+              <option value="">Todos os tipos</option>
+              <option value="Comum">Sala comum</option>
+              <option value="Laboratorio">Laboratório</option>
+              <option value="Hibrida">Híbrida</option>
+              <option value="Oficina">Oficina</option>
+            </select>
+          </Field>
+        </FilterBar>
+      </div>
       {opening && <p role="status">Carregando inventário técnico...</p>}
       {list.length === 0 ? (
         <Card>
@@ -194,13 +193,13 @@ export function Rooms({ user }: { user: User }) {
           />
         </Card>
       ) : (
-        <div className="grid md:grid-cols-2 xl:grid-cols-3 gap-4">
+        <div className="grid md:grid-cols-2 2xl:grid-cols-3 gap-4">
           {list.map((r) => {
             const pcs = r.computerGroups.reduce((a, g) => a + g.quantity, 0);
             return (
               <Card
                 key={r.id}
-                className="p-5 hover:border-skybrand-200 transition"
+                className="card-interactive p-5"
               >
                 <div className="flex justify-between gap-2 items-start">
                   <div className="w-11 h-11 bg-skybrand-50 rounded-xl flex items-center justify-center text-skybrand-700">
@@ -227,11 +226,11 @@ export function Rooms({ user }: { user: User }) {
                   </p>
                 )}
                 <div className="grid grid-cols-2 gap-2 mt-5">
-                  <div className="bg-slate-50 rounded-lg p-3">
+                  <div className="rounded-control border border-line bg-slate-50/70 p-3">
                     <span className="block text-xs text-slate-500">Capacidade de alunos</span>
                     <b className="text-xl text-slate-800">{r.seats}</b>
                   </div>
-                  <div className="bg-slate-50 rounded-lg p-3">
+                  <div className="rounded-control border border-line bg-slate-50/70 p-3">
                     <span className="block text-xs text-slate-500">
                       Computadores cadastrados
                     </span>

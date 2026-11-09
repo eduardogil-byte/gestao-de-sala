@@ -12,7 +12,7 @@ export default {
         ink: "var(--color-ink)",
         "muted-ink": "var(--color-muted-ink)",
         line: "var(--color-line)",
-        navy: { 900: "#16273b", 800: "#20374e", 700: "#2b4560" },
+        navy: { 950: "#0c1728", 900: "#122238", 800: "#1b324c", 700: "#284765" },
         skybrand: {
           50: "#eef6ff",
           100: "#dceefe",

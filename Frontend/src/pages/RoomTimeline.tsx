@@ -3,7 +3,7 @@ import { ApiError, downloadFile, post, read } from "../lib/api";
 import { useData } from "../lib/data";
 import { agendaPath, datesBetween, indexOccupations, isAgendaOccupation, movePeriod, period, summarize, weekStart, type TimelineView } from "../lib/roomTimeline";
 import { dateBR, localDate, nextDate, resultMessage } from "../lib/utils";
-import { Busy, Card, Field, Modal, Notice, Title } from "../components/UI";
+import { Busy, Card, Field, FilterBar, Modal, Notice, SectionHeading, Title } from "../components/UI";
 import { AuditHistory } from "../components/AuditHistory";
 import type { AgendaOccupation, OccupationBlockMovePreview, OccupationMovePreview, User } from "../types";
 
@@ -338,6 +338,7 @@ export function RoomTimeline({ user, openBookings, initialFilter }: { user: User
     {moveSuccess && <div className="mb-4"><Notice type="success" message={moveSuccess} onClose={() => setMoveSuccess("")} /></div>}
     {operationError && <div className="mb-4"><Notice message={operationError} onClose={() => setOperationError("")} /></div>}
     <Card className="p-4 mb-5 space-y-4">
+      <SectionHeading title="Período e visualização" subtitle="Altere a visão e refine os registros sem modificar as ocupações." />
       <div className="flex flex-wrap items-center gap-2">
         {(["week", "month", "semester"] as TimelineView[]).map((choice) => <button key={choice} type="button"
           aria-pressed={view === choice} onClick={() => changeView(choice)}
@@ -350,7 +351,8 @@ export function RoomTimeline({ user, openBookings, initialFilter }: { user: User
           <button type="button" className="btn-secondary" onClick={() => navigate(1)} aria-label="Próximo período">›</button>
         </div>
       </div>
-      <fieldset className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-3"><legend className="font-semibold text-sm mb-3">Filtros do cronograma</legend>
+      <SectionHeading title="Filtros do cronograma" subtitle="Combine somente os critérios necessários para manter a grade legível." />
+      <FilterBar embedded actions={<button type="button" className="btn-quiet" onClick={clearFilters}>Limpar filtros</button>}>
         <Field label="Semestre"><select className="field" value={semesterId} onChange={(e) => { setSemesterId(e.target.value); setClassGroupId(""); }}>
           <option value="">Todos</option>{data.semesters.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
         </select></Field>
@@ -369,10 +371,9 @@ export function RoomTimeline({ user, openBookings, initialFilter }: { user: User
         <Field label="Tipo"><select className="field" value={kind} onChange={(e) => setKind(e.target.value)}>
           <option value="">Todos</option><option value="Aula">Aula</option><option value="Avulsa">Avulsa</option><option value="Bloqueio">Bloqueio</option>
         </select></Field>
-      </fieldset>
-      <button type="button" className="btn-quiet" onClick={clearFilters}>Limpar filtros</button>
+      </FilterBar>
     </Card>
-    <p className="text-xs text-slate-600 mb-4">Legenda: <strong>Ocupado</strong> · <strong>Conflito</strong> · <strong>Sem registro</strong> (disponibilidade desconhecida) · <strong>Dia especial</strong>. Dias especiais aparecem quando vinculados a ocupações retornadas pela API. A confirmação de uma nova reserva ocorre na tela Reservas.</p>
+    <div className="mb-4 flex flex-wrap items-center gap-2 text-xs text-muted-ink" aria-label="Legenda do cronograma"><span className="font-semibold text-ink">Legenda:</span><span className="rounded-full bg-sky-50 px-2.5 py-1 text-sky-800">Ocupado</span><span className="rounded-full bg-rose-50 px-2.5 py-1 text-rose-800">Conflito</span><span className="rounded-full bg-slate-100 px-2.5 py-1">Sem registro · disponibilidade desconhecida</span><span className="rounded-full bg-amber-50 px-2.5 py-1 text-amber-800">Dia especial</span></div>
     {catalogError && <div className="mb-4"><Notice message={`Não foi possível carregar os cadastros: ${catalogError}. A grade não pode identificar períodos sem registro.`} /></div>}
     {!rangeValid && <Notice message={view === "semester" && semester && datesBetween(semester.startDate, nextDate(semester.endDate, 1)).length > 371
       ? "Este semestre excede 371 dias; consulte semanas ou meses. Nenhum resultado parcial é exibido."
@@ -381,7 +382,7 @@ export function RoomTimeline({ user, openBookings, initialFilter }: { user: User
     {loading && <Busy />}
     {!loading && !error && items && loadedQuery === queryKey && !catalogError && <>
       {items.length === 0 && <div className="mb-4"><Notice type="info" message="Nenhuma ocupação registrada no período e filtros selecionados. Isso não confirma disponibilidade para novas reservas." /></div>}
-      {view === "week" && <Card className="overflow-x-auto mb-5">
+      {view === "week" && <Card className="data-table-wrap mb-5">
         <table className="hidden lg:table w-full min-w-[930px] text-sm border-collapse">
           <thead><tr><th className="sticky left-0 z-10 bg-white p-3 text-left border-b border-r border-slate-200 min-w-44">Ambiente / turno</th>
             {visibleDates.map((date) => <th key={date} className="p-3 border-b border-slate-200 text-left min-w-36">{new Date(`${date}T12:00:00`).toLocaleDateString("pt-BR", { weekday: "short", day: "2-digit", month: "2-digit" })}</th>)}</tr></thead>
