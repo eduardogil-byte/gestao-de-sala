@@ -199,13 +199,41 @@ test("integrações administrativas usam contratos existentes e preservam estado
       assert.equal(await evaluate("document.querySelector('[aria-pressed=true]').textContent.includes('Selecionada')"), true);
     });
     await t.test("agenda busca docentes e diferencia horas semanais das semestrais", async () => {
-      await reset("instructor"); await waitFor("document.body.innerText.includes('Carga horária por instrutor')");
+      await reset("instructor"); await waitFor("!!document.querySelector('table')");
+      assert.equal(await evaluate("document.querySelector('table').textContent.includes('Carga semanal') && document.querySelector('table').textContent.includes('Carga semestral')"), true);
+      await command("Emulation.setDeviceMetricsOverride", { width: 390, height: 844, deviceScaleFactor: 1, mobile: true });
+      assert.equal(await evaluate("document.documentElement.scrollWidth <= window.innerWidth + 1"), true);
+      await capture("instrutores-mobile-lista");
+      await command("Emulation.setDeviceMetricsOverride", { width: 1440, height: 900, deviceScaleFactor: 1, mobile: false });
       await evaluate("adminTest.input('Buscar instrutor', 'Docente 0'); adminTest.select('Instrutor', 't0')");
       await waitFor("document.body.innerText.includes('de ocupações efetivas no semestre')");
       assert.equal(await evaluate("document.body.innerText.includes('na semana de')"), true);
-      assert.equal(await evaluate("document.body.innerText.includes('8 h de ocupações efetivas no semestre')"), true);
-      assert.equal(await evaluate("document.body.innerText.includes('4 h na semana de')"), true);
+      assert.equal(await evaluate("[...document.querySelectorAll('.card')].some(card => card.textContent.includes('Carga semestral') && card.textContent.includes('8 h'))"), true);
+      assert.equal(await evaluate("[...document.querySelectorAll('.card')].some(card => card.textContent.includes('Carga semanal') && card.textContent.includes('4 h'))"), true);
+      assert.equal(await evaluate("document.body.innerText.includes('800 h')"), false);
+      await capture("instrutores-desktop-semana");
+      await command("Emulation.setDeviceMetricsOverride", { width: 768, height: 1024, deviceScaleFactor: 1, mobile: false });
       assert.equal(await evaluate("document.documentElement.scrollWidth <= window.innerWidth + 1"), true);
+      await capture("instrutores-tablet-semana");
+      await command("Emulation.setDeviceMetricsOverride", { width: 390, height: 844, deviceScaleFactor: 1, mobile: true });
+      assert.equal(await evaluate("document.documentElement.scrollWidth <= window.innerWidth + 1"), true);
+      await evaluate("window.scrollTo(0, document.body.scrollHeight)");
+      await capture("instrutores-mobile-semana");
+      await evaluate("window.scrollTo(0, 0)");
+      await evaluate("adminTest.click('Mês')");
+      await waitFor("document.body.innerText.includes('Agenda do mês')");
+      assert.equal(await evaluate("document.documentElement.scrollWidth <= window.innerWidth + 1"), true);
+      await capture("instrutores-mobile-mes");
+      await evaluate("window.scrollTo(0, document.body.scrollHeight)");
+      await capture("instrutores-mobile-mes-grade");
+      await evaluate("window.scrollTo(0, 0)");
+      await evaluate("adminTest.click('Semestre')");
+      await waitFor("document.body.innerText.includes('Distribuição no semestre')");
+      await reset("instructor", "Professor");
+      await waitFor("document.body.textContent.includes('Minha Agenda') && document.body.textContent.includes('Carga semestral')");
+      assert.equal(await evaluate("[...document.querySelectorAll('label span')].some(span => span.textContent === 'Instrutor')"), false);
+      assert.equal(await evaluate("adminTest.calls.filter(r => r.path.startsWith('/api/agenda?')).every(r => r.path.includes('teacherId=t0'))"), true);
+      assert.equal(await evaluate("document.body.innerText.includes('Gerenciar esta ocupação')"), false);
     });
     await t.test("Importação e Exportação usam os campos do design system em mobile", async () => {
       for (const mode of ["import", "export"]) {
