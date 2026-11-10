@@ -45,12 +45,13 @@ export function CapabilityRequirements({ path, admin }: { path: string; admin: b
     } catch (cause) { if (mounted.current) setError(resultMessage(cause)); }
     finally { if (mounted.current) setBusy(false); }
   }
-  return <form className="space-y-4" onSubmit={(e) => void save(e)}>
+  return <form className="space-y-5" onSubmit={(e) => void save(e)}>
     <p className="muted">Requisitos da capacidade selecionada. Compatibilidade técnica não comprova disponibilidade do ambiente.</p>
     {loading && <Busy />}{error && <Notice message={error} />}{success && <Notice type="success" message={success} />}
     {!loading && draft && !registered && <Notice type="info" message="Requisitos ainda não cadastrados. A adequação técnica não está comprovada." />}
     {draft && <>
-      <fieldset disabled={busy || !admin} className="space-y-4">
+      <fieldset disabled={busy || !admin} className="space-y-5">
+        <legend className="font-semibold text-ink mb-3">Ambiente e computadores</legend>
         <div className="grid sm:grid-cols-2 gap-3">
           <Field label="Tipo de ambiente exigido"><select className="field" value={draft.roomKind ?? ""} onChange={(e) => setDraft({ ...draft, roomKind: e.target.value || null })}>
             <option value="">Sem exigência de tipo</option><option value="Comum">Sala comum</option><option value="Laboratorio">Laboratório</option>
@@ -64,10 +65,10 @@ export function CapabilityRequirements({ path, admin }: { path: string; admin: b
         <p className="muted">Para exigir RAM ou softwares, informe a quantidade de computadores. Critérios críticos podem impedir a compatibilidade quando não atendidos.</p>
         <Checkbox label="Projetor obrigatório" checked={draft.requiresProjector} onChange={(requiresProjector) => setDraft({ ...draft, requiresProjector })} />
         <Checkbox label="Computadores são requisito crítico" checked={draft.computersCritical} onChange={(computersCritical) => setDraft({ ...draft, computersCritical })} />
-        <h3 className="font-semibold">Recursos exigidos</h3>
+        <h3 className="font-semibold text-ink border-t border-line pt-4">Recursos exigidos</h3>
         {draft.resources.map((resource, index) => {
           const change = (patch: Partial<typeof resource>) => setDraft({ ...draft, resources: draft.resources.map((row, i) => i === index ? { ...row, ...patch } : row) });
-          return <fieldset key={index} className="border border-line rounded-lg p-3 space-y-3">
+          return <fieldset key={index} className="border border-line rounded-xl p-4 space-y-3">
             <legend className="px-1">Recurso {index + 1}</legend>
             <div className="grid sm:grid-cols-2 gap-3">
               <Field label="Nome do recurso"><input className="field" required maxLength={120} value={resource.name} onChange={(e) => change({ name: e.target.value })} /></Field>
@@ -79,12 +80,12 @@ export function CapabilityRequirements({ path, admin }: { path: string; admin: b
           </fieldset>;
         })}
         {admin && <button type="button" className="btn-secondary" disabled={draft.resources.length >= 100} onClick={() => setDraft({ ...draft, resources: [...draft.resources, { name: "", type: "", quantity: 1, critical: false }] })}>Adicionar requisito de recurso</button>}
-        <h3 className="font-semibold">Softwares exigidos</h3>
+        <h3 className="font-semibold text-ink border-t border-line pt-4">Softwares exigidos</h3>
         {admin && <Field label="Adicionar software exigido"><select className="field" value="" onChange={(e) => {
           if (e.target.value) setDraft({ ...draft, software: [...draft.software, { softwareId: Number(e.target.value), requiredLicenses: null, critical: true }] });
         }}><option value="">Selecione</option>{data.software.filter((s) => !draft.software.some((row) => row.softwareId === s.id))
           .map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}</select></Field>}
-        {draft.software.map((software) => <fieldset key={software.softwareId} className="border border-line rounded-lg p-3 space-y-3">
+        {draft.software.map((software) => <fieldset key={software.softwareId} className="border border-line rounded-xl p-4 space-y-3">
           <legend className="px-1">{data.software.find((s) => s.id === software.softwareId)?.name ?? `Software ${software.softwareId}`}</legend>
           <Field label="Licenças necessárias (opcional)"><input className="field" type="number" min={1} max={1000} value={software.requiredLicenses ?? ""}
             onChange={(e) => setDraft({ ...draft, software: draft.software.map((row) => row.softwareId === software.softwareId ? { ...row, requiredLicenses: optionalNumber(e.target.value) } : row) })} /></Field>

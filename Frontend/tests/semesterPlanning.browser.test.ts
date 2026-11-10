@@ -1,10 +1,18 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { mkdtemp, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { chromePath, openAdminFixture } from "./helpers/browser.ts";
 
 test("planejamento isola semestres, respostas atrasadas e operações em navegador", { skip: !chromePath, timeout: 60000 }, async (t) => {
   const browser = await openAdminFixture();
-  const { evaluate, waitFor } = browser;
+  const { evaluate, waitFor, command } = browser;
+  const screenshotDir = await mkdtemp(join(tmpdir(), "salagest-planejamento-ui-"));
+  const capture = async (name: string) => {
+    const screenshot = await command("Page.captureScreenshot", { format: "png", captureBeyondViewport: false });
+    await writeFile(join(screenshotDir, `${name}.png`), Buffer.from(screenshot.data, "base64"));
+  };
   const select = async (id: number) => {
     await evaluate(`adminTest.select('Semestre', '${id}')`);
     await waitFor(`adminTest.pending.some(r => r.path === '/api/semester-plans?semesterId=${id}')`);
@@ -16,7 +24,9 @@ test("planejamento isola semestres, respostas atrasadas e operações em navegad
     await reply(`/api/semester-plans?semesterId=${id}`, [{ id }]);
     await waitFor(`adminTest.pending.some(r => r.path === '/api/semester-plans/${id}')`);
     await reply(`/api/semester-plans/${id}`, { id, semesterId: id, published: false, revision: 1, proposals: [
-      { id: id * 10, roomName: marker, status: "Enviada", startDate: "2027-01-01", endDate: "2027-01-02", roomId: 10, shiftName: "Manhã" },
+      { id: id * 10, assignmentId: 30, teacherId: "t0", classGroupId: 20, curricularUnitId: 40,
+        curricularCapabilityId: null, roomName: marker, status: "Enviada", startDate: "2027-01-01", endDate: "2027-01-02",
+        roomId: 10, shiftId: 1, shiftName: "Manhã", rejectionReason: null },
     ] });
     await waitFor(`adminTest.pending.some(r => r.path === '/api/semester-plans/${id}/history')`);
     await reply(`/api/semester-plans/${id}/history`, []);
@@ -30,6 +40,15 @@ test("planejamento isola semestres, respostas atrasadas e operações em navegad
     await waitFor("document.querySelector('select')?.options.length === 3");
     await t.test("A → B invalida A imediatamente e limpa filtros", async () => {
       await select(1); await load(1);
+      assert.equal(await evaluate("document.body.innerText.includes('Semestre selecionado: Semestre A')"), true);
+      assert.equal(await evaluate("[...document.querySelectorAll('.pill')].some(p => p.textContent.includes('Enviada'))"), true);
+      await capture("planejamento-desktop");
+      await command("Emulation.setDeviceMetricsOverride", { width: 390, height: 844, deviceScaleFactor: 1, mobile: true });
+      assert.equal(await evaluate("document.documentElement.scrollWidth <= window.innerWidth + 1"), true);
+      await evaluate("window.scrollTo(0, document.body.scrollHeight / 2)");
+      await capture("planejamento-mobile");
+      await command("Emulation.setDeviceMetricsOverride", { width: 1440, height: 900, deviceScaleFactor: 1, mobile: false });
+      await evaluate("window.scrollTo(0, 0)");
       await evaluate("document.querySelector('[aria-label=\"Filtrar situação\"]').value = 'Publicada'; document.querySelector('[aria-label=\"Filtrar situação\"]').dispatchEvent(new Event('change', {bubbles:true}))");
       await select(2);
       assert.equal(await evaluate("document.body.innerText.includes('Proposta 1')"), false);
@@ -85,5 +104,5 @@ test("planejamento isola semestres, respostas atrasadas e operações em navegad
       assert.equal(await evaluate("document.body.innerText.includes('Confirmar publicação')"), false);
       assert.equal(await evaluate("adminTest.calls.some(r => r.path.endsWith('/publish'))"), false);
     });
-  } finally { await browser.close(); }
+  } finally { console.log(`Capturas sintéticas do planejamento: ${screenshotDir}`); await browser.close(); }
 });

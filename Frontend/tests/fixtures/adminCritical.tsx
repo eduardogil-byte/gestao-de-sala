@@ -4,6 +4,7 @@ import { DataProvider } from "../../src/lib/data";
 import { ConfirmationProvider } from "../../src/components/UI";
 import { SemesterPlanning } from "../../src/pages/SemesterPlanning";
 import { Rooms } from "../../src/pages/Rooms";
+import "../../src/index.css";
 
 const user = { id: "admin", displayName: "Admin sintético", email: "", roles: ["Admin"] };
 const root = createRoot(document.getElementById("root")!);
@@ -17,6 +18,11 @@ const api = {
     api.catalog = { "/api/semesters": [{ id: 1, name: "Semestre A", startDate: "2027-01-01", endDate: "2027-06-30" },
       { id: 2, name: "Semestre B", startDate: "2027-07-01", endDate: "2027-12-31" }],
       "/api/software": [{ id: 1, name: "CAD" }],
+      "/api/teachers": [{ id: "t0", displayName: "Docente sintético", email: "" }],
+      "/api/classes": [{ id: 20, semesterId: 1, name: "Turma sintética", students: 20 }],
+      "/api/assignments": [{ id: 30, semesterId: 1, classGroupId: 20, teacherId: "t0", curricularUnitId: 40,
+        disciplineName: "UC sintética", endedAtUtc: null }],
+      "/api/shifts": [{ id: 1, name: "Manhã", startsAt: "08:00:00", endsAt: "12:00:00" }],
       "/api/rooms": [{ id: 10, name: "Laboratório sintético", location: "Bloco A", kind: "Laboratorio", seats: 30, desks: 30,
         hasProjector: false, hasTeacherComputer: false, hasInternet: true, active: true, computerGroups: [] }] };
     root.render(<DataProvider key={++api.generation}><ConfirmationProvider>{mode === "planning"

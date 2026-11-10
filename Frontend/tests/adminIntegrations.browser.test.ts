@@ -103,9 +103,19 @@ test("integrações administrativas usam contratos existentes e preservam estado
     await t.test("catálogo mantém caminho completo e Professor somente consulta requisitos", async () => {
       await reset("catalog", "Professor");
       await waitFor("document.body.innerText.includes('Curso sintético')");
+      await evaluate("adminTest.input('Buscar curso', 'Inexistente')");
+      await waitFor("document.body.innerText.includes('Nenhum resultado para a busca')");
+      assert.equal(await evaluate("document.body.innerText.includes('Curso sintético')"), false);
+      await evaluate("adminTest.input('Buscar curso', 'Curso')");
+      await waitFor("document.body.innerText.includes('Ver módulos')");
       await evaluate("adminTest.click('Ver módulos')"); await waitFor("document.body.innerText.includes('Módulo sintético')");
       await evaluate("adminTest.click('Ver UCs')"); await waitFor("document.body.innerText.includes('UC sintética')");
       await evaluate("adminTest.click('Ver capacidades')"); await waitFor("document.body.innerText.includes('Capacidade sintética')");
+      assert.equal(await evaluate("document.querySelector('[aria-label=\"Resumo da carga horária\"]')?.innerText.includes('Carga horária completa')"), true);
+      await command("Emulation.setDeviceMetricsOverride", { width: 390, height: 844, deviceScaleFactor: 1, mobile: true });
+      assert.equal(await evaluate("document.documentElement.scrollWidth <= window.innerWidth + 1"), true);
+      await capture("catalogo-capacidades-mobile");
+      await command("Emulation.setDeviceMetricsOverride", { width: 1440, height: 900, deviceScaleFactor: 1, mobile: false });
       await evaluate("adminTest.click('Requisitos técnicos')");
       await waitFor("document.body.innerText.includes('Somente Admin')");
       assert.equal(await evaluate("!!document.querySelector('[role=dialog] input:not(:disabled)')"), false);
@@ -115,6 +125,25 @@ test("integrações administrativas usam contratos existentes e preservam estado
       await reset("dashboard", "Professor");
       await waitFor("document.body.innerText.includes('Dashboard gerencial')");
       assert.equal(await evaluate("document.body.innerText.includes('Configurar turnos oferecidos')"), false);
+    });
+    await t.test("Admin cadastra capacidade no contexto da UC e consulta fechamento de carga", async () => {
+      await reset("catalog", "Admin");
+      await waitFor("document.body.innerText.includes('Curso sintético')");
+      await evaluate("adminTest.click('Ver módulos')"); await waitFor("document.body.innerText.includes('Módulo sintético')");
+      await evaluate("adminTest.click('Ver UCs')"); await waitFor("document.body.innerText.includes('UC sintética')");
+      await evaluate("adminTest.click('Ver capacidades')"); await waitFor("document.body.innerText.includes('Capacidade sintética')");
+      assert.equal(await evaluate("document.querySelector('[aria-label=\"Resumo da carga horária\"]')?.innerText.includes('8 h')"), true);
+      await evaluate("adminTest.click('Novo capacidade')");
+      await evaluate("adminTest.input('Descrição', 'Capacidade adicional'); adminTest.input('Carga horária necessária', '2,5'); adminTest.input('Ordem', '2')");
+      await evaluate("const t = [...document.querySelectorAll('label')].find(l => l.querySelector('span')?.textContent === 'Conteúdos relacionados').querySelector('textarea'); Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value').set.call(t, 'Conteúdo adicional'); t.dispatchEvent(new Event('input', {bubbles:true}))");
+      await evaluate("adminTest.click('Salvar capacidade')");
+      const path = "/api/courses/1/modules/2/curricular-units/3/capabilities";
+      await waitFor(`adminTest.pending.some(r => r.path === ${JSON.stringify(path)})`);
+      const pending = await evaluate<any>(`adminTest.pending.find(r => r.path === ${JSON.stringify(path)})`);
+      assert.equal(pending.method, "POST");
+      assert.deepEqual(pending.body, { description: "Capacidade adicional", contents: "Conteúdo adicional", requiredHours: 2.5, order: 2 });
+      await reply(path, { id: 5 }, 201);
+      await waitFor("document.body.innerText.includes('Cadastro realizado')");
     });
     await t.test("cronograma móvel mantém ocupações, filtros e detalhes sem rolagem da página", async () => {
       await command("Emulation.setDeviceMetricsOverride", { width: 390, height: 844, deviceScaleFactor: 1, mobile: true });

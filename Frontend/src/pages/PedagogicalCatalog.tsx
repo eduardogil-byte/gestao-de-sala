@@ -56,6 +56,7 @@ export function PedagogicalCatalog({ user }: { user: User }) {
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
   const [requirementsCapability, setRequirementsCapability] = useState<CurricularCapability | null>(null);
+  const [search, setSearch] = useState("");
 
   const level: Level = unitId !== null ? "capability" : moduleId !== null ? "unit" :
     courseId !== null ? "module" : "course";
@@ -133,19 +134,19 @@ export function PedagogicalCatalog({ user }: { user: User }) {
 
   const closeForm = () => { setFormOpen(false); setEditId(null); setError(""); };
   const goCourses = () => {
-    closeForm(); setCourseId(null); setModuleId(null); setUnitId(null);
+    closeForm(); setSearch(""); setCourseId(null); setModuleId(null); setUnitId(null);
     setModules([]); setUnits([]); setCapabilities([]); setSummary(null);
   };
   const goModules = (id: number) => {
-    closeForm(); setCourseId(id); setModuleId(null); setUnitId(null);
+    closeForm(); setSearch(""); setCourseId(id); setModuleId(null); setUnitId(null);
     setModules([]); setUnits([]); setCapabilities([]); setSummary(null);
   };
   const goUnits = (id: number) => {
-    closeForm(); setModuleId(id); setUnitId(null);
+    closeForm(); setSearch(""); setModuleId(id); setUnitId(null);
     setUnits([]); setCapabilities([]); setSummary(null);
   };
   const goCapabilities = (id: number) => {
-    closeForm(); setUnitId(id); setCapabilities([]); setSummary(null);
+    closeForm(); setSearch(""); setUnitId(id); setCapabilities([]); setSummary(null);
   };
   const beginForm = (id: number | null = null, values: Partial<FormValues> = {}) => {
     setForm({ ...blankForm, ...values });
@@ -216,25 +217,32 @@ export function PedagogicalCatalog({ user }: { user: User }) {
 
   const count = level === "course" ? courses.length : level === "module" ? modules.length :
     level === "unit" ? units.length : capabilities.length;
+  const query = search.trim().toLocaleLowerCase("pt-BR");
+  const visibleCourses = courses.filter((item) => `${item.code} ${item.name}`.toLocaleLowerCase("pt-BR").includes(query));
+  const visibleModules = modules.filter((item) => item.name.toLocaleLowerCase("pt-BR").includes(query));
+  const visibleUnits = units.filter((item) => `${item.code} ${item.name}`.toLocaleLowerCase("pt-BR").includes(query));
+  const visibleCapabilities = capabilities.filter((item) => `${item.description} ${item.contents}`.toLocaleLowerCase("pt-BR").includes(query));
+  const visibleCount = level === "course" ? visibleCourses.length : level === "module" ? visibleModules.length :
+    level === "unit" ? visibleUnits.length : visibleCapabilities.length;
   return (
     <>
       <Title title="Catálogo Pedagógico"
-        subtitle="Cursos, módulos, unidades curriculares e capacidades."
+        subtitle="Navegue por Curso → Módulo → UC → Capacidade para consultar carga horária, conteúdos e requisitos técnicos."
         action={admin ? <button className="btn-primary" onClick={() => beginForm()} disabled={busy !== ""}>
           <Plus size={16} /> Novo {levelNames[level]}
         </button> : undefined} />
 
       <nav aria-label="Caminho no catálogo" className="card flex flex-wrap items-center gap-2 p-3 text-sm mb-5">
-        <button className="text-skybrand-700 font-semibold hover:underline" onClick={goCourses}
+        <button type="button" className="text-sky-300 font-semibold hover:underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-sky-400 rounded" onClick={goCourses}
           disabled={busy !== ""}>Cursos</button>
         {courseId !== null && <><ChevronRight size={15} className="text-slate-400" />
-          <button className="text-skybrand-700 font-semibold hover:underline" onClick={() => goModules(courseId)}
+          <button type="button" className="text-sky-300 font-semibold hover:underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-sky-400 rounded" onClick={() => goModules(courseId)}
             disabled={busy !== ""}>{course?.name || "Curso"}</button></>}
         {moduleId !== null && <><ChevronRight size={15} className="text-slate-400" />
-          <button className="text-skybrand-700 font-semibold hover:underline" onClick={() => goUnits(moduleId)}
+          <button type="button" className="text-sky-300 font-semibold hover:underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-sky-400 rounded" onClick={() => goUnits(moduleId)}
             disabled={busy !== ""}>{module?.name || "Módulo"}</button></>}
         {unitId !== null && <><ChevronRight size={15} className="text-slate-400" />
-          <span className="font-semibold text-slate-700">{unit?.name || "Unidade curricular"}</span></>}
+          <span aria-current="page" className="font-semibold text-ink">{unit?.name || "Unidade curricular"}</span></>}
       </nav>
 
       {level !== "course" && <button className="btn-quiet mb-4" disabled={busy !== ""}
@@ -330,10 +338,9 @@ export function PedagogicalCatalog({ user }: { user: User }) {
           className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5 text-sm">
           <MetricCard label="CH prevista" value={summary.plannedHours === null ? "Indefinida" : `${formatHours(summary.plannedHours)} h`} tone="blue" />
           <MetricCard label="Soma das capacidades" value={`${formatHours(summary.capabilityHours)} h`} tone="violet" />
-          <div><p className="text-slate-500">Diferença</p><p className="font-semibold">
-            {summary.status === "Undefined" ? "Indefinida" : summary.status === "MissingHours"
-              ? `${formatHours(summary.missingHours)} h faltantes` : summary.status === "ExcessHours"
-                ? `${formatHours(summary.excessHours)} h excedentes` : "0 h"}</p></div>
+          <MetricCard label="Diferença" value={summary.status === "Undefined" ? "Indefinida" : summary.status === "MissingHours"
+            ? `${formatHours(summary.missingHours)} h faltantes` : summary.status === "ExcessHours"
+              ? `${formatHours(summary.excessHours)} h excedentes` : "0 h"} tone={summary.status === "Balanced" ? "emerald" : "amber"} />
           <MetricCard label="Situação" value={workloadText(summary)} tone={summary.status === "Balanced" ? "emerald" : "amber"} />
           <MetricCard label="Encontros estimados" value={summary.requiredMeetings === null ? "Indefinidos" : summary.requiredMeetings} tone="slate" />
         </div>}
@@ -343,15 +350,19 @@ export function PedagogicalCatalog({ user }: { user: User }) {
         <div className="px-5 py-4 border-b border-line flex items-center justify-between gap-3">
           <h2 className="section-title">{level === "course" ? "Cursos" : level === "module" ? "Módulos" :
             level === "unit" ? "Unidades curriculares" : "Capacidades"}</h2>
-          {!loading && !loadError && <span className="text-xs text-slate-500">{count} registro(s)</span>}
+          {!loading && !loadError && <span className="text-xs text-muted-ink">{query ? `${visibleCount} de ${count}` : count} registro(s)</span>}
         </div>
+        {!loading && !loadError && count > 0 && <div className="px-4 py-3 border-b border-line"><Field label={`Buscar ${levelNames[level]}`}>
+          <input type="search" className="field max-w-md" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Filtrar registros deste nível" />
+        </Field></div>}
         {loading ? <Busy /> : loadError ? <div className="p-5">
           <button className="btn-secondary" onClick={() => setRevision((value) => value + 1)}>Tentar novamente</button>
-        </div> : count === 0 ? <Empty text={`Nenhum(a) ${levelNames[level]} cadastrado(a) neste contexto.`} /> : <div>
-          {level === "course" && courses.map((item) => <div key={item.id}
-            className="p-4 md:px-5 border-b border-slate-100 last:border-0 flex flex-wrap items-center justify-between gap-3">
-            <div className="min-w-0"><p className="font-semibold text-slate-800">{item.name}</p>
-              <div className="flex items-center gap-2 mt-1 text-xs text-slate-500">
+        </div> : count === 0 ? <Empty text={`Nenhum(a) ${levelNames[level]} cadastrado(a) neste contexto.`} /> : visibleCount === 0 ?
+          <Empty title="Nenhum resultado para a busca" text="Tente outro termo neste nível do catálogo." /> : <div>
+          {level === "course" && visibleCourses.map((item) => <div key={item.id}
+            className="p-4 md:px-5 border-b border-line last:border-0 flex flex-wrap items-center justify-between gap-3">
+            <div className="min-w-0"><p className="font-semibold text-ink">{item.name}</p>
+              <div className="flex items-center gap-2 mt-1 text-xs text-muted-ink">
                 <span>{item.code}</span><Badge status={item.active ? "Ativa" : "Inativa"} />
               </div></div>
             <div className="flex flex-wrap gap-2">
@@ -360,20 +371,20 @@ export function PedagogicalCatalog({ user }: { user: User }) {
               <button className="btn-primary" onClick={() => goModules(item.id)}>Ver módulos <ChevronRight size={16} /></button>
             </div>
           </div>)}
-          {level === "module" && modules.map((item) => <div key={item.id}
-            className="p-4 md:px-5 border-b border-slate-100 last:border-0 flex flex-wrap items-center justify-between gap-3">
-            <div><p className="font-semibold text-slate-800">{item.name}</p>
-              <p className="text-xs text-slate-500 mt-1">Ordem {item.order}</p></div>
+          {level === "module" && visibleModules.map((item) => <div key={item.id}
+            className="p-4 md:px-5 border-b border-line last:border-0 flex flex-wrap items-center justify-between gap-3">
+            <div><p className="font-semibold text-ink">{item.name}</p>
+              <p className="text-xs text-muted-ink mt-1">Ordem {item.order}</p></div>
             <div className="flex flex-wrap gap-2">
               {admin && <button className="btn-secondary" onClick={() => beginForm(item.id,
                 { name: item.name, order: String(item.order) })}>Editar</button>}
               <button className="btn-primary" onClick={() => goUnits(item.id)}>Ver UCs <ChevronRight size={16} /></button>
             </div>
           </div>)}
-          {level === "unit" && units.map((item) => <div key={item.id}
-            className="p-4 md:px-5 border-b border-slate-100 last:border-0 flex flex-wrap items-center justify-between gap-3">
-            <div className="min-w-0"><p className="font-semibold text-slate-800">{item.name}</p>
-              <p className="text-xs text-slate-500 mt-1">{item.code} · CH prevista: {item.plannedHours === null
+          {level === "unit" && visibleUnits.map((item) => <div key={item.id}
+            className="p-4 md:px-5 border-b border-line last:border-0 flex flex-wrap items-center justify-between gap-3">
+            <div className="min-w-0"><p className="font-semibold text-ink">{item.name}</p>
+              <p className="text-xs text-muted-ink mt-1">{item.code} · CH prevista: {item.plannedHours === null
                 ? "indefinida" : `${formatHours(item.plannedHours)} h`}</p></div>
             <div className="flex flex-wrap gap-2">
               {admin && <button className="btn-secondary" onClick={() => beginForm(item.id,
@@ -381,11 +392,11 @@ export function PedagogicalCatalog({ user }: { user: User }) {
               <button className="btn-primary" onClick={() => goCapabilities(item.id)}>Ver capacidades <ChevronRight size={16} /></button>
             </div>
           </div>)}
-          {level === "capability" && capabilities.map((item) => <div key={item.id}
-            className="p-4 md:px-5 border-b border-slate-100 last:border-0 flex flex-wrap items-start justify-between gap-3">
-            <div className="min-w-0"><p className="font-semibold text-slate-800">{item.description}</p>
-              <p className="text-sm text-slate-600 whitespace-pre-wrap mt-1">{item.contents}</p>
-              <p className="text-xs text-slate-500 mt-2">Ordem {item.order} · {formatHours(item.requiredHours)} h</p></div>
+          {level === "capability" && visibleCapabilities.map((item) => <div key={item.id}
+            className="p-4 md:px-5 border-b border-line last:border-0 flex flex-wrap items-start justify-between gap-3">
+            <div className="min-w-0"><p className="font-semibold text-ink">{item.description}</p>
+              <p className="text-sm text-muted-ink whitespace-pre-wrap mt-1">{item.contents}</p>
+              <p className="text-xs text-muted-ink mt-2">Ordem {item.order} · CH necessária {formatHours(item.requiredHours)} h</p></div>
             <div className="flex flex-wrap gap-2">
             <button type="button" className="btn-secondary" onClick={() => setRequirementsCapability(item)}>Requisitos técnicos</button>
             {admin && <button className="btn-secondary" onClick={() => beginForm(item.id, {
