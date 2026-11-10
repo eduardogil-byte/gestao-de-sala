@@ -313,6 +313,7 @@ export function Rooms({ user }: { user: User }) {
       {form && (
         <Modal
           width="max-w-3xl"
+          scrollable
           title={editing ? "Editar sala" : "Cadastrar sala"}
           onClose={() => { if (!busy) setForm(null); }}
         >

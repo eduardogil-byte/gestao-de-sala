@@ -221,12 +221,14 @@ export function Modal({
   onClose,
   width = "max-w-2xl",
   descriptionId,
+  scrollable = false,
 }: {
   title: string;
   children: ReactNode;
   onClose: () => void;
   width?: string;
   descriptionId?: string;
+  scrollable?: boolean;
 }) {
   const dialogRef = useRef<HTMLDivElement>(null);
   const onCloseRef = useRef(onClose);
@@ -295,7 +297,7 @@ export function Modal({
         aria-labelledby={titleId}
         aria-describedby={descriptionId}
         tabIndex={-1}
-        className={`bg-surface text-ink rounded-panel shadow-xl w-full ${width} my-4 md:my-8`}
+        className={`bg-surface text-ink rounded-panel shadow-xl w-full ${width} ${scrollable ? "max-h-[calc(100dvh-2rem)] overflow-y-auto" : "my-4 md:my-8"}`}
       >
         <div className="flex justify-between items-center border-b border-line px-4 sm:px-6 py-4 gap-3">
           <h2 id={titleId} className="text-lg font-semibold">{title}</h2>
