@@ -29,7 +29,7 @@ const occupation = { id: 5, roomId: 10, roomName: room.name, date: "2027-03-01",
 function Content({ mode, role }: { mode: string; role: string }) {
   const { reload } = useData();
   const user = { id: role === "Admin" ? "admin" : "t0", displayName: role, email: "", roles: [role] };
-  return <main className="p-4 max-w-5xl mx-auto"><button className="btn-secondary" aria-label="Atualizar dados" onClick={() => void reload()}>Atualizar dados</button>
+  return <main className="app-workspace p-4 max-w-5xl mx-auto"><button className="btn-secondary" aria-label="Atualizar dados" onClick={() => void reload()}>Atualizar dados</button>
     {mode === "dashboard" ? <ManagerDashboard admin={role === "Admin"} onTimeline={() => {}} onOpportunity={() => {}} onExport={() => {}} /> :
       mode === "requirements" ? <CapabilityRequirements path="/courses/1/modules/2/curricular-units/3/capabilities/4" admin={role === "Admin"} /> :
       mode === "catalog" ? <PedagogicalCatalog user={user} /> :
@@ -91,8 +91,13 @@ window.fetch = async (input, init) => {
   api.calls.push({ path, method, body });
   if (method !== "GET" || api.deferred.includes(path) || path.endsWith("/operating-shifts"))
     return new Promise<Response>((resolve) => api.pending.push({ path, method, body, resolve }));
-  if (path.startsWith("/api/agenda?")) return new Response(JSON.stringify([occupation,
-    { ...occupation, id: 6, date: "2027-03-15", startsAt: "2027-03-15T08:00:00", endsAt: "2027-03-15T12:00:00" }]));
+  if (path.startsWith("/api/agenda?")) {
+    const filters = new URL(path, location.origin).searchParams;
+    const rows = [occupation, { ...occupation, id: 6, date: "2027-03-15", startsAt: "2027-03-15T08:00:00", endsAt: "2027-03-15T12:00:00" }];
+    return new Response(JSON.stringify(rows.filter((item) => item.date >= (filters.get("from")?.slice(0, 10) ?? "") &&
+      item.date < (filters.get("to")?.slice(0, 10) ?? "9999-12-31") &&
+      (!filters.get("roomId") || item.roomId === Number(filters.get("roomId"))))));
+  }
   if (path.startsWith("/api/opportunities/") && path.includes("/capabilities?"))
     return new Response(JSON.stringify([{ capabilityId: 4, courseId: 1, courseName: "Curso sintético", unitName: "UC sintética",
       description: "Capacidade sintética", requiredHours: 8, classification: "Partial", findings: [] }]));

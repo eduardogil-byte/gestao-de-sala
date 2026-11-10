@@ -16,7 +16,7 @@ test("cronograma renderiza controles de consulta e reserva o filtro de professor
       user: { id: "teacher", displayName: "Professor", email: "", roles: ["Professor"] },
       openBookings: () => {},
     }));
-    assert.match(admin, /Cronograma de Ambientes/);
+    assert.match(admin, /<h1[^>]*>Cronograma<\/h1>/);
     assert.match(admin, /Semana/);
     assert.match(admin, /Mês/);
     assert.match(admin, /Semestre/);
