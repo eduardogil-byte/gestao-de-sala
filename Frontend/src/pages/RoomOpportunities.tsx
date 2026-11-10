@@ -3,14 +3,16 @@ import { read } from "../lib/api";
 import { useData } from "../lib/data";
 import { indicatorErrorMessage, indicatorPath, isSemesterIndicators, orderedRooms,
   type SemesterIndicators } from "../lib/occupancyIndicators";
-import { capabilitiesPath, periodsPath, validCapabilities, validPeriods,
-  type CapabilityOpportunity, type OpportunityPeriods } from "../lib/roomOpportunities";
+import { capabilitiesPath, loadRoomCompatibility, periodsPath, validCapabilities, validPeriods,
+  type CapabilityOpportunity, type OpportunityPeriods, type RoomCompatibility } from "../lib/roomOpportunities";
 import { dateBR, localDate, roomKind } from "../lib/utils";
 import { Busy, Card, Field, FilterBar, Notice, SectionHeading, Title } from "../components/UI";
 import type { Course } from "../types";
 
 const weekdays = ["Dom", "Seg", "Ter", "Qua", "Qui", "Sex", "Sáb"];
 const className = { Compatible: "Compatível", Partial: "Parcialmente compatível", Incompatible: "Incompatível" };
+const compatibilityTone = { Compatible: "border-emerald-200 bg-emerald-50 text-emerald-700",
+  Partial: "border-amber-200 bg-amber-50 text-amber-800", Incompatible: "border-rose-200 bg-rose-50 text-rose-800" };
 const dayName = { Potential: "Potencialmente livre", Occupied: "Ocupado", NotEligible: "Não elegível", NotOffered: "Turno não oferecido" };
 const number = (value: number) => new Intl.NumberFormat("pt-BR", { maximumFractionDigits: 2 }).format(value);
 
@@ -42,6 +44,10 @@ export function RoomOpportunities({ initial, onTimeline }: {
   const [resultKey, setResultKey] = useState("");
   const [periodError, setPeriodError] = useState("");
   const [periodLoading, setPeriodLoading] = useState(false);
+  const [matrix, setMatrix] = useState<RoomCompatibility[] | null>(null);
+  const [matrixKey, setMatrixKey] = useState("");
+  const [matrixError, setMatrixError] = useState("");
+  const [matrixLoading, setMatrixLoading] = useState(false);
   const suggestionRequest = useRef(0);
   const periodRequest = useRef(0);
   const semester = data.semesters.find((item) => String(item.id) === semesterId);
@@ -51,6 +57,8 @@ export function RoomOpportunities({ initial, onTimeline }: {
   const visibleSuggestions = suggestionKey === scopeKey ? suggestions : null;
   const visiblePeriods = resultKey === periodKey ? periods : null;
   const selected = visibleSuggestions?.find((item) => String(item.capabilityId) === capabilityId);
+  const selectedKey = `${scopeKey}|${capabilityId}`;
+  const visibleMatrix = matrixKey === selectedKey ? matrix : null;
 
   useEffect(() => {
     if (!semesterId && data.semesters.length) {
@@ -90,6 +98,17 @@ export function RoomOpportunities({ initial, onTimeline }: {
     periodRequest.current++;
     setPeriods(null); setResultKey(""); setPeriodError(""); setPeriodLoading(false);
   }, [periodKey]);
+  useEffect(() => {
+    let current = true;
+    setMatrix(null); setMatrixKey(""); setMatrixError("");
+    if (!selected) { setMatrixLoading(false); return () => { current = false; }; }
+    setMatrixLoading(true);
+    loadRoomCompatibility(selected.courseId, selected.capabilityId, selected.unitName, Number(students), read)
+      .then((result) => { if (current) { setMatrix(result); setMatrixKey(selectedKey); } })
+      .catch((error: unknown) => { if (current) setMatrixError(indicatorErrorMessage(error)); })
+      .finally(() => { if (current) setMatrixLoading(false); });
+    return () => { current = false; };
+  }, [selected?.courseId, selected?.capabilityId, selected?.unitName, selectedKey, students]);
 
   async function findCapabilities() {
     const count = Number(students);
@@ -128,30 +147,31 @@ export function RoomOpportunities({ initial, onTimeline }: {
 
   const rows = report && reportKey === semesterId ? orderedRooms(report.rooms) : [];
   return <div className="space-y-5">
-    <Title title="Oportunidades de Ambientes" subtitle="Análise técnica e de períodos para a coordenação. Nenhuma consulta cria reserva." />
-    <Card className="p-5 space-y-4"><SectionHeading title="Ambiente para análise" subtitle="Selecione o semestre e um ambiente com indicadores disponíveis." /><FilterBar embedded>
+    <Title title="Oportunidades de Ambientes" subtitle="Compare ambientes, requisitos técnicos e períodos potenciais antes de usar os fluxos oficiais de planejamento ou reserva. Nenhuma consulta cria reserva." />
+    <Card className="p-4 sm:p-5 space-y-4"><SectionHeading title="Ambiente para análise" subtitle="Selecione o semestre e um ambiente com indicadores disponíveis." /><FilterBar embedded>
       <Field label="Semestre"><select className="field" value={semesterId} onChange={(event) => { setSemesterId(event.target.value); setRoomId(""); }}>
         <option value="">Selecione</option>{data.semesters.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
       </select></Field>
       <Field label="Ambiente"><select className="field" value={roomId} onChange={(event) => setRoomId(event.target.value)}>
-        <option value="">Selecione</option>{rows.map((item) => <option key={item.roomId} value={item.roomId}>{item.roomName}</option>)}
+        <option value="">Selecione</option>{rows.map((item) => <option key={item.roomId} value={item.roomId}>{data.rooms.find((entry) => entry.id === item.roomId)?.code ? `${data.rooms.find((entry) => entry.id === item.roomId)?.code} · ` : ""}{item.roomName}</option>)}
       </select></Field>
     </FilterBar>
       {!data.semesters.length && <Notice message="Nenhum semestre cadastrado." />}
       {reportLoading && <Busy />}{reportError && <Notice type="error" message={reportError} />}
       {report && reportKey === semesterId && rows.length === 0 && <Notice message="Nenhum ambiente cadastrado." />}
       {rows.length > 0 && !rows.some((item) => item.classification === "Opportunity") && <p className="text-sm text-slate-600">Nenhum ambiente classificado como oportunidade pela SG-23 neste semestre. Os demais continuam disponíveis para análise técnica.</p>}
-      {rows.length > 0 && <div className="max-h-52 overflow-y-auto border-t border-slate-100 pt-2">
+      {rows.length > 0 && <div className="max-h-60 overflow-y-auto border-t border-line pt-2 space-y-1" aria-label="Indicadores por ambiente">
         {rows.map((item) => <button key={item.roomId} type="button" onClick={() => setRoomId(String(item.roomId))}
-          className={`block w-full text-left rounded-lg px-3 py-2 text-sm hover:bg-slate-50 focus-visible:outline focus-visible:outline-2 ${roomId === String(item.roomId) ? "bg-sky-50" : ""}`}>
-          <b>{item.roomName}</b> · {roomKind(item.kind)} · {item.occupancyPercent === null ? "Ocupação indeterminada" : `${number(item.occupancyPercent)}%`} · {item.availableHours === null ? "Horas livres não comprovadas" : `${number(item.availableHours)} h livres`} · {item.classification === "Opportunity" ? "Oportunidade SG-23" : item.classification === "Bottleneck" ? "Gargalo SG-23" : "Sem classificação de oportunidade"}
-          <span className="block text-xs text-slate-600 mt-1">Turnos oferecidos com capacidade comprovada: {item.shifts.filter((shift) => shift.capacityHours !== null).map((shift) => shift.shiftName).join(", ") || "não comprovados"}</span>
+          aria-pressed={roomId === String(item.roomId)}
+          className={`block w-full text-left rounded-xl border px-3 py-3 text-sm hover:bg-sky-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-sky-400 ${roomId === String(item.roomId) ? "border-sky-500 bg-sky-50" : "border-line"}`}>
+          <b>{data.rooms.find((entry) => entry.id === item.roomId)?.code ? `${data.rooms.find((entry) => entry.id === item.roomId)?.code} · ` : ""}{item.roomName}</b><span className="block text-xs text-muted-ink mt-1">{roomKind(item.kind)} · {item.occupancyPercent === null ? "Ocupação indeterminada" : `${number(item.occupancyPercent)}% de ocupação`} · {item.availableHours === null ? "Horas livres não comprovadas" : `${number(item.availableHours)} h potencialmente livres`}</span>
+          <span className="block text-xs mt-1">{item.classification === "Opportunity" ? "Oportunidade SG-23" : item.classification === "Bottleneck" ? "Gargalo SG-23" : "Sem classificação de oportunidade"} · Turnos oferecidos com capacidade comprovada: {item.shifts.filter((shift) => shift.capacityHours !== null).map((shift) => shift.shiftName).join(", ") || "não comprovados"}</span>
         </button>)}
       </div>}
       {room && reportKey === semesterId && <button type="button" className="btn-secondary" onClick={() => onTimeline(Number(semesterId), room.id)}>Ver cronograma do ambiente</button>}
     </Card>
     {room && reportKey === semesterId && <>
-      <Card className="p-5 space-y-3"><SectionHeading title="Atividades pedagógicas cadastradas" subtitle="Compare requisitos reais com o inventário do ambiente selecionado." />
+      <Card className="p-4 sm:p-5 space-y-4"><SectionHeading title="Capacidades pedagógicas" subtitle="Compare requisitos reais com o inventário do ambiente selecionado." />
         <p className="text-sm text-slate-600">A compatibilidade da lista considera os recursos até o fim do semestre; a análise de períodos reavalia a data final. Uma capacidade compatível não comprova a viabilidade de um curso inteiro.</p>
         <div className="grid sm:grid-cols-2 gap-3"><Field label="Alunos"><input className="field" type="number" min="1" max="1000" value={students} onChange={(event) => setStudents(event.target.value)} /></Field>
           <Field label="Curso"><select className="field" value={courseId} onChange={(event) => setCourseId(event.target.value)}><option value="">Todos</option>{courses.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></Field></div>
@@ -159,18 +179,29 @@ export function RoomOpportunities({ initial, onTimeline }: {
         <button type="button" className="btn-primary" onClick={() => void findCapabilities()} disabled={suggestionLoading}>Buscar atividades</button>
         {suggestionLoading && <Busy />}{suggestionError && <Notice type="error" message={suggestionError} />}
         {visibleSuggestions?.length === 0 && <Notice message="Nenhuma capacidade cadastrada neste filtro." />}
-        {visibleSuggestions && visibleSuggestions.length > 0 && <div className="max-h-80 overflow-y-auto space-y-2">{visibleSuggestions.map((item) => <button type="button" key={item.capabilityId}
+        {visibleSuggestions && visibleSuggestions.length > 0 && <div className="max-h-80 overflow-y-auto space-y-2" aria-label="Capacidades encontradas">{visibleSuggestions.map((item) => <button type="button" key={item.capabilityId}
           aria-pressed={capabilityId === String(item.capabilityId)} aria-label={`Selecionar capacidade: ${item.description} · ${item.courseName} · ${item.unitName}`}
-          onClick={() => setCapabilityId(String(item.capabilityId))} className={`block w-full text-left border rounded-xl p-3 text-sm focus-visible:outline focus-visible:outline-2 ${capabilityId === String(item.capabilityId) ? "border-sky-500 bg-sky-50" : "border-slate-200"}`}>
-          <b>{item.description}</b>{capabilityId === String(item.capabilityId) && <span className="ml-2 font-semibold">Selecionada</span>}<span className="block text-xs text-slate-600 mt-1">{item.courseName} · {item.unitName} · CH {number(item.requiredHours)} h · {className[item.classification]}</span>
+          onClick={() => setCapabilityId(String(item.capabilityId))} className={`block w-full text-left border rounded-xl p-3 text-sm focus-visible:outline focus-visible:outline-2 focus-visible:outline-sky-400 ${capabilityId === String(item.capabilityId) ? "border-sky-500 bg-sky-50" : "border-line"}`}>
+          <b>{item.description}</b>{capabilityId === String(item.capabilityId) && <span className="ml-2 font-semibold">Selecionada</span>}<span className="block text-xs text-muted-ink mt-1">{item.courseName} · {item.unitName} · CH pedagógica {number(item.requiredHours)} h</span><span className={`inline-block mt-2 rounded-full border px-2.5 py-1 text-xs font-semibold ${compatibilityTone[item.classification]}`}>{className[item.classification]} neste ambiente até o fim do semestre</span>
         </button>)}</div>}
-        {selected && <div className="rounded-xl bg-slate-50 p-4 text-sm"><b>{className[selected.classification]}</b>
+        {selected && <div className="rounded-xl border border-line bg-slate-50 p-4 text-sm"><b>{className[selected.classification]} no ambiente selecionado</b>
           <p className="mt-1 text-slate-600">Recursos e limitações avaliados pela SG-14:</p>
           <ul className="list-disc pl-5 mt-2 space-y-1">{selected.findings.map((finding, index) => <li key={`${finding.requirement}-${index}`}>
             {finding.detail} · {finding.status === "Met" ? "atendido" : finding.status === "Unknown" ? "não comprovado" : "requer atenção"}</li>)}</ul>
         </div>}
       </Card>
-      {selected && <Card className="p-5 space-y-3"><SectionHeading title="Períodos concretos para análise" subtitle="A consulta não cria reserva e cada data ainda exige validação no fluxo oficial." />
+      {selected && <Card className="p-4 sm:p-5 space-y-4"><SectionHeading title="Compatibilidade por ambiente" subtitle="Classificação técnica atual da SG-14 para a capacidade e os alunos selecionados. A disponibilidade no semestre exige a análise de períodos e confirmação em Reservas." />
+        {matrixLoading && <Busy />}{matrixError && <Notice type="error" message={matrixError} />}
+        {visibleMatrix?.length === 0 && <Notice message="Nenhum ambiente retornado pela consulta de compatibilidade." />}
+        {visibleMatrix && visibleMatrix.length > 0 && <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3 max-h-[38rem] overflow-y-auto" aria-label="Matriz de compatibilidade técnica">
+          {visibleMatrix.map((item) => { const registered = data.rooms.find((entry) => entry.id === item.roomId); return <article key={item.roomId} className="rounded-xl border border-line p-4 space-y-2">
+            <div className="flex flex-wrap items-start justify-between gap-2"><h3 className="font-semibold text-ink">{registered?.code ? `${registered.code} · ` : ""}{item.roomName}</h3><span className={`rounded-full border px-2.5 py-1 text-xs font-semibold ${compatibilityTone[item.classification]}`}>{className[item.classification]}</span></div>
+            <p className="text-xs text-muted-ink">{registered ? roomKind(registered.kind) : "Tipo não informado"} · {registered ? `${registered.seats} lugares cadastrados` : "Capacidade de alunos não informada"}</p>
+            {item.findings.length ? <ul className="space-y-1 text-xs">{item.findings.map((finding, index) => <li key={`${finding.requirement}-${index}`}><span className="font-semibold">{finding.status === "Met" ? "Atendido" : finding.status === "Unknown" ? "Não comprovado" : finding.status === "Partial" ? "Parcial" : "Não atendido"}:</span> {finding.detail}</li>)}</ul> : <p className="text-xs text-muted-ink">A API não detalhou requisitos para este ambiente.</p>}
+          </article>; })}
+        </div>}
+      </Card>}
+      {selected && <Card className="p-4 sm:p-5 space-y-4"><SectionHeading title="Períodos concretos para análise" subtitle="Compatibilidade técnica não comprova horário disponível. A consulta não cria reserva e cada data ainda exige validação no fluxo oficial." />
         <div className="grid sm:grid-cols-3 gap-3"><Field label="Início"><input className="field" type="date" value={from} onChange={(event) => setFrom(event.target.value)} /></Field>
           <Field label="Fim"><input className="field" type="date" value={to} onChange={(event) => setTo(event.target.value)} /></Field>
           <Field label="Turno"><select className="field" value={shiftId} onChange={(event) => setShiftId(event.target.value)}><option value="">Selecione</option>{data.shifts.map((item) => <option key={item.id} value={item.id}>{item.name} · {item.startsAt.slice(0, 5)}–{item.endsAt.slice(0, 5)}</option>)}</select></Field></div>

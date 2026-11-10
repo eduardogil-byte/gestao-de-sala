@@ -46,7 +46,10 @@ const api = {
   reset(mode = "dashboard", role = "Admin") {
     api.calls = []; api.pending = []; api.deferred = [];
     api.catalog = {
-      "/api/rooms": [room], "/api/software": [{ id: 1, name: "CAD" }],
+      "/api/rooms": mode === "opportunities" ? [{ ...room, code: "LAB-10" },
+        { ...room, id: 11, code: "LAB-11", name: "Laboratório B", seats: 20 },
+        { ...room, id: 12, code: "SALA-12", name: "Sala C", kind: "Sala", seats: 15 }] : [room],
+      "/api/software": [{ id: 1, name: "CAD" }],
       "/api/shifts": [{ id: 1, name: "Manhã", startsAt: "08:00:00", endsAt: "12:00:00" }],
       "/api/teachers": Array.from({ length: 14 }, (_, i) => ({ id: `t${i}`, displayName: `Docente ${i}`, email: "" })),
       "/api/semesters": [{ id: 1, name: "Semestre A", startDate: "2027-03-01", endDate: "2027-03-31" },
@@ -58,6 +61,16 @@ const api = {
       "/api/courses/1/modules": [{ id: 2, courseId: 1, name: "Módulo sintético", order: 1 }],
       "/api/courses/1/modules/2/curricular-units": [{ id: 3, courseModuleId: 2, code: "UC", name: "UC sintética", plannedHours: 8 }],
       "/api/courses/1/modules/2/curricular-units/3/capabilities": [{ id: 4, curricularUnitId: 3, description: "Capacidade sintética", contents: "Conteúdo", requiredHours: 8, order: 1 }],
+      "/api/courses/1/modules/2/curricular-units/3/capabilities/4/compatibility/rooms?students=1": [
+        { roomId: 10, roomName: room.name, classification: "Compatible", findings: [{ requirement: "Software CAD", status: "Met", detail: "Recurso atendido" }] },
+        { roomId: 11, roomName: "Laboratório B", classification: "Partial", findings: [{ requirement: "Licença", status: "Unknown", detail: "Validade não comprovada" }] },
+        { roomId: 12, roomName: "Sala C", classification: "Incompatible", findings: [{ requirement: "Computadores", status: "NotMet", detail: "Quantidade insuficiente" }] },
+      ],
+      "/api/opportunities/semesters/1/rooms/10/capabilities/4/periods?shiftId=1&students=1&from=2027-03-01&to=2027-03-31&weekdaysMask=62": {
+        semesterId: 1, roomId: 10, capabilityId: 4, shiftId: 1, pedagogicalHours: 8, shiftHours: 4,
+        requiredMeetings: 2, physicalHours: 8, potentiallyFreeMeetings: 0, suitableMeetings: 0,
+        compatibility: "Compatible", availability: "UnknownCapacity", findings: [], dates: [],
+      },
       "/api/courses/1/modules/2/curricular-units/3/workload-summary?hoursPerShift=4": { curricularUnitId: 3, plannedHours: 8, capabilityHours: 8,
         status: "Balanced", missingHours: 0, excessHours: 0, hoursPerShift: 4, requiredMeetings: 2 },
       [requirementPath]: { registered: false },

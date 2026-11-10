@@ -9,7 +9,7 @@ import {
 } from "lucide-react";
 import { useData } from "../lib/data";
 import { post, read } from "../lib/api";
-import { dateTimeBR, dateBR, resultMessage } from "../lib/utils";
+import { dateTimeBR, dateBR, resultMessage, roomKind } from "../lib/utils";
 import {
   Badge,
   Card,
@@ -193,6 +193,7 @@ export function Bookings({
     .sort((a, b) => (order[a.status] ?? 3) - (order[b.status] ?? 3) || a.startsAt.localeCompare(b.startsAt));
   const selected = suggestions.find((s) => s.id === Number(selectedRoom));
   const possiblyAvailable = acceptedDates.length;
+  const roomOptions = new Map(data.rooms.map((room) => [room.id, room]));
   return (
     <>
       <Title
@@ -225,13 +226,15 @@ export function Bookings({
           />
         </div>
       )}
-      <Card className="p-3 mb-5">
-        <div className="flex flex-wrap gap-2">
+      <Card className="p-4 mb-5">
+        <div className="flex flex-wrap gap-2" role="group" aria-label="Filtrar reservas por situação">
           {["Todos", "Pendente", "Aprovada", "Rejeitada"].map((s) => (
             <button
               key={s}
+              type="button"
+              aria-pressed={filter === s}
               onClick={() => setFilter(s)}
-              className={`text-sm font-semibold px-4 py-2 rounded-xl ${filter === s ? "bg-navy-900 text-white" : "text-slate-500 hover:bg-slate-100"}`}
+              className={filter === s ? "btn-primary" : "btn-secondary"}
             >
               {s === "Todos"
                 ? "Todas"
@@ -351,25 +354,24 @@ export function Bookings({
           <div className="space-y-4">
             {error && <Notice message={error} />}
             <p className="text-sm text-slate-600">
-              As salas são ordenadas pela adequação. Uma sala ocupada continua
-              visível, mas não pode ser confirmada nas datas em conflito.
+              As salas são ordenadas pela adequação. Compatibilidade técnica e disponibilidade nas datas são verificações distintas; a reserva só é confirmada após validação e persistência no backend.
             </p>
             {busy && (
               <p className="text-sm text-slate-500">
                 Consultando disponibilidade...
               </p>
             )}
-            <div className="grid sm:grid-cols-2 gap-3 max-h-[360px] overflow-y-auto">
+            <div className="grid sm:grid-cols-2 gap-3 max-h-[360px] overflow-y-auto" aria-label="Ambientes sugeridos para a reserva">
               {suggestions.map((s) => (
                 <button
                   key={s.id}
                   type="button"
                   aria-pressed={selectedRoom === String(s.id)}
                   onClick={() => void selectRoom(String(s.id))}
-                  className={`rounded-xl border p-3 text-left space-y-1 ${selectedRoom === String(s.id) ? "border-sky-500 bg-sky-50" : "border-slate-200 hover:border-slate-400"}`}
+                  className={`rounded-xl border p-3 text-left space-y-1 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-400 ${selectedRoom === String(s.id) ? "border-sky-500 bg-sky-50" : "border-line hover:border-sky-500"}`}
                 >
                   <div className="flex justify-between gap-2">
-                    <b className="text-sm">{s.name}</b>
+                    <b className="text-sm">{roomOptions.get(s.id)?.code ? `${roomOptions.get(s.id)?.code} · ` : ""}{s.name}</b>
                     <span
                       className={`text-[11px] font-bold ${s.compatible ? "text-emerald-700" : "text-rose-700"}`}
                     >
@@ -377,9 +379,8 @@ export function Bookings({
                         s.compatible ? "Compatível" : "Incompatível"}
                     </span>
                   </div>
-                  <p className="text-xs text-slate-500">
-                    {s.location} · {s.seats} lugares · {s.computers}{" "}
-                    computadores
+                  <p className="text-xs text-muted-ink">
+                    {roomOptions.get(s.id) ? `${roomKind(roomOptions.get(s.id)!.kind)} · ` : ""}{s.location} · {s.seats} lugares · {s.computers} computadores informados
                   </p>
                   <p className="text-xs text-slate-600">
                     {s.purpose || "Finalidade não informada"}
@@ -388,10 +389,8 @@ export function Bookings({
                     className={`text-xs font-semibold ${s.available ? "text-emerald-700" : "text-amber-700"}`}
                   >
                     {s.available
-                      ? "Livre"
-                      : s.technicalClassification
-                        ? `${s.availableOccurrences}/${s.totalOccurrences} datas presenciais livres`
-                        : `Ocupada: ${s.availableOccurrences}/${s.totalOccurrences} datas livres`}
+                      ? "Sem conflito indicado nas datas consultadas"
+                      : `${s.availableOccurrences}/${s.totalOccurrences} datas potencialmente livres na prévia`}
                   </p>
                   {s.incompatibility && (
                     <p className="text-xs text-rose-700">{s.incompatibility}</p>
@@ -410,10 +409,9 @@ export function Bookings({
             )}
             {selected && (
               <div className="border-t pt-4 space-y-3">
-                <h3 className="text-sm font-bold">
-                  {selected.name}: avaliação detalhada
-                </h3>
+                <h3 className="text-sm font-bold">{selected.name}: requisitos técnicos e disponibilidade</h3>
                 <div className="text-xs text-slate-600">
+                  Inventário informado: {" "}
                   {selected.computerGroups
                     .map(
                       (g) =>

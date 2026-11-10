@@ -3,7 +3,7 @@ import test from "node:test";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { createServer } from "vite";
-import { capabilitiesPath, periodsPath, validCapabilities, validPeriods } from "../src/lib/roomOpportunities.ts";
+import { capabilitiesPath, loadRoomCompatibility, periodsPath, validCapabilities, validPeriods, validRoomCompatibility } from "../src/lib/roomOpportunities.ts";
 import type { SemesterIndicators } from "../src/lib/occupancyIndicators.ts";
 
 test("consulta administrativa mantém semestre, ambiente, alunos, capacidade e período", () => {
@@ -28,6 +28,28 @@ test("respostas incompletas não viram oportunidades ou datas livres", () => {
   assert.equal(validPeriods(periods), true);
   assert.equal(validPeriods({ ...periods, dates: null }), false);
   assert.equal(validPeriods({ ...periods, dates: [{ date: "2027-03-01", status: "Available", detail: "Garantido" }] }), false);
+});
+
+test("matriz técnica usa a classificação da API e rejeita respostas incompletas", async () => {
+  const rows = [
+    { roomId: 10, roomName: "Laboratório A", classification: "Compatible", findings: [{ requirement: "Computadores", status: "Met", detail: "Suficientes" }] },
+    { roomId: 11, roomName: "Laboratório B", classification: "Partial", findings: [{ requirement: "Licença", status: "Unknown", detail: "Validade não comprovada" }] },
+    { roomId: 12, roomName: "Sala C", classification: "Incompatible", findings: [{ requirement: "Computadores", status: "NotMet", detail: "Insuficientes" }] },
+  ];
+  assert.equal(validRoomCompatibility(rows), true);
+  assert.equal(validRoomCompatibility([{ ...rows[0], classification: "Available" }]), false);
+  assert.equal(validRoomCompatibility([{ ...rows[0], findings: null }]), false);
+  assert.equal(validRoomCompatibility([{ ...rows[0], findings: [null] }]), false);
+  const calls: string[] = [];
+  const result = await loadRoomCompatibility(1, 4, "UC sintética", 25, async <T>(path: string) => {
+    calls.push(path);
+    if (path === "/courses/1/modules") return [{ id: 2 }] as T;
+    if (path === "/courses/1/modules/2/curricular-units") return [{ id: 3, name: "UC sintética" }] as T;
+    if (path === "/courses/1/modules/2/curricular-units/3/capabilities") return [{ id: 4 }] as T;
+    return rows as T;
+  });
+  assert.deepEqual(result, rows);
+  assert.equal(calls.at(-1), "/courses/1/modules/2/curricular-units/3/capabilities/4/compatibility/rooms?students=25");
 });
 
 test("tela de análise mantém estados vazios e acesso ao cronograma; dashboard oferece entrada", async () => {

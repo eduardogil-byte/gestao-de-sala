@@ -196,7 +196,25 @@ test("integrações administrativas usam contratos existentes e preservam estado
       await command("Input.dispatchKeyEvent", { type: "keyDown", key: "Enter", code: "Enter", windowsVirtualKeyCode: 13, nativeVirtualKeyCode: 13, text: "\r", unmodifiedText: "\r" });
       await command("Input.dispatchKeyEvent", { type: "keyUp", key: "Enter", code: "Enter", windowsVirtualKeyCode: 13 });
       await waitFor("document.querySelector('[aria-label^=\"Selecionar capacidade:\"]')?.getAttribute('aria-pressed') === 'true'");
-      assert.equal(await evaluate("document.querySelector('[aria-pressed=true]').textContent.includes('Selecionada')"), true);
+      assert.equal(await evaluate("document.querySelector('[aria-label^=\"Selecionar capacidade:\"][aria-pressed=true]').textContent.includes('Selecionada')"), true);
+      await waitFor("document.querySelector('[aria-label=\"Matriz de compatibilidade técnica\"]')?.textContent.includes('Validade não comprovada')");
+      assert.equal(await evaluate("document.querySelector('[aria-label=\"Matriz de compatibilidade técnica\"]').querySelectorAll('article').length"), 3);
+      for (const classification of ["Compatível", "Parcialmente compatível", "Incompatível"])
+        assert.equal(await evaluate(`document.querySelector('[aria-label="Matriz de compatibilidade técnica"]').textContent.includes(${JSON.stringify(classification)})`), true);
+      assert.equal(await evaluate("document.body.innerText.includes('A disponibilidade no semestre exige a análise de períodos')"), true);
+      await evaluate("document.querySelector('[aria-label=\"Matriz de compatibilidade técnica\"]').scrollIntoView({block:'center'})");
+      await capture("oportunidades-matriz-desktop");
+      await evaluate("adminTest.select('Turno', '1'); adminTest.click('Analisar período')");
+      await waitFor("document.body.innerText.includes('Disponibilidade indeterminada')");
+      assert.equal(await evaluate("document.body.innerText.includes('disponibilidade do professor e da turma não foi verificada')"), true);
+      await command("Emulation.setDeviceMetricsOverride", { width: 390, height: 844, deviceScaleFactor: 1, mobile: true });
+      assert.equal(await evaluate("document.documentElement.scrollWidth <= window.innerWidth + 1"), true);
+      await evaluate("document.querySelector('[aria-label=\"Matriz de compatibilidade técnica\"]').scrollIntoView({block:'start'})");
+      await capture("oportunidades-matriz-mobile");
+      await evaluate("window.scrollTo(0, document.body.scrollHeight)");
+      await capture("oportunidades-periodo-mobile");
+      await evaluate("window.scrollTo(0, 0)");
+      await command("Emulation.setDeviceMetricsOverride", { width: 1440, height: 900, deviceScaleFactor: 1, mobile: false });
     });
     await t.test("agenda busca docentes e diferencia horas semanais das semestrais", async () => {
       await reset("instructor"); await waitFor("!!document.querySelector('table')");
