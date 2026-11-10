@@ -5,4 +5,5 @@
 *.user
 *.suo
 appsettings.Production.json
+/appsettings.Development.json
 .env
