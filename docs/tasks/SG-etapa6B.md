@@ -40,17 +40,26 @@ dotnet build tools/homologacao/SalaGest.Homologacao.csproj --no-restore
 & ./tools/homologacao/Inspect-LocalSql.ps1
 ```
 
-Obter SIDs das contas Windows por tradução NTAccount/SecurityIdentifier, e do instalador por metadados SQL (`CONVERT(varchar(256),SUSER_SID(),1)`). Nunca autorizar por nome apenas. Levantar todas as instâncias locais registradas e eventuais destinos adicionais da organização; o inventário automático cobre instâncias locais registradas, não servidores remotos desconhecidos.
+Obter SIDs das contas Windows por tradução NTAccount/SecurityIdentifier. Para o instalador, registrar separadamente o SID efetivo, o nome original e o SID original da conexão. Isso é obrigatório para contas Windows vinculadas à Microsoft e mantém a recusa de impersonação:
+
+```sql
+SELECT CONVERT(varchar(256),SUSER_SID(),1) AS InstallerSid,
+       CONVERT(nvarchar(256),ORIGINAL_LOGIN()) AS InstallerOriginalLogin,
+       CONVERT(varchar(256),SUSER_SID(ORIGINAL_LOGIN()),1) AS InstallerOriginalSid;
+```
+
+Nunca autorizar por nome apenas. Levantar todas as instâncias locais registradas e eventuais destinos adicionais da organização; o inventário automático cobre instâncias locais registradas, não servidores remotos desconhecidos.
 
 ### Aprovação 1 — reserva e arquivo externo (escrita em arquivo, não SQL)
 
-O responsável deve aprovar exclusividade, endpoint/nome real, três SIDs distintos, demais endpoints a bloquear e prazo máximo de sete dias. Preparar previamente ACL do diretório. O gerador usa CreateNew e não sobrescreve arquivos.
+O responsável deve aprovar exclusividade, endpoint/nome real, três identidades funcionais distintas, a identidade original do instalador, demais endpoints a bloquear e prazo máximo de sete dias. O formato obrigatório é a versão 2; manifestos anteriores são recusados e devem ser regenerados em outro arquivo. Preparar previamente ACL do diretório. O gerador usa CreateNew e não sobrescreve arquivos.
 
 ```powershell
 & ./tools/homologacao/New-HomologationAuthorization.ps1 `
   -OutputPath '<manifesto-absoluto-externo>' `
   -ServerEndpoint '<endpoint-local-aprovado>' -ServerName '<SERVERPROPERTY-ServerName>' `
-  -ApplicationSid '<SID-hex>' -MaintenanceSid '<SID-hex>' -InstallerSid '<SID-hex>' `
+  -ApplicationSid '<SID-hex>' -MaintenanceSid '<SID-hex>' -InstallerSid '<SID-efetivo-hex>' `
+  -InstallerOriginalLogin '<ORIGINAL_LOGIN-aprovado>' -InstallerOriginalSid '<SID-original-hex>' `
   -BlockedEndpoints '<outra-instancia-1>','<outra-instancia-2>' `
   -ApprovedBy '<responsavel>' -ExpiresAtUtc '<UTC-ISO8601>' -ApproveExclusiveReservation
 
@@ -58,7 +67,7 @@ O responsável deve aprovar exclusividade, endpoint/nome real, três SIDs distin
 & ./tools/homologacao/Test-HomologationTls.ps1 -ManifestPath '<manifesto>'
 ```
 
-O Install padrão é Inspect: verifica TLS, servidor real, SID atual/original do instalador e ausência de bancos inesperados. Nenhuma escrita. O exemplo JSON versionado permanece deliberadamente inválido.
+O Install padrão é Inspect: verifica TLS, servidor real, SID efetivo, nome e SID originais do instalador e ausência de bancos inesperados. SID efetivo divergente continua sendo tratado como impersonação. Nenhuma escrita. O exemplo JSON versionado permanece deliberadamente inválido.
 
 ### Aprovação 2 — banco novo e logins (escrita SQL administrativa)
 

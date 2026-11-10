@@ -6,6 +6,8 @@ param(
     [Parameter(Mandatory)][string]$ApplicationSid,
     [Parameter(Mandatory)][string]$MaintenanceSid,
     [Parameter(Mandatory)][string]$InstallerSid,
+    [Parameter(Mandatory)][string]$InstallerOriginalLogin,
+    [Parameter(Mandatory)][string]$InstallerOriginalSid,
     [Parameter(Mandatory)][string[]]$BlockedEndpoints,
     [Parameter(Mandatory)][string]$ApprovedBy,
     [Parameter(Mandatory)][DateTimeOffset]$ExpiresAtUtc,
@@ -17,7 +19,7 @@ Assert-Hml (-not (Test-Path -LiteralPath $OutputPath)) 'Nao sobrescrever manifes
 $repo = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '../..'))
 Assert-Hml ([IO.Path]::IsPathRooted($OutputPath) -and -not [IO.Path]::GetFullPath($OutputPath).StartsWith($repo + [IO.Path]::DirectorySeparatorChar, [StringComparison]::OrdinalIgnoreCase)) 'Use diretorio externo previamente protegido por ACL.'
 Assert-Hml ($ExpiresAtUtc -gt [DateTimeOffset]::UtcNow -and $ExpiresAtUtc -le [DateTimeOffset]::UtcNow.AddDays(7)) 'Validade maxima sete dias.'
-$m = [ordered]@{approvedForSyntheticUse=$true; serverEndpoint=$ServerEndpoint; serverName=$ServerName; database='SalaGest_Etapa6_Testes'; applicationSid=$ApplicationSid; maintenanceSid=$MaintenanceSid; installerSid=$InstallerSid; blockedEndpoints=$BlockedEndpoints; approvedBy=$ApprovedBy; expiresAtUtc=$ExpiresAtUtc.ToUniversalTime().ToString('o')}
+$m = [ordered]@{authorizationVersion=2; approvedForSyntheticUse=$true; serverEndpoint=$ServerEndpoint; serverName=$ServerName; database='SalaGest_Etapa6_Testes'; applicationSid=$ApplicationSid; maintenanceSid=$MaintenanceSid; installerSid=$InstallerSid; installerOriginalLogin=$InstallerOriginalLogin; installerOriginalSid=$InstallerOriginalSid; blockedEndpoints=$BlockedEndpoints; approvedBy=$ApprovedBy; expiresAtUtc=$ExpiresAtUtc.ToUniversalTime().ToString('o')}
 $m.reservationId = [guid]::NewGuid().ToString()
 Assert-HmlAuthorization ([pscustomobject]$m)
 # Reservation is an attestation, not a lock or a server configuration change.

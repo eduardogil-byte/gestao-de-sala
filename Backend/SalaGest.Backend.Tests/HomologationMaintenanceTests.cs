@@ -8,8 +8,11 @@ public sealed class HomologationMaintenanceTests
 {
     private static readonly HomologationManifest Manifest = new()
     {
+        AuthorizationVersion = 2,
         ServerName = "SYNTHETIC", Database = HomologationSafety.DatabaseName,
-        ApplicationSid = "0x0102030405060708", MaintenanceSid = "0x0807060504030201"
+        ApplicationSid = "0x0102030405060708", MaintenanceSid = "0x0807060504030201",
+        InstallerSid = "0x0101010101010101", InstallerOriginalLogin = "MicrosoftAccount\\synthetic@example.invalid",
+        InstallerOriginalSid = "0x0202020202020202"
     };
     private static readonly string[] Migrations = Enumerable.Range(1,16).Select(i => $"Migration{i:D2}").ToArray();
 

@@ -8,12 +8,16 @@ namespace SalaGest.Api.Services;
 
 public sealed record HomologationManifest
 {
+    public int AuthorizationVersion { get; init; }
     public bool ApprovedForSyntheticUse { get; init; }
     public string ServerEndpoint { get; init; } = "";
     public string ServerName { get; init; } = "";
     public string Database { get; init; } = "";
     public string ApplicationSid { get; init; } = "";
     public string MaintenanceSid { get; init; } = "";
+    public string InstallerSid { get; init; } = "";
+    public string InstallerOriginalLogin { get; init; } = "";
+    public string InstallerOriginalSid { get; init; } = "";
     public string ApprovedBy { get; init; } = "";
     public DateTimeOffset ExpiresAtUtc { get; init; }
 }
@@ -48,13 +52,17 @@ public static class HomologationSafety
     public static string RequiredConnection(HomologationManifest manifest, string? connection,
         string? seed, string? sso, DateTimeOffset now)
     {
-        Require(manifest.ApprovedForSyntheticUse && !string.IsNullOrWhiteSpace(manifest.ApprovedBy) &&
+        Require(manifest.AuthorizationVersion == 2 && manifest.ApprovedForSyntheticUse && !string.IsNullOrWhiteSpace(manifest.ApprovedBy) &&
             manifest.ExpiresAtUtc > now && manifest.ExpiresAtUtc <= now.AddDays(7), "Reserva da instância não aprovada ou expirada.");
         Require(manifest.Database == DatabaseName && !string.IsNullOrWhiteSpace(manifest.ServerName) &&
             !string.IsNullOrWhiteSpace(manifest.ServerEndpoint), "Destino não autorizado.");
         Require(Regex.IsMatch(manifest.ApplicationSid, "^0x[0-9A-Fa-f]{16,}$") &&
             Regex.IsMatch(manifest.MaintenanceSid, "^0x[0-9A-Fa-f]{16,}$") &&
-            !manifest.ApplicationSid.Equals(manifest.MaintenanceSid, StringComparison.OrdinalIgnoreCase), "Identidades distintas e explícitas são obrigatórias.");
+            Regex.IsMatch(manifest.InstallerSid, "^0x[0-9A-Fa-f]{16,}$") &&
+            Regex.IsMatch(manifest.InstallerOriginalSid, "^0x[0-9A-Fa-f]{16,}$") &&
+            !string.IsNullOrWhiteSpace(manifest.InstallerOriginalLogin) &&
+            new[] { manifest.ApplicationSid, manifest.MaintenanceSid, manifest.InstallerSid }
+                .Distinct(StringComparer.OrdinalIgnoreCase).Count() == 3, "Identidades distintas e explícitas são obrigatórias.");
         Require(seed == "false" && sso == "false", "Seed e SSO devem estar expressamente desabilitados.");
         Require(!string.IsNullOrWhiteSpace(connection), "Conexão de homologação obrigatória, sem fallback.");
         SqlConnectionStringBuilder settings;

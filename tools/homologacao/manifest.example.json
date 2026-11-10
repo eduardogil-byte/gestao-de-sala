@@ -1,4 +1,5 @@
 {
+  "authorizationVersion": 2,
   "approvedForSyntheticUse": false,
   "reservationId": "",
   "serverEndpoint": "",
@@ -7,6 +8,8 @@
   "applicationSid": "",
   "maintenanceSid": "",
   "installerSid": "",
+  "installerOriginalLogin": "",
+  "installerOriginalSid": "",
   "blockedEndpoints": [],
   "approvedBy": "",
   "expiresAtUtc": "2000-01-01T00:00:00Z"

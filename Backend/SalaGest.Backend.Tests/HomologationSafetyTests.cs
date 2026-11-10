@@ -12,9 +12,12 @@ public sealed class HomologationSafetyTests
     private static readonly DateTimeOffset Now = new(2027, 1, 1, 0, 0, 0, TimeSpan.Zero);
     private static HomologationManifest Approved() => new()
     {
+        AuthorizationVersion = 2,
         ApprovedForSyntheticUse = true, ApprovedBy = "Responsável fictício", ExpiresAtUtc = Now.AddDays(1),
         ServerEndpoint = "localhost", ServerName = "SYNTHETIC", Database = HomologationSafety.DatabaseName,
-        ApplicationSid = "0x0102030405060708", MaintenanceSid = "0x0807060504030201"
+        ApplicationSid = "0x0102030405060708", MaintenanceSid = "0x0807060504030201",
+        InstallerSid = "0x0101010101010101", InstallerOriginalLogin = "MicrosoftAccount\\synthetic@example.invalid",
+        InstallerOriginalSid = "0x0202020202020202"
     };
     private const string Connection = "Server=localhost;Database=SalaGest_Etapa6_Testes;Integrated Security=True;Encrypt=True;TrustServerCertificate=False";
     private static HomologationSnapshot Valid() => new("SYNTHETIC", HomologationSafety.DatabaseName,
@@ -42,7 +45,7 @@ public sealed class HomologationSafetyTests
     [Fact]
     public void ReservationExpirySeedSsoAndSharedIdentityAreRejected()
     {
-        foreach (var manifest in new[] { Approved() with { ApprovedForSyntheticUse = false }, Approved() with { ExpiresAtUtc = Now },
+        foreach (var manifest in new[] { Approved() with { AuthorizationVersion = 1 }, Approved() with { ApprovedForSyntheticUse = false }, Approved() with { ExpiresAtUtc = Now },
             Approved() with { MaintenanceSid = Approved().ApplicationSid }, Approved() with { Database = "SalaGestDb" },
             Approved() with { ExpiresAtUtc = Now.AddDays(8) } })
             Assert.Throws<InvalidOperationException>(() => HomologationSafety.RequiredConnection(manifest, Connection, "false", "false", Now));
