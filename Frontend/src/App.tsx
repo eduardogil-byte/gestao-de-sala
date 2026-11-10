@@ -278,7 +278,7 @@ function Workspace({ user, onLogout, onPasswordChanged, institutionalNotice = ""
             {collapsed ? <PanelLeftOpen size={19} /> : <PanelLeftClose size={19} />}
           </button>
         </div>
-        <div className={`${collapsed ? "lg:px-2" : ""} px-3 py-5 flex-1 overflow-y-auto overflow-x-hidden`}>
+        <div className={`${collapsed ? "lg:px-2" : ""} sidebar-scrollbar px-3 py-5 flex-1 overflow-y-auto overflow-x-hidden`}>
           <nav aria-label="Navegação principal" className="space-y-4">
             {navigation.map((section) => (
               <section key={section.title} aria-label={section.title}>

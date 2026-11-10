@@ -9,6 +9,7 @@
   --color-muted-ink: #526176;
   --color-line: #d8e1ec;
   --color-focus: #2473c7;
+  --color-scrollbar: #1b324c;
   --radius-panel: .875rem;
   --radius-control: .625rem;
   --shadow-soft: 0 8px 28px rgba(22, 39, 59, .055);
@@ -27,6 +28,20 @@ body {
 }
 * {
   box-sizing: border-box;
+  scrollbar-width: thin;
+  scrollbar-color: var(--color-scrollbar) transparent;
+}
+*::-webkit-scrollbar {
+  width: 10px;
+}
+*::-webkit-scrollbar-thumb {
+  background: var(--color-scrollbar);
+  border: 2px solid transparent;
+  border-radius: 999px;
+  background-clip: padding-box;
+}
+.sidebar-scrollbar {
+  --color-scrollbar: #284765;
 }
 button,
 input,
