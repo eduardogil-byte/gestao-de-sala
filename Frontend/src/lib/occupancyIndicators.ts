@@ -14,6 +14,7 @@ export type RoomIndicator = {
   capacityHours: number | null; availableHours: number | null;
   occupancyPercent: number | null; outsideCapacityHours: number | null;
   conflictPairs: number; unclassifiedOccupations: number;
+  daysWithOccupations?: number; occupiedSlots?: number; unoccupiedSlots?: number | null;
   classification: IndicatorClassification; warnings: string[];
   shifts: ShiftIndicator[];
 };
@@ -25,6 +26,7 @@ export type SemesterIndicators = {
   availableHours: number | null; occupancyPercent: number | null;
   outsideCapacityHours: number | null; roomsWithUnknownCapacity: number;
   conflictPairs: number; classification: IndicatorClassification;
+  daysWithOccupations?: number; occupiedSlots?: number; unoccupiedSlots?: number | null;
   rooms: RoomIndicator[];
   months: { year: number; month: number; physicalOccupiedHours: number; daysWithOccupations: number }[];
   warnings: string[];
@@ -101,5 +103,6 @@ export function shiftDistribution(report: SemesterIndicators) {
 
 export const variationPoints = (first: SemesterIndicators, second: SemesterIndicators) =>
   first.occupancyPercent !== null && second.occupancyPercent !== null &&
+  first.capacityHours !== null && second.capacityHours !== null &&
   first.roomsWithUnknownCapacity === 0 && second.roomsWithUnknownCapacity === 0
     ? Number((second.occupancyPercent - first.occupancyPercent).toFixed(2)) : null;

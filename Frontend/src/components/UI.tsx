@@ -51,12 +51,12 @@ export function FilterBar({ children, actions, embedded = false }: { children: R
 }
 
 const metricTones = {
-  blue: "border-l-skybrand-600 bg-skybrand-50/45 text-skybrand-700",
-  violet: "border-l-violet-600 bg-violet-50/45 text-violet-700",
-  amber: "border-l-amber-500 bg-amber-50/45 text-amber-700",
-  emerald: "border-l-emerald-600 bg-emerald-50/45 text-emerald-700",
-  rose: "border-l-rose-600 bg-rose-50/45 text-rose-700",
-  slate: "border-l-slate-500 bg-slate-50 text-slate-700",
+  blue: "border-l-sky-400 text-sky-300",
+  violet: "border-l-violet-400 text-violet-300",
+  amber: "border-l-amber-400 text-amber-300",
+  emerald: "border-l-emerald-400 text-emerald-300",
+  rose: "border-l-rose-400 text-rose-300",
+  slate: "border-l-slate-400 text-slate-300",
 };
 
 export function MetricCard({ label, value, detail, icon: Icon, tone = "blue", onClick }: {
@@ -135,7 +135,7 @@ export function Checkbox({
   disabled?: boolean;
 }) {
   return (
-    <label className="flex items-center gap-2.5 cursor-pointer text-sm text-slate-700">
+    <label className="flex items-center gap-2.5 cursor-pointer text-sm text-ink">
       <input
         type="checkbox"
         className="w-4 h-4 rounded accent-sky-600"
@@ -154,7 +154,7 @@ export function Badge({ status }: { status: string }) {
   const negative = ["Rejeitada", "Rejeitado", "Inativa"].includes(status);
   return (
     <span
-      className={`pill ${positive ? "bg-emerald-50 text-emerald-700" : negative ? "bg-red-50 text-red-700" : "bg-amber-50 text-amber-700"}`}
+      className={`pill ${positive ? "bg-emerald-950 text-emerald-200" : negative ? "bg-rose-950 text-rose-200" : "bg-amber-950 text-amber-200"}`}
     >
       <span
         aria-hidden="true"
@@ -178,7 +178,7 @@ export function Notice({
     <div
       role={type === "error" ? "alert" : "status"}
       aria-live={type === "error" ? "assertive" : "polite"}
-      className={`flex items-start gap-3 p-3.5 rounded-xl border text-sm ${success ? "border-emerald-200 bg-emerald-50 text-emerald-800" : type === "info" ? "border-blue-200 bg-blue-50 text-blue-800" : "border-rose-200 bg-rose-50 text-rose-800"}`}
+      className={`flex items-start gap-3 p-3.5 rounded-xl border text-sm ${success ? "border-emerald-700 bg-emerald-950 text-emerald-100" : type === "info" ? "border-sky-700 bg-sky-950 text-sky-100" : "border-rose-700 bg-rose-950 text-rose-100"}`}
     >
       {success ? <CheckCircle2 aria-hidden="true" size={18} /> : <AlertCircle aria-hidden="true" size={18} />}
       <div className="flex-1">{message}</div>
@@ -199,17 +199,17 @@ export function Empty({
 }) {
   return (
     <div className="py-12 text-center flex flex-col items-center">
-      <div className="w-12 h-12 bg-slate-100 rounded-xl flex items-center justify-center mb-3">
-        <Inbox className="text-slate-400" size={22} />
+      <div className="w-12 h-12 bg-navy-800 rounded-xl flex items-center justify-center mb-3">
+        <Inbox className="text-muted-ink" size={22} />
       </div>
-      <p className="font-semibold text-slate-700">{title}</p>
-      {text && <p className="text-sm text-slate-500 mt-1 max-w-xs">{text}</p>}
+      <p className="font-semibold text-ink">{title}</p>
+      {text && <p className="text-sm text-muted-ink mt-1 max-w-xs">{text}</p>}
     </div>
   );
 }
 export function Busy() {
   return (
-    <div role="status" aria-live="polite" aria-atomic="true" className="flex items-center justify-center py-16 text-slate-600 gap-2">
+    <div role="status" aria-live="polite" aria-atomic="true" className="flex items-center justify-center py-16 text-muted-ink gap-2">
       <LoaderCircle aria-hidden="true" size={22} className="animate-spin" />
       Carregando dados...
     </div>
@@ -303,7 +303,7 @@ export function Modal({
             type="button"
             aria-label="Fechar"
             onClick={onClose}
-            className="min-w-11 min-h-11 flex items-center justify-center rounded-lg hover:bg-slate-100"
+            className="min-w-11 min-h-11 flex items-center justify-center rounded-lg hover:bg-white/10"
           >
             <X aria-hidden="true" size={19} />
           </button>

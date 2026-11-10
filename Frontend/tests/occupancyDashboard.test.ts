@@ -47,11 +47,12 @@ test("turnos agregam somente horas fornecidas pelo backend e preservam capacidad
 });
 
 test("variação só aparece quando ambos os percentuais gerais têm base completa", () => {
-  const first = { ...report, occupancyPercent: 90, roomsWithUnknownCapacity: 0 };
+  const first = { ...report, occupancyPercent: 90, capacityHours: 100, roomsWithUnknownCapacity: 0 };
   const second = { ...first, occupancyPercent: 70, capacityHours: 200 };
   assert.equal(variationPoints(first, second), -20);
   assert.equal(variationPoints(report, second), null);
   assert.equal(variationPoints(first, { ...second, occupancyPercent: null }), null);
+  assert.equal(variationPoints({ ...first, capacityHours: null }, second), null);
 });
 
 test("rejeita indicadores incompletos antes de apresentar sucesso", () => {
@@ -124,6 +125,39 @@ test("sem ocupações e sem gráficos apresenta estados vazios sem inventar perc
     assert.match(markup, /Sem distribuição por turno/);
     assert.match(markup, /Sem distribuição mensal/);
     assert.doesNotMatch(markup, /0% · Oportunidade/);
+  } finally { await server.close(); }
+});
+
+test("dashboard usa dias e turnos reais, identifica código e limita filtro de tipo à lista", async () => {
+  const server = await createServer({ configFile: false, server: { middlewareMode: true, hmr: false }, appType: "custom" });
+  try {
+    const { OccupancyView } = await server.ssrLoadModule("/src/components/ManagerDashboard.tsx");
+    const enriched = { ...report, daysWithOccupations: 5, rooms: report.rooms.map((room) => room.roomId === 2
+      ? { ...room, kind: "Sala", daysWithOccupations: 4, unoccupiedSlots: 3,
+        shifts: [{ ...room.shifts[0], occupancyPercent: 90 }] } : room) };
+    const markup = renderToStaticMarkup(createElement(OccupancyView, { report: enriched,
+      roomType: "Sala", roomCodes: { 2: "SALA-02" }, onTimeline: () => {} }));
+    assert.match(markup, /SALA-02 · Laboratório A/);
+    assert.match(markup, /Dias com ocupações: 4/);
+    assert.match(markup, /Turnos livres: 3/);
+    assert.match(markup, /Manhã/);
+    assert.match(markup, /90% · Gargalo/);
+    assert.match(markup, /tipo refina esta lista/);
+    assert.match(markup, /Dias disponíveis, total de capacidades/);
+    assert.doesNotMatch(markup, /Oficina sem configuração/);
+    assert.doesNotMatch(markup, /Laboratório B/);
+  } finally { await server.close(); }
+});
+
+test("capacidade indefinida impede exibir percentual mesmo se uma resposta inconsistente trouxer um número", async () => {
+  const server = await createServer({ configFile: false, server: { middlewareMode: true, hmr: false }, appType: "custom" });
+  try {
+    const { OccupancyView } = await server.ssrLoadModule("/src/components/ManagerDashboard.tsx");
+    const inconsistent = { ...report, occupancyPercent: 77, rooms: [{ ...report.rooms[0], occupancyPercent: 77,
+      shifts: [{ ...report.rooms[0].shifts[0], occupancyPercent: 77 }] }] };
+    const markup = renderToStaticMarkup(createElement(OccupancyView, { report: inconsistent, onTimeline: () => {} }));
+    assert.match(markup, /Indeterminado/);
+    assert.doesNotMatch(markup, /77%/);
   } finally { await server.close(); }
 });
 

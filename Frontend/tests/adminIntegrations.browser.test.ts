@@ -66,6 +66,16 @@ test("integrações administrativas usam contratos existentes e preservam estado
       await reply(operating, null, 204);
       await waitFor(`adminTest.calls.filter(r => r.path === ${JSON.stringify(reportPath)}).length > ${beforeClose}`);
     });
+    await t.test("filtro visual de tipo mantém o escopo da API e preserva a seleção ao atualizar", async () => {
+      await reset("dashboard");
+      await waitFor("document.body.innerText.includes('Ocupação por ambiente')");
+      await evaluate("adminTest.select('Tipo de ambiente (lista)', 'Laboratorio')");
+      const before = await evaluate<number>("adminTest.calls.filter(r => r.path === '/api/occupancy-indicators/semesters/1').length");
+      await evaluate("adminTest.click('Atualizar dados')");
+      await waitFor(`adminTest.calls.filter(r => r.path === '/api/occupancy-indicators/semesters/1').length > ${before}`);
+      assert.equal(await evaluate("[...document.querySelectorAll('label')].find(l => l.querySelector('span')?.textContent === 'Tipo de ambiente (lista)').querySelector('select').value"), "Laboratorio");
+      assert.equal(await evaluate("document.body.innerText.includes('o resumo acima permanece no escopo da consulta da API')"), true);
+    });
     await t.test("requisitos são cadastrados e critérios removidos por PUT, sem DELETE", async () => {
       await reset("requirements"); await waitFor("document.body.innerText.includes('Computadores necessários')");
       await evaluate("adminTest.select('Tipo de ambiente exigido', 'Laboratorio'); adminTest.input('Computadores necessários (opcional)', '20'); adminTest.input('RAM mínima por computador (GB, opcional)', '16')");

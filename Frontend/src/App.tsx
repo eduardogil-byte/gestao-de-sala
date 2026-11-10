@@ -238,7 +238,7 @@ function Workspace({ user, onLogout, onPasswordChanged, institutionalNotice = ""
     window.requestAnimationFrame(() => accountButtonRef.current?.focus());
   };
   return (
-    <div className="min-h-screen bg-canvas flex">
+    <div className="app-workspace min-h-screen bg-canvas flex">
       <a href="#main-content" className="sr-only focus:not-sr-only focus:fixed focus:top-2 focus:left-2 focus:z-[60] focus:rounded-lg focus:bg-skybrand-600 focus:px-4 focus:py-2 focus:text-white">Ir para o conteúdo</a>
       {menu && (
         <div
@@ -256,7 +256,7 @@ function Workspace({ user, onLogout, onPasswordChanged, institutionalNotice = ""
         <div className={`h-[83px] flex items-center justify-between border-b border-white/10 ${collapsed ? "px-4 lg:px-3 lg:justify-center" : "px-6"}`}>
           <div className={`flex items-center gap-2.5 ${collapsed ? "lg:hidden" : ""}`}>
             <div className="h-10 w-10 rounded-xl bg-skybrand-600 ring-1 ring-white/15 flex items-center justify-center shadow-lg shadow-sky-950/20">
-              <Layers3 size={23} />
+              <Layers3 aria-hidden="true" size={23} />
             </div>
             <div className={collapsed ? "lg:hidden" : ""}>
               <span className="block text-[21px] font-extrabold tracking-tight">SalaGest</span>
@@ -282,7 +282,7 @@ function Workspace({ user, onLogout, onPasswordChanged, institutionalNotice = ""
           <nav aria-label="Navegação principal" className="space-y-4">
             {navigation.map((section) => (
               <section key={section.title} aria-label={section.title}>
-                <p className={`text-[10px] font-bold tracking-[.14em] text-slate-500 px-3 mb-1.5 uppercase ${collapsed ? "lg:sr-only" : ""}`}>
+                <p className={`text-[10px] font-bold tracking-[.14em] text-slate-400 px-3 mb-1.5 uppercase ${collapsed ? "lg:sr-only" : ""}`}>
                   {section.title}
                 </p>
                 <div className="space-y-1">
@@ -297,7 +297,7 @@ function Workspace({ user, onLogout, onPasswordChanged, institutionalNotice = ""
                         title={collapsed ? (item.teacherLabel && !admin ? item.teacherLabel : item.label) : undefined}
                         aria-current={active ? "page" : undefined}
                         onClick={() => open(item.page)}
-                        className={`w-full min-h-11 flex items-center gap-3 rounded-control px-3 py-2.5 text-[13px] text-left font-semibold transition ${collapsed ? "lg:justify-center lg:px-2" : ""} ${active ? "bg-skybrand-600 text-white shadow-md shadow-sky-950/25" : "text-slate-300 hover:bg-white/[.07] hover:text-white"}`}
+                        className={`w-full min-h-11 flex items-center gap-3 rounded-control px-3 py-2.5 text-[13px] text-left font-semibold transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-sky-300 ${collapsed ? "lg:justify-center lg:px-2" : ""} ${active ? "bg-skybrand-600 text-white shadow-md shadow-sky-950/25" : "text-slate-300 hover:bg-white/[.1] hover:text-white"}`}
                       >
                         <Icon aria-hidden="true" size={19} />
                         <span className={collapsed ? "lg:sr-only" : ""}>{item.teacherLabel && !admin ? item.teacherLabel : item.label}</span>
@@ -359,7 +359,7 @@ function Workspace({ user, onLogout, onPasswordChanged, institutionalNotice = ""
         </div>
       </aside>
       <div className={`flex-1 min-w-0 ${collapsed ? "lg:pl-[76px]" : "lg:pl-[264px]"}`}>
-        <header className="h-[76px] bg-surface/95 backdrop-blur border-b border-line px-3 sm:px-5 md:px-8 flex items-center justify-between gap-3 sticky top-0 z-20">
+        <header className="h-[76px] bg-surface border-b border-line px-3 sm:px-5 md:px-8 flex items-center justify-between gap-3 sticky top-0 z-20">
           <div className="flex min-w-0 items-center gap-3">
             <button
               type="button"
