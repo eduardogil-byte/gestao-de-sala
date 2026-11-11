@@ -458,7 +458,7 @@ function Workspace({ user, onLogout, onPasswordChanged, institutionalNotice = ""
           ) : page === "imports" && admin ? (
             <InstitutionalImport key={importKind} initialKind={importKind} />
           ) : page === "exports" && admin ? (
-            <ExportData initial={exportFilter} />
+            <ExportData initial={exportFilter} onInstructorAgenda={() => open("instructor-agenda")} />
           ) : page === "instructor-agenda" ? (
             <InstructorAgenda user={user} onOpenRelated={(type, id) => { const target = type === "Booking" ? "bookings" : "loans"; setRelated({ page: target, id }); setPage(target); }} onManage={(date, roomId, occupationId) => { setAgendaFocus({ date, roomId, occupationId }); setPage("agenda"); }} />
           ) : page === "rooms" ? (
