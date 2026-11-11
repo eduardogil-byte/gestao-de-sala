@@ -1,6 +1,6 @@
 # Checklist de implantação e homologação
 
-Use em Staging primeiro. Não marque itens como concluídos sem evidência registrada. Não executar sobre o SQL Server real de desenvolvimento sem autorização específica.
+Use primeiro no banco sintético isolado descrito em [Etapa 13](etapa13.md) e [SG-etapa6B](../tasks/SG-etapa6B.md). Não marque itens como concluídos sem evidência registrada. Não executar sobre SQL Server de desenvolvimento ou produção sem autorização específica. Os comandos EF genéricos do guia de implantação não substituem o executor protegido da Etapa 6.
 
 ## Antes da implantação
 
@@ -16,6 +16,7 @@ Use em Staging primeiro. Não marque itens como concluídos sem evidência regis
 - [ ] Migrations revisadas, estado atual consultado e SQL gerado revisado por responsável autorizado.
 - [ ] Backup aprovado, arquivo verificado, restauração de ensaio planejada e RPO/RTO definidos.
 - [ ] Decisões institucionais D-01, D-03, D-04, D-06 e D-08 avaliadas.
+- [ ] Decisão D-02 sobre conflito docente/fechamento da UC e código obrigatório dos ambientes tratadas.
 - [ ] Movimentação de blocos RN-07/RN-08 por formulário identificada para homologação; diferença visual sem arrastar e soltar comunicada.
 - [ ] Artefatos Release do backend e `Frontend/dist` identificados por versão.
 
@@ -30,7 +31,7 @@ Use em Staging primeiro. Não marque itens como concluídos sem evidência regis
 - [ ] Verificar `GET /health/live` e `GET /health/ready`.
 - [ ] Registrar a versão do schema e resultado das operações.
 
-## Depois da implantação / SG-30
+## Depois da implantação / Etapa 13
 
 ### Infraestrutura e operação
 

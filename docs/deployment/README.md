@@ -1,6 +1,6 @@
 # Preparação de implantação do SalaGest
 
-Este guia prepara uma instalação futura; não comprova homologação nem define a infraestrutura do SENAI. Não há servidor, domínio, certificado, instância SQL Server ou estratégia de hospedagem institucional confirmados neste repositório.
+Este guia prepara uma instalação futura; não comprova homologação nem define a infraestrutura do SENAI. Não há servidor, domínio, certificado, instância SQL Server ou estratégia de hospedagem institucional confirmados neste repositório. O roteiro da [Etapa 13](etapa13.md) e a [matriz de pendências](pendencias-etapa12.md) registram o estado atual após o redesign.
 
 ## Arquitetura e pré-requisitos
 
@@ -48,7 +48,7 @@ A API não aplica migrations na inicialização. A configuração de SQL Server 
 
 ## Migrations: revisão e aplicação controlada
 
-Execute os comandos a partir de `Backend`, com ambiente e conexão direcionados ao banco correto. Confirme o destino fora da saída compartilhada e não publique credenciais.
+Os comandos EF abaixo servem apenas para planejar uma **implantação institucional futura**, após definição do destino e revisão pelo DBA. **Para o banco sintético protegido da Etapa 6, use exclusivamente os wrappers e o executor de migrations de [SG-etapa6B](../tasks/SG-etapa6B.md); não execute estes comandos EF diretos contra ele.** Confirme o destino fora da saída compartilhada e não publique credenciais.
 
 ```powershell
 cd Backend
@@ -115,6 +115,6 @@ Rollback da aplicação e recuperação do banco são operações diferentes. N�
 
 Antes de produção, definir host/domínio/TLS/proxy, banco e identidade SQL, CORS, provisão do primeiro Admin, provedor SSO, calendário e turnos, configuração por ambiente, operação de backup, RPO/RTO, retenção, criptografia/chaves, logs e responsável de suporte. Confirmar decisões D-01, D-03, D-04, D-06 e D-08 em `docs/DECISOES.md`. RN-07/RN-08: a movimentação de blocos pedagógicos completos foi acrescentada após a SG-32, por formulário; ainda exige homologação integrada e não oferece arrastar e soltar.
 
-## Preparação da SG-30
+## Homologação pendente
 
-Usar `checklist.md` como roteiro de instalação e homologação. A SG-30 deverá confirmar conectividade e estado das migrations em banco isolado, ausência de gravações na inicialização normal, saúde, autenticação/perfis, fluxos institucionais, exportações, backup/restore isolado, comportamento de atualização e desempenho. Esta preparação não equivale à homologação nem autoriza produção.
+Usar [checklist.md](checklist.md) e [Etapa 13](etapa13.md) como roteiro de instalação e homologação. A auditoria da Etapa 11 aprovou testes automatizados, mas não confirmou conectividade ponta a ponta em SQL Server isolado, estado real das migrations, backup/restore, concorrência ou desempenho. Esta preparação não equivale à homologação nem autoriza produção.
