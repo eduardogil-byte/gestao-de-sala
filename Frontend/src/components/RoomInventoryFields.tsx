@@ -1,5 +1,5 @@
 import type { ComputerGroup, RoomResource, Software } from "../types";
-import { Checkbox, Field } from "./UI";
+import { Checkbox, Field, SectionHeading } from "./UI";
 
 const textFields = [
   ["processor", "Processador", 160], ["storage", "Armazenamento", 120],
@@ -22,16 +22,18 @@ export function RoomInventoryFields({ groups, resources, software, onGroups, onR
     onGroups(groups.map((group, i) => i === index ? { ...group, ...patch } : group));
   const changeResource = (index: number, patch: Partial<RoomResource>) =>
     onResources(resources.map((resource, i) => i === index ? { ...resource, ...patch } : resource));
-  return <div className="border-t pt-4 space-y-5">
+  return <section aria-label="Inventário técnico" className="border-t border-line pt-5 space-y-6">
     <div className="flex flex-wrap justify-between gap-3 items-center">
-      <h3 className="font-semibold">Grupos de computadores</h3>
+      <SectionHeading title="Grupos de computadores" subtitle="Equipamentos cadastrados, condições operacionais e especificações técnicas." />
       <button type="button" className="btn-secondary" onClick={() => onGroups([...groups, {
         description: "", quantity: 1, operationalQuantity: null, ramGb: 0, tier: "Basico", dedicatedGpu: false, software: [],
       }])}>Adicionar grupo</button>
     </div>
     <p className="muted">Deixe em branco o que não foi verificado. Quantidade cadastrada não comprova quantidade operacional. Validade em branco significa prazo não informado.</p>
-    {groups.map((group, index) => <fieldset key={group.id ?? `new-${index}`} className="rounded-xl border border-line p-4 space-y-4">
+    {groups.length === 0 && <p className="rounded-control border border-dashed border-line p-4 muted">Nenhum grupo de computadores cadastrado.</p>}
+    {groups.map((group, index) => <fieldset key={group.id ?? `new-${index}`} className="rounded-panel border border-line p-4 sm:p-5 space-y-5">
       <legend className="font-semibold px-1">Grupo {index + 1}{group.id ? ` · ID ${group.id}` : " · Novo"}</legend>
+      <p className="text-sm font-semibold text-ink">Identificação e quantidades</p>
       <div className="grid sm:grid-cols-2 gap-3">
         <Field label="Descrição do grupo"><input className="field" required maxLength={120} value={group.description}
           onChange={(e) => changeGroup(index, { description: e.target.value })} /></Field>
@@ -52,7 +54,8 @@ export function RoomInventoryFields({ groups, resources, software, onGroups, onR
         </select></Field>)}
       </div>
       <Checkbox label="GPU dedicada" checked={group.dedicatedGpu} onChange={(dedicatedGpu) => changeGroup(index, { dedicatedGpu })} />
-      <div className="space-y-3">
+      <div className="space-y-3 border-t border-line pt-4">
+        <p className="text-sm font-semibold text-ink">Softwares instalados e licenças</p>
         <Field label="Adicionar software instalado"><select className="field" value="" onChange={(e) => {
           const selected = software.find((s) => s.id === Number(e.target.value));
           if (selected) changeGroup(index, { software: [...group.software, {
@@ -81,14 +84,15 @@ export function RoomInventoryFields({ groups, resources, software, onGroups, onR
       </div>
       <button type="button" className="btn-danger" onClick={() => onRemoveGroup(index)}>Remover grupo {index + 1}</button>
     </fieldset>)}
-    <div className="flex flex-wrap justify-between gap-3 items-center">
-      <h3 className="font-semibold">Equipamentos e recursos</h3>
+    <div className="flex flex-wrap justify-between gap-3 items-center border-t border-line pt-5">
+      <SectionHeading title="Equipamentos e recursos" subtitle="Máquinas, ferramentas, mobiliário e demais recursos do ambiente." />
       <button type="button" className="btn-secondary" onClick={() => onResources([...resources, {
         name: "", type: "", quantity: 1, operationalQuantity: null, description: null, condition: null,
         technicalDetails: null, voltage: null, warrantyExpiresOn: null, licenseExpiresOn: null,
       }])}>Adicionar equipamento</button>
     </div>
-    {resources.map((resource, index) => <fieldset key={resource.id ?? `new-${index}`} className="border border-line rounded-xl p-4">
+    {resources.length === 0 && <p className="rounded-control border border-dashed border-line p-4 muted">Nenhum equipamento ou recurso cadastrado.</p>}
+    {resources.map((resource, index) => <fieldset key={resource.id ?? `new-${index}`} className="border border-line rounded-panel p-4 sm:p-5">
       <legend className="font-semibold px-1">Equipamento {index + 1}{resource.id ? ` · ID ${resource.id}` : " · Novo"}</legend>
       <div className="grid sm:grid-cols-2 gap-3">
         {([["name", "Nome", 120], ["type", "Tipo", 80], ["description", "Descrição", 500],
@@ -108,5 +112,5 @@ export function RoomInventoryFields({ groups, resources, software, onGroups, onR
       </div>
       {!resource.id && <button type="button" className="btn-secondary mt-3" onClick={() => onResources(resources.filter((_, i) => i !== index))}>Descartar equipamento novo</button>}
     </fieldset>)}
-  </div>;
+  </section>;
 }

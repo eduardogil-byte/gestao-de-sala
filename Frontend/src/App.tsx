@@ -76,6 +76,7 @@ function Workspace({ user, onLogout, onPasswordChanged, institutionalNotice = ""
   const [timelineFilter, setTimelineFilter] = useState<{ semesterId: number; roomId: number; anchor: string; shiftId?: number } | null>(null);
   const [opportunityFilter, setOpportunityFilter] = useState<{ semesterId: number; roomId: number } | null>(null);
   const [exportFilter, setExportFilter] = useState<{ semesterId: number; secondSemesterId: number | null; roomId: number | null } | null>(null);
+  const [importKind, setImportKind] = useState<"Ambientes" | "Recursos" | "Docentes">("Ambientes");
   const [menu, setMenu] = useState(false);
   const [collapsed, setCollapsed] = useState(false);
   const menuButtonRef = useRef<HTMLButtonElement>(null);
@@ -207,6 +208,7 @@ function Workspace({ user, onLogout, onPasswordChanged, institutionalNotice = ""
     setTimelineFilter(null);
     setOpportunityFilter(null);
     setExportFilter(null);
+    if (p === "imports") setImportKind("Ambientes");
     setPage(p as Page);
     setMenu(false);
     scrollToTop();
@@ -454,19 +456,19 @@ function Workspace({ user, onLogout, onPasswordChanged, institutionalNotice = ""
           ) : page === "opportunities" && admin ? (
             <RoomOpportunities initial={opportunityFilter} onTimeline={openTimeline} />
           ) : page === "imports" && admin ? (
-            <InstitutionalImport />
+            <InstitutionalImport key={importKind} initialKind={importKind} />
           ) : page === "exports" && admin ? (
             <ExportData initial={exportFilter} />
           ) : page === "instructor-agenda" ? (
             <InstructorAgenda user={user} onOpenRelated={(type, id) => { const target = type === "Booking" ? "bookings" : "loans"; setRelated({ page: target, id }); setPage(target); }} onManage={(date, roomId, occupationId) => { setAgendaFocus({ date, roomId, occupationId }); setPage("agenda"); }} />
           ) : page === "rooms" ? (
-            <Rooms user={user} />
+            <Rooms user={user} onImport={admin ? (kind) => { setImportKind(kind); setPage("imports"); scrollToTop(); } : undefined} />
           ) : page === "academic" && admin ? (
             <Academic user={user} />
           ) : page === "pedagogical-catalog" ? (
             <PedagogicalCatalog user={user} />
           ) : page === "teachers" ? (
-            <Teachers user={user} />
+            <Teachers user={user} onImport={admin ? () => { setImportKind("Docentes"); setPage("imports"); scrollToTop(); } : undefined} />
           ) : page === "schedules" && admin ? (
             <Schedules user={user} reloadAgenda={reloadAgenda} />
           ) : page === "semester-planning" ? (
