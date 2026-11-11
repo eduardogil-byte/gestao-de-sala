@@ -145,6 +145,48 @@ test("integrações administrativas usam contratos existentes e preservam estado
       await reply(path, { id: 5 }, 201);
       await waitFor("document.body.innerText.includes('Cadastro realizado')");
     });
+    await t.test("docentes: Admin consulta e edita perfil; Professor vê apenas o próprio", async () => {
+      await reset("teachers", "Admin");
+      await waitFor("[...document.querySelectorAll('textarea')].some(t => t.value === 'Formação registrada')");
+      assert.equal(await evaluate("document.body.innerText.includes('Cursos habilitados') && document.body.innerText.includes('UCs habilitadas') && document.body.innerText.includes('Capacidades vinculadas')"), true);
+      await evaluate("adminTest.input('Buscar docente', 'Docente 0')");
+      await waitFor("[...document.querySelectorAll('.card')].some(c => c.textContent.includes('Docentes exibidos') && c.textContent.includes('1'))");
+      assert.equal(await evaluate("document.querySelector('table tbody').querySelectorAll('tr').length"), 1);
+      await command("Emulation.setDeviceMetricsOverride", { width: 390, height: 844, deviceScaleFactor: 1, mobile: true });
+      assert.equal(await evaluate("document.documentElement.scrollWidth <= window.innerWidth + 1"), true);
+      await capture("docentes-mobile");
+      await command("Emulation.setDeviceMetricsOverride", { width: 768, height: 1024, deviceScaleFactor: 1, mobile: false });
+      assert.equal(await evaluate("document.documentElement.scrollWidth <= window.innerWidth + 1"), true);
+      await capture("docentes-tablet");
+      await command("Emulation.setDeviceMetricsOverride", { width: 1440, height: 900, deviceScaleFactor: 1, mobile: false });
+      await capture("docentes-desktop");
+      await evaluate("(() => { const field = [...document.querySelectorAll('label')].find(l => l.querySelector('span')?.textContent === 'Formação').querySelector('textarea'); Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value').set.call(field, 'Formação atualizada'); field.dispatchEvent(new Event('input', {bubbles:true})); })()");
+      await evaluate("adminTest.click('Salvar perfil')");
+      const profilePath = "/api/teachers/t0/pedagogical-profile";
+      await waitFor(`adminTest.pending.some(r => r.path === ${JSON.stringify(profilePath)})`);
+      assert.equal(await evaluate(`adminTest.pending.find(r => r.path === ${JSON.stringify(profilePath)}).body.education`), "Formação atualizada");
+      await reply(profilePath, null, 204);
+      await waitFor("document.body.innerText.includes('Perfil pedagógico atualizado')");
+      await evaluate("document.querySelector('button[aria-label=\"Terça · Manhã\"]').click()");
+      await waitFor("document.querySelector('button[aria-label=\"Terça · Manhã\"]').getAttribute('aria-pressed') === 'true'");
+      await evaluate("adminTest.click('Salvar disponibilidade')");
+      const availabilityPath = "/api/teachers/t0/availability";
+      await waitFor(`adminTest.pending.some(r => r.path === ${JSON.stringify(availabilityPath)})`);
+      assert.deepEqual(await evaluate<any>(`adminTest.pending.find(r => r.path === ${JSON.stringify(availabilityPath)}).body`),
+        [{ weekday: 1, shiftId: 1 }, { weekday: 2, shiftId: 1 }]);
+      await reply(availabilityPath, null, 204);
+      await evaluate("adminTest.input('Nome', 'Docente de teste'); adminTest.input('E-mail', 'docente@example.test'); adminTest.input('Senha inicial', 'Example123!'); adminTest.click('Criar professor')");
+      await waitFor("adminTest.pending.some(r => r.path === '/api/auth/register')");
+      await reply("/api/auth/register", { role: "Professor" }, 201);
+      await waitFor("document.body.innerText.includes('Professor cadastrado')");
+      await reset("teachers", "Professor");
+      await waitFor("[...document.querySelectorAll('textarea')].some(t => t.value === 'Formação registrada')");
+      assert.equal(await evaluate("document.querySelector('table tbody').querySelectorAll('tr').length"), 1);
+      assert.equal(await evaluate("document.body.innerText.includes('docente0@example.test')"), false);
+      assert.equal(await evaluate("document.body.innerText.includes('Cadastrar professor') || document.body.innerText.includes('Salvar perfil') || document.body.innerText.includes('Buscar docente')"), false);
+      assert.equal(await evaluate("[...document.querySelectorAll('textarea')].every(t => t.readOnly)"), true);
+      assert.equal(await evaluate("adminTest.calls.some(r => r.path.includes('/pedagogical-profile') && !r.path.includes('/t0/'))"), false);
+    });
     await t.test("cronograma móvel mantém ocupações, filtros e detalhes sem rolagem da página", async () => {
       await command("Emulation.setDeviceMetricsOverride", { width: 390, height: 844, deviceScaleFactor: 1, mobile: true });
       await reset("timeline"); await waitFor("document.body.innerText.includes('Filtros do cronograma')");
@@ -291,6 +333,26 @@ test("integrações administrativas usam contratos existentes e preservam estado
         assert.equal(await evaluate("document.documentElement.scrollWidth <= window.innerWidth + 1"), true);
         await capture(`${mode}-mobile`);
       }
+    });
+    await t.test("importação de docentes abre no tipo correto e distingue criados, ignorados e erros", async () => {
+      await reset("import-docentes");
+      await waitFor("document.querySelector('select.field')?.value === 'Docentes'");
+      await evaluate("(() => { const input = document.querySelector('input[type=file]'); const transfer = new DataTransfer(); transfer.items.add(new File(['Nome,CPF'], 'docentes.csv', {type:'text/csv'})); input.files = transfer.files; input.dispatchEvent(new Event('change', {bubbles:true})); })()");
+      await evaluate("adminTest.click('Analisar arquivo')");
+      await waitFor("adminTest.pending.some(r => r.path === '/api/imports/preview')");
+      const row = { line: 2, identifier: "***.***.***-00", status: "Invalido", changes: [], errors: ["Campo obrigatório ausente"] };
+      await reply("/api/imports/preview", { kind: "Docentes", fileName: "docentes.csv", total: 2, newCount: 1,
+        updateCount: 0, unchangedCount: 0, invalidCount: 1, duplicateCount: 0, token: "sintetico", rows: [row] });
+      await waitFor("document.body.innerText.includes('Prévia da importação')");
+      await evaluate("[...document.querySelectorAll('label')].find(l => l.textContent.includes('Ignorar 1 linha')).querySelector('input').click()");
+      await evaluate("adminTest.click('Confirmar importação')");
+      await waitFor("adminTest.pending.some(r => r.path === '/api/imports/confirm')");
+      await reply("/api/imports/confirm", { kind: "Docentes", total: 2, created: 1, updated: 0,
+        unchanged: 0, skipped: 1, errors: [row] });
+      await waitFor("document.body.innerText.includes('Importação concluída')");
+      assert.equal(await evaluate("document.querySelector('[aria-label=\"Erros de validação\"]')?.textContent.includes('Campo obrigatório ausente')"), true);
+      assert.equal(await evaluate("[...document.querySelectorAll('.card')].some(c => c.textContent.includes('Criados') && c.textContent.includes('Ignorados'))"), true);
+      assert.equal(await evaluate("document.body.innerText.includes('A importação foi parcial')"), true);
     });
     console.log(`Capturas sintéticas: ${screenshotDir}`);
   } finally { await close(); }

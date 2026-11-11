@@ -8,6 +8,7 @@ import { PedagogicalCatalog } from "../../src/pages/PedagogicalCatalog";
 import { RoomTimeline } from "../../src/pages/RoomTimeline";
 import { RoomOpportunities } from "../../src/pages/RoomOpportunities";
 import { InstructorAgenda } from "../../src/pages/InstructorAgenda";
+import { Teachers } from "../../src/pages/Teachers";
 import { InstitutionalImport } from "../../src/pages/InstitutionalImport";
 import { ExportData } from "../../src/pages/ExportData";
 import "../../src/index.css";
@@ -33,9 +34,11 @@ function Content({ mode, role }: { mode: string; role: string }) {
     {mode === "dashboard" ? <ManagerDashboard admin={role === "Admin"} onTimeline={() => {}} onOpportunity={() => {}} onExport={() => {}} /> :
       mode === "requirements" ? <CapabilityRequirements path="/courses/1/modules/2/curricular-units/3/capabilities/4" admin={role === "Admin"} /> :
       mode === "catalog" ? <PedagogicalCatalog user={user} /> :
+      mode === "teachers" ? <Teachers user={user} /> :
       mode === "timeline" ? <RoomTimeline user={user} openBookings={() => {}} initialFilter={{ semesterId: 1, roomId: 10, anchor: "2027-03-01" }} /> :
       mode === "opportunities" ? <RoomOpportunities initial={{ semesterId: 1, roomId: 10 }} onTimeline={() => {}} /> :
-      mode === "instructor" ? <InstructorAgenda user={user} /> : mode === "import" ? <InstitutionalImport /> : <ExportData />}
+      mode === "instructor" ? <InstructorAgenda user={user} /> : mode === "import" ? <InstitutionalImport /> :
+        mode === "import-docentes" ? <InstitutionalImport initialKind="Docentes" /> : <ExportData />}
   </main>;
 }
 
@@ -51,7 +54,13 @@ const api = {
         { ...room, id: 12, code: "SALA-12", name: "Sala C", kind: "Sala", seats: 15 }] : [room],
       "/api/software": [{ id: 1, name: "CAD" }],
       "/api/shifts": [{ id: 1, name: "Manhã", startsAt: "08:00:00", endsAt: "12:00:00" }],
-      "/api/teachers": Array.from({ length: 14 }, (_, i) => ({ id: `t${i}`, displayName: `Docente ${i}`, email: "" })),
+      "/api/teachers": Array.from({ length: 14 }, (_, i) => ({ id: `t${i}`, displayName: `Docente ${i}`, email: mode === "teachers" && role === "Admin" ? `docente${i}@example.test` : null })),
+      "/api/teachers/t0/availability": [{ weekday: 1, shiftId: 1 }],
+      "/api/teachers/t0/pedagogical-profile": { teacherId: "t0", displayName: "Docente 0", education: "Formação registrada",
+        technicalSkills: "Habilidade registrada", professionalKnowledge: "Conhecimento registrado",
+        courses: [{ courseId: 1, courseName: "Curso sintético" }],
+        curricularUnits: [{ curricularUnitId: 3, unitName: "UC sintética", courseId: 1, courseName: "Curso sintético" }],
+        capabilities: [{ curricularCapabilityId: 4, description: "Capacidade sintética", curricularUnitId: 3 }] },
       "/api/semesters": [{ id: 1, name: "Semestre A", startDate: "2027-03-01", endDate: "2027-03-31" },
         { id: 2, name: "Semestre B", startDate: "2027-07-01", endDate: "2027-12-31" }],
       "/api/occupancy-indicators/semesters/1": structuredClone(report),
@@ -100,7 +109,7 @@ const api = {
   },
 };
 window.fetch = async (input, init) => {
-  const path = String(input), method = init?.method ?? "GET", body = init?.body ? JSON.parse(String(init.body)) : null;
+  const path = String(input), method = init?.method ?? "GET", body = init?.body instanceof FormData ? null : init?.body ? JSON.parse(String(init.body)) : null;
   api.calls.push({ path, method, body });
   if (method !== "GET" || api.deferred.includes(path) || path.endsWith("/operating-shifts"))
     return new Promise<Response>((resolve) => api.pending.push({ path, method, body, resolve }));

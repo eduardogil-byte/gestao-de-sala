@@ -60,9 +60,9 @@ function errorsCsv(rows: Row[]) {
   )].join("\r\n");
 }
 
-export function InstitutionalImport() {
+export function InstitutionalImport({ initialKind = "Ambientes" }: { initialKind?: Kind } = {}) {
   const { reload } = useData();
-  const [kind, setKind] = useState<Kind>("Ambientes");
+  const [kind, setKind] = useState<Kind>(initialKind);
   const [file, setFile] = useState<File | null>(null);
   const [preview, setPreview] = useState<Preview | null>(null);
   const [report, setReport] = useState<Report | null>(null);
@@ -200,9 +200,18 @@ export function InstitutionalImport() {
 
       {report && <Card className="p-5 space-y-3">
         <SectionHeading title="Importação concluída" subtitle="Confira o resumo e baixe os erros quando a operação tiver sido parcial." />
-        <p className="text-sm text-slate-600">{report.kind}: {report.total} analisados · {report.created} criados · {report.updated} atualizados · {report.unchanged} sem alterações · {report.skipped} ignorados.</p>
+        <p className="muted">{report.kind}: {report.total} registros analisados.</p>
+        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+          <MetricCard label="Criados" value={report.created} tone="emerald" />
+          <MetricCard label="Atualizados" value={report.updated} tone="blue" />
+          <MetricCard label="Sem alterações" value={report.unchanged} tone="slate" />
+          <MetricCard label="Ignorados" value={report.skipped} tone={report.skipped ? "rose" : "slate"} />
+        </div>
         {report.skipped > 0 && <>
           <Notice type="error" message="A importação foi parcial. Consulte as linhas ignoradas no relatório de erros." />
+          {report.errors.length > 0 && <ul className="max-h-44 overflow-y-auto space-y-1 text-sm text-rose-200" aria-label="Erros de validação">
+            {report.errors.map((row) => <li key={row.line}>Linha {row.line}: {row.errors.join("; ")}</li>)}
+          </ul>}
           <button className="btn-secondary" type="button" onClick={() => downloadErrors(report.errors)}>Baixar erros CSV</button>
         </>}
       </Card>}

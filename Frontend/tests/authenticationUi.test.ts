@@ -20,12 +20,14 @@ test("cadastro de professor aparece somente para Admin", async () => {
   try {
     const { Teachers } = await server.ssrLoadModule("/src/pages/Teachers.tsx");
     const profile = { id: "account", email: "account@example.test", displayName: "Conta" };
-    const admin = renderToStaticMarkup(createElement(Teachers, { user: { ...profile, roles: ["Admin"] } }));
-    const professor = renderToStaticMarkup(createElement(Teachers, { user: { ...profile, roles: ["Professor"] } }));
+    const admin = renderToStaticMarkup(createElement(Teachers, { user: { ...profile, roles: ["Admin"] }, onImport: () => {} }));
+    const professor = renderToStaticMarkup(createElement(Teachers, { user: { ...profile, roles: ["Professor"] }, onImport: () => {} }));
     assert.match(admin, /<form/);
     assert.match(admin, /Cadastrar professor/i);
     assert.match(admin, /type="password"/);
+    assert.match(admin, /Importar docentes/);
     assert.doesNotMatch(professor, /<form|Cadastrar professor/i);
+    assert.doesNotMatch(professor, /Importar docentes/);
   } finally { await server.close(); }
 });
 
