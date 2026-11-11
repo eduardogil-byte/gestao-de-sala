@@ -137,11 +137,11 @@ export function Dashboard({
             adequada para cada aula.
           </p>
           <button
-            className="mt-5 bg-white text-navy-900 font-semibold rounded-xl px-4 py-2.5 text-sm flex items-center gap-2 hover:bg-slate-100"
+            className="btn-primary mt-5"
             onClick={() => navigate("bookings")}
           >
             Reservar uma sala
-            <ArrowUpRight size={17} />
+            <ArrowUpRight size={17} aria-hidden="true" />
           </button>
         </div>
       </div>

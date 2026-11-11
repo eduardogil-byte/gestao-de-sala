@@ -122,6 +122,7 @@ button:disabled {
 .app-workspace :is(.border-slate-100, .border-slate-200, .border-slate-300) { border-color: var(--color-line); }
 .app-workspace :is(.bg-sky-50, .bg-sky-100, .bg-blue-50) { background-color: #153857; }
 .app-workspace :is(.text-sky-700, .text-sky-800, .text-sky-900, .text-blue-700, .text-blue-800) { color: #b7ddff; }
+.app-workspace :is(.text-skybrand-600, .text-skybrand-700) { color: #b7ddff; }
 .app-workspace :is(.bg-amber-50, .bg-amber-100) { background-color: #3a301e; }
 .app-workspace :is(.text-amber-700, .text-amber-800) { color: #ffda91; }
 .app-workspace :is(.bg-rose-50, .bg-red-50) { background-color: #422637; }

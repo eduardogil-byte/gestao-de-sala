@@ -345,7 +345,7 @@ function Workspace({ user, onLogout, onPasswordChanged, institutionalNotice = ""
             {ssoEnabled && linking && <div className="mt-3 space-y-2">
               <label className="block text-xs text-slate-300" htmlFor="institutional-link-password">Confirme sua senha local</label>
               <input id="institutional-link-password" type="password" autoComplete="current-password"
-                className="w-full rounded-lg px-2 py-2 text-sm text-slate-900" value={linkPassword}
+                className="field" value={linkPassword}
                 onChange={(event) => setLinkPassword(event.target.value)} disabled={linkBusy} />
               <div className="flex gap-2">
                 <button type="button" className="text-xs underline text-slate-300" disabled={linkBusy}
@@ -414,7 +414,7 @@ function Workspace({ user, onLogout, onPasswordChanged, institutionalNotice = ""
             </button>
             <div className="hidden sm:block h-9 w-px bg-line" />
             <button ref={accountHeaderRef} type="button" onClick={openAccount} aria-label="Abrir opções da conta" className="flex min-h-11 items-center gap-2 rounded-xl px-1 hover:bg-slate-100">
-              <div className="w-9 h-9 rounded-full bg-skybrand-100 text-skybrand-700 font-bold flex items-center justify-center">
+              <div className="w-9 h-9 rounded-full bg-skybrand-700 text-white font-bold flex items-center justify-center">
                 {user.displayName.charAt(0).toUpperCase()}
               </div>
               <span className="hidden sm:block text-sm font-semibold text-slate-700 max-w-32 truncate">

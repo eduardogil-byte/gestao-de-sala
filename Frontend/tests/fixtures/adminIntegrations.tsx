@@ -3,6 +3,8 @@ import { createRoot } from "react-dom/client";
 import { DataProvider, useData } from "../../src/lib/data";
 import { ConfirmationProvider } from "../../src/components/UI";
 import { ManagerDashboard } from "../../src/components/ManagerDashboard";
+import { Dashboard } from "../../src/pages/Dashboard";
+import { Bookings } from "../../src/pages/Bookings";
 import { CapabilityRequirements } from "../../src/components/CapabilityRequirements";
 import { PedagogicalCatalog } from "../../src/pages/PedagogicalCatalog";
 import { RoomTimeline } from "../../src/pages/RoomTimeline";
@@ -32,6 +34,8 @@ function Content({ mode, role }: { mode: string; role: string }) {
   const user = { id: role === "Admin" ? "admin" : "t0", displayName: role, email: "", roles: [role] };
   return <main className="app-workspace p-4 max-w-5xl mx-auto"><button className="btn-secondary" aria-label="Atualizar dados" onClick={() => void reload()}>Atualizar dados</button>
     {mode === "dashboard" ? <ManagerDashboard admin={role === "Admin"} onTimeline={() => {}} onOpportunity={() => {}} onExport={() => {}} /> :
+      mode === "dashboard-full" ? <Dashboard user={user} occupations={[occupation]} navigate={() => {}} openTimeline={() => {}} openOpportunity={() => {}} onExport={() => {}} unread={0} /> :
+      mode === "bookings" ? <Bookings user={user} reloadAgenda={async () => {}} /> :
       mode === "requirements" ? <CapabilityRequirements path="/courses/1/modules/2/curricular-units/3/capabilities/4" admin={role === "Admin"} /> :
       mode === "catalog" ? <PedagogicalCatalog user={user} /> :
       mode === "teachers" ? <Teachers user={user} /> :
