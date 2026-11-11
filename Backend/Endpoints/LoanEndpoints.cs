@@ -13,7 +13,7 @@ public static partial class ApiEndpoints
 {
     private static void MapLoans(IEndpointRouteBuilder app)
     {
-        var api = app.MapGroup("/api/loans").RequireAuthorization(policy => policy.RequireRole("Admin", "Professor")).WithTags("Empréstimos entre professores");
+        var api = app.MapGroup("/api/loans").RequireAuthorization(policy => policy.RequireRole("Admin", "Professor")).WithTags("Empréstimos entre instrutores");
         api.MapGet("", async (ClaimsPrincipal current, AppDbContext db) =>
         {
             var me = UserId(current);
@@ -52,7 +52,7 @@ public static partial class ApiEndpoints
                 input.BorrowerId == ownerId) return Error("Informe destinatário, motivo e ocorrências sem repetições");
             var borrower = await users.FindByIdAsync(input.BorrowerId);
             if (borrower is null || !await users.IsInRoleAsync(borrower, "Professor"))
-                return Error("Destinatário deve ser professor cadastrado");
+                return Error("Destinatário deve ser instrutor cadastrado");
 
             await using var tx = await db.Database.BeginTransactionAsync(IsolationLevel.Serializable);
             var occurrences = await db.Occupations.Where(o => input.RoomOccupationIds.Contains(o.Id)).ToListAsync();

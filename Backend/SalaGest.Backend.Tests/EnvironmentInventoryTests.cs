@@ -24,6 +24,77 @@ namespace SalaGest.Backend.Tests;
 public sealed class EnvironmentInventoryTests
 {
     [Fact]
+    public async Task RenamingCatalogTypeKeepsIdentityAndUpdatesLinkedResource()
+    {
+        await using var host = await InventoryHost.CreateAsync();
+        host.AsAdmin();
+        var input = new ResourceCatalogInput("Lousa digital", "Audiovisual", null);
+        var created = await host.Client.PostAsJsonAsync("/api/resource-catalog", input);
+        using var document = JsonDocument.Parse(await created.Content.ReadAsStringAsync());
+        var id = document.RootElement.GetProperty("id").GetInt32();
+        Assert.Equal(HttpStatusCode.Created, (await host.Client.PostAsJsonAsync($"/api/rooms/{host.RoomId}/resources",
+            new RoomResourceInput(input.Name, input.Category, 1, 1, ResourceCatalogItemId: id))).StatusCode);
+        Assert.Equal(HttpStatusCode.NoContent, (await host.Client.PutAsJsonAsync($"/api/resource-catalog/{id}",
+            input with { Name = "Painel interativo" })).StatusCode);
+        using var scope = host.App.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+        var resource = await db.RoomResources.SingleAsync();
+        Assert.Equal(id, resource.ResourceCatalogItemId);
+        Assert.Equal("Painel interativo", resource.Name);
+        Assert.Single(await db.ResourceCatalog.ToListAsync());
+    }
+
+    [Fact]
+    public async Task CatalogIsAdminOnlyAndPreservesLinkedInventoryWhenDeactivated()
+    {
+        await using var host = await InventoryHost.CreateAsync();
+        var catalogInput = new ResourceCatalogInput("Projetor", "Audiovisual", "Projeção da sala");
+        host.AsTeacher();
+        Assert.Equal(HttpStatusCode.Forbidden, (await host.Client.PostAsJsonAsync("/api/resource-catalog", catalogInput)).StatusCode);
+        Assert.Equal(HttpStatusCode.OK, (await host.Client.GetAsync("/api/resource-catalog")).StatusCode);
+
+        host.AsAdmin();
+        var created = await host.Client.PostAsJsonAsync("/api/resource-catalog", catalogInput);
+        Assert.Equal(HttpStatusCode.Created, created.StatusCode);
+        using var catalogDocument = JsonDocument.Parse(await created.Content.ReadAsStringAsync());
+        var catalogId = catalogDocument.RootElement.GetProperty("id").GetInt32();
+        Assert.Equal(HttpStatusCode.Conflict, (await host.Client.PostAsJsonAsync("/api/resource-catalog",
+            catalogInput with { Name = "  PROJETOR  " })).StatusCode);
+        Assert.Equal(HttpStatusCode.BadRequest, (await host.Client.PostAsJsonAsync("/api/resource-catalog",
+            catalogInput with { Name = "Sala ativa" })).StatusCode);
+
+        var resource = new RoomResourceInput("Projetor", "Audiovisual", 2, 1, ResourceCatalogItemId: catalogId);
+        var added = await host.Client.PostAsJsonAsync($"/api/rooms/{host.RoomId}/resources", resource);
+        Assert.Equal(HttpStatusCode.Created, added.StatusCode);
+        using var resourceDocument = JsonDocument.Parse(await added.Content.ReadAsStringAsync());
+        var resourceId = resourceDocument.RootElement.GetProperty("id").GetInt32();
+        Assert.Equal(catalogId, resourceDocument.RootElement.GetProperty("resourceCatalogItemId").GetInt32());
+        Assert.Equal(HttpStatusCode.BadRequest, (await host.Client.PostAsJsonAsync($"/api/rooms/{host.RoomId}/resources",
+            resource with { Name = "Internet" })).StatusCode);
+        Assert.Equal(HttpStatusCode.BadRequest, (await host.Client.PutAsJsonAsync($"/api/resources/{resourceId}",
+            resource with { OperationalQuantity = 3 })).StatusCode);
+        using (var scope = host.App.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+            Assert.True((await db.Rooms.FindAsync(host.RoomId))!.HasProjector);
+        }
+
+        Assert.Equal(HttpStatusCode.NoContent, (await host.Client.PutAsJsonAsync($"/api/resource-catalog/{catalogId}",
+            catalogInput with { Active = false })).StatusCode);
+        Assert.Equal(HttpStatusCode.BadRequest, (await host.Client.PostAsJsonAsync($"/api/rooms/{host.RoomId}/resources",
+            resource with { Name = "Projetor" })).StatusCode);
+        Assert.Equal(HttpStatusCode.NoContent, (await host.Client.PutAsJsonAsync($"/api/resources/{resourceId}",
+            resource with { Quantity = 3, OperationalQuantity = 0 })).StatusCode);
+        using (var scope = host.App.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+            Assert.Equal(catalogId, (await db.RoomResources.SingleAsync()).ResourceCatalogItemId);
+            Assert.False((await db.Rooms.FindAsync(host.RoomId))!.HasProjector);
+            Assert.Single(await db.AuditEntries.Where(a => a.EntityType == "ResourceCatalog" && a.Action == "Criado").ToListAsync());
+        }
+    }
+
+    [Fact]
     public async Task ResourcesRequireAnExistingRoomValidQuantitiesAndUniqueIdentity()
     {
         await using var host = await InventoryHost.CreateAsync();

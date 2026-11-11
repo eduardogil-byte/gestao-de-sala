@@ -108,7 +108,7 @@ export function UsagePanel() {
           </div>
           <p className="text-xs text-slate-500">
             Os valores indicam salas distintas em uso por dia, não o número de
-            professores ou alunos.
+            instrutores ou alunos.
           </p>
           <div className="grid sm:grid-cols-2 gap-4">
             <div className="bg-slate-50 rounded-xl p-4">

@@ -50,7 +50,7 @@ export function Teachers({ user, onImport }: { user: User; onImport?: () => void
       await register(name, email, password);
       await reload();
       setName(""); setEmail(""); setPassword("");
-      setSuccess("Professor cadastrado.");
+      setSuccess("Instrutor cadastrado.");
     } catch (cause) { setError(resultMessage(cause)); }
     finally { setBusy(false); }
   }
@@ -67,11 +67,11 @@ export function Teachers({ user, onImport }: { user: User; onImport?: () => void
       action={admin && onImport ? <button type="button" className="btn-secondary" onClick={onImport}>Importar docentes</button> : undefined} />
     {error && <Notice message={error} onClose={() => setError("")} />}
     {success && <Notice type="success" message={success} onClose={() => setSuccess("")} />}
-    {admin && <div className="grid gap-3 sm:grid-cols-2"><MetricCard label="Docentes cadastrados" value={data.teachers.length} detail="Contas com perfil Professor retornadas pela API" />
+    {admin && <div className="grid gap-3 sm:grid-cols-2"><MetricCard label="Instrutores cadastrados" value={data.teachers.length} detail="Contas de instrutores retornadas pela API" />
       <MetricCard label="Docentes exibidos" value={shown.length} detail="Resultado da busca atual" tone="slate" /></div>}
-    <Card className="p-4 sm:p-5 space-y-4"><SectionHeading title="Professores cadastrados" subtitle="Selecione um docente para consultar o perfil e a disponibilidade." />
+    <Card className="p-4 sm:p-5 space-y-4"><SectionHeading title="Instrutores cadastrados" subtitle="Selecione um instrutor para consultar o perfil e a disponibilidade." />
       {admin && <Field label="Buscar docente"><input className="field max-w-lg" type="search" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Nome ou e-mail" /></Field>}
-      {loading ? <Busy /> : data.teachers.length === 0 ? <Empty text="Ainda não existem professores cadastrados." /> : shown.length === 0 ?
+      {loading ? <Busy /> : data.teachers.length === 0 ? <Empty text="Ainda não existem instrutores cadastrados." /> : shown.length === 0 ?
         <Empty title="Nenhum docente encontrado" text="Tente outro termo de busca." /> : <>
           <div className="hidden md:block data-table-wrap"><table className="w-full text-left text-sm"><thead><tr>
             <th className="table-head p-3">Docente</th>{admin && <th className="table-head p-3">E-mail</th>}<th className="table-head p-3">Perfil</th>
@@ -91,7 +91,7 @@ export function Teachers({ user, onImport }: { user: User; onImport?: () => void
       <TeacherProfile key={teacherId} teacherId={teacherId} admin={admin} />
       <Card className="p-4 sm:p-5 space-y-4"><SectionHeading title="Disponibilidade por turno"
         subtitle={`Disponibilidade informada por ${selected?.displayName ?? user.displayName}. A agenda efetiva depende das atribuições e reservas.`} />
-        {admin && <SearchableSelect label="Professor" value={teacherId} onChange={setTeacherId}
+        {admin && <SearchableSelect label="Instrutor" value={teacherId} onChange={setTeacherId}
           options={data.teachers.map((item) => ({ value: item.id, label: item.displayName }))} />}
         {availabilityLoading ? <Busy /> : data.shifts.length === 0 ? <Empty title="Nenhum turno cadastrado" /> : <>
           <div className="data-table-wrap"><table className="min-w-full text-sm"><thead><tr><th className="table-head px-3 py-3">Dia</th>
@@ -109,12 +109,12 @@ export function Teachers({ user, onImport }: { user: User; onImport?: () => void
         </>}
       </Card>
     </>}
-    {admin && <Card className="p-4 sm:p-5 space-y-4"><SectionHeading title="Cadastrar professor" subtitle="Cria uma conta com papel Professor. Os demais dados podem ser preenchidos no perfil pedagógico após o cadastro." />
+    {admin && <Card className="p-4 sm:p-5 space-y-4"><SectionHeading title="Cadastrar instrutor" subtitle="Cria uma conta de instrutor. Os demais dados podem ser preenchidos no perfil pedagógico após o cadastro." />
       <form onSubmit={(event) => void create(event)} className="grid gap-3 sm:grid-cols-2">
         <Field label="Nome"><input className="field" required maxLength={120} autoComplete="name" value={name} onChange={(event) => setName(event.target.value)} /></Field>
         <Field label="E-mail"><input type="email" className="field" required autoComplete="email" value={email} onChange={(event) => setEmail(event.target.value)} /></Field>
         <Field label="Senha inicial" className="sm:col-span-2"><input type="password" minLength={8} required autoComplete="new-password" className="field" value={password} onChange={(event) => setPassword(event.target.value)} /></Field>
-        <div className="sm:col-span-2"><SubmitButton busy={busy}>Criar professor</SubmitButton></div>
+        <div className="sm:col-span-2"><SubmitButton busy={busy}>Criar instrutor</SubmitButton></div>
       </form>
     </Card>}
   </div>;

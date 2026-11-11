@@ -218,7 +218,7 @@ public sealed class OccupationMoveTests
         Assert.Contains("sala", room.GetProperty("blocks").ToString());
         Assert.Contains("Professor 1", room.GetProperty("blocks").ToString());
         var teacher = await host.Preview(host.ManualId, host.RoomBId, new(2027, 3, 2), host.AfternoonId);
-        Assert.Contains("professor", teacher.GetProperty("blocks").ToString());
+        Assert.Contains("instrutor", teacher.GetProperty("blocks").ToString());
         var classGroup = await host.Preview(host.RecurringSecondId, host.RoomBId, new(2027, 3, 8), host.MorningId);
         Assert.Contains("turma", classGroup.GetProperty("blocks").ToString());
     }

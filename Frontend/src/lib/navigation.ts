@@ -50,7 +50,7 @@ const sections: NavigationSection[] = [
     items: [
       { page: "pedagogical-catalog", label: "Catálogo Pedagógico", icon: "catalog" },
       { page: "academic", label: "Turmas e disciplinas", icon: "course", adminOnly: true },
-      { page: "teachers", label: "Professores", icon: "people" },
+      { page: "teachers", label: "Instrutores", icon: "people" },
     ],
   },
   {

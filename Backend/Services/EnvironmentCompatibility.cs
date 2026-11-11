@@ -33,7 +33,11 @@ public static class EnvironmentCompatibility
             }
             foreach (var required in requirement.Resources)
             {
-                var resource = room.Resources.FirstOrDefault(r => r.NormalizedName == required.NormalizedName &&
+                var resource = room.Resources.FirstOrDefault(r =>
+                    required.ResourceCatalogItemId is int catalogId && r.ResourceCatalogItemId == catalogId)
+                    ?? room.Resources.FirstOrDefault(r =>
+                    (required.ResourceCatalogItemId is null || r.ResourceCatalogItemId is null) &&
+                    r.NormalizedName == required.NormalizedName &&
                     r.NormalizedType == required.NormalizedType);
                 var available = resource?.OperationalQuantity;
                 var total = resource?.Quantity ?? 0;

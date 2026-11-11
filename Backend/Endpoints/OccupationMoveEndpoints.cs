@@ -662,7 +662,7 @@ public static partial class ApiEndpoints
                             .Where(u => u.Id == teacherId).Select(u => u.DisplayName).FirstOrDefaultAsync();
                         var className = occupantClassId is null ? null : await db.Classes.AsNoTracking()
                             .Where(c => c.Id == occupantClassId).Select(c => c.Name).FirstOrDefaultAsync();
-                        blocks.Add($"Ocupante do ambiente: {teacherName ?? "professor não informado"}; " +
+                        blocks.Add($"Ocupante do ambiente: {teacherName ?? "instrutor não informado"}; " +
                             $"turma: {className ?? "não informada"}");
                     }
                 }

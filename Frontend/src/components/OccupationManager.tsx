@@ -99,7 +99,7 @@ export function OccupationManager({
           </p>
         )}
         <Checkbox
-          label="Notificar professores afetados"
+          label="Notificar instrutores afetados"
           checked={notify}
           onChange={setNotify}
         />

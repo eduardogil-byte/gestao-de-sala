@@ -44,7 +44,7 @@ export function Dashboard({
       page: "rooms",
     },
     {
-      title: "Professores",
+      title: "Instrutores",
       value: data.teachers.length,
       icon: Users,
       tone: "violet" as const,

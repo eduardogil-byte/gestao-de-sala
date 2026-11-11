@@ -256,14 +256,14 @@ export function Academic({ user }: { user: User }) {
                   ))}
                 </select>
               </Field>
-              <Field label="Professor">
+              <Field label="Instrutor">
                 <select
                   required
                   className="field"
                   value={as.teacherId}
                   onChange={(e) => setAs({ ...as, teacherId: e.target.value })}
                 >
-                  <option value="">Selecione o professor</option>
+                  <option value="">Selecione o instrutor</option>
                   {data.teachers.map((t) => (
                     <option key={t.id} value={t.id}>
                       {t.displayName}
@@ -431,7 +431,7 @@ export function Academic({ user }: { user: User }) {
                       {data.classes.find((c) => c.id === a.classGroupId)?.name}{" "}
                       •{" "}
                       {data.teachers.find((t) => t.id === a.teacherId)
-                        ?.displayName || "Professor"}
+                        ?.displayName || "Instrutor"}
                     </p>
                     <p className="text-xs text-sky-700 mt-1">
                       {a.meetingsPerWeek} turno(s)/semana{" "}

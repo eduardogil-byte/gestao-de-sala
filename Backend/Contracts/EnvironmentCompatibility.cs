@@ -2,7 +2,8 @@ using SalaGest.Api.Models;
 
 namespace SalaGest.Api.Contracts;
 
-public record CapabilityResourceInput(string Name, string Type, int Quantity, bool Critical = false);
+public record CapabilityResourceInput(string Name, string Type, int Quantity, bool Critical = false,
+    int? ResourceCatalogItemId = null);
 public record CapabilitySoftwareInput(int SoftwareId, int? RequiredLicenses = null, bool Critical = true);
 public record CapabilityEnvironmentInput(RoomKind? RoomKind, bool RequiresProjector,
     int? RequiredComputers, int? MinRamGb, bool ComputersCritical,

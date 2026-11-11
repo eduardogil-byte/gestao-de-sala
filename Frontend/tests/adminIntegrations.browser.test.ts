@@ -80,14 +80,15 @@ test("integrações administrativas usam contratos existentes e preservam estado
       await reset("requirements"); await waitFor("document.body.innerText.includes('Computadores necessários')");
       await evaluate("adminTest.select('Tipo de ambiente exigido', 'Laboratorio'); adminTest.input('Computadores necessários (opcional)', '20'); adminTest.input('RAM mínima por computador (GB, opcional)', '16')");
       await evaluate("adminTest.click('Adicionar requisito de recurso')");
-      await waitFor("document.body.innerText.includes('Nome do recurso')");
-      await evaluate("adminTest.input('Nome do recurso', 'Bancada'); adminTest.input('Tipo do recurso', 'Equipamento'); adminTest.select('Adicionar software exigido', '1')");
+      await waitFor("document.body.innerText.includes('Recurso do catálogo')");
+      await evaluate("adminTest.select('Recurso do catálogo', '9'); adminTest.select('Adicionar software exigido', '1')");
       await waitFor("document.body.innerText.includes('Licenças necessárias')");
       await evaluate("adminTest.input('Licenças necessárias (opcional)', '20'); adminTest.click('Salvar requisitos técnicos')");
       await waitFor(`adminTest.pending.some(r => r.path === ${JSON.stringify(requirement)})`);
       const body = await evaluate<any>(`adminTest.pending.find(r => r.path === ${JSON.stringify(requirement)}).body`);
       assert.equal(body.requiredComputers, 20); assert.equal(body.minRamGb, 16);
-      assert.equal(body.resources[0].name, "Bancada"); assert.equal(body.software[0].requiredLicenses, 20);
+      assert.equal(body.resources[0].name, "Bancada"); assert.equal(body.resources[0].resourceCatalogItemId, 9);
+      assert.equal(body.software[0].requiredLicenses, 20);
       await capture("requisitos-desktop");
       assert.equal(await evaluate(`adminTest.pending.find(r => r.path === ${JSON.stringify(requirement)}).method`), "POST");
       await reply(requirement, { registered: true }, 201);
@@ -175,15 +176,15 @@ test("integrações administrativas usam contratos existentes e preservam estado
       assert.deepEqual(await evaluate<any>(`adminTest.pending.find(r => r.path === ${JSON.stringify(availabilityPath)}).body`),
         [{ weekday: 1, shiftId: 1 }, { weekday: 2, shiftId: 1 }]);
       await reply(availabilityPath, null, 204);
-      await evaluate("adminTest.input('Nome', 'Docente de teste'); adminTest.input('E-mail', 'docente@example.test'); adminTest.input('Senha inicial', 'Example123!'); adminTest.click('Criar professor')");
+      await evaluate("adminTest.input('Nome', 'Docente de teste'); adminTest.input('E-mail', 'docente@example.test'); adminTest.input('Senha inicial', 'Example123!'); adminTest.click('Criar instrutor')");
       await waitFor("adminTest.pending.some(r => r.path === '/api/auth/register')");
       await reply("/api/auth/register", { role: "Professor" }, 201);
-      await waitFor("document.body.innerText.includes('Professor cadastrado')");
+      await waitFor("document.body.innerText.includes('Instrutor cadastrado')");
       await reset("teachers", "Professor");
       await waitFor("[...document.querySelectorAll('textarea')].some(t => t.value === 'Formação registrada')");
       assert.equal(await evaluate("document.querySelector('table tbody').querySelectorAll('tr').length"), 1);
       assert.equal(await evaluate("document.body.innerText.includes('docente0@example.test')"), false);
-      assert.equal(await evaluate("document.body.innerText.includes('Cadastrar professor') || document.body.innerText.includes('Salvar perfil') || document.body.innerText.includes('Buscar docente')"), false);
+      assert.equal(await evaluate("document.body.innerText.includes('Cadastrar instrutor') || document.body.innerText.includes('Salvar perfil') || document.body.innerText.includes('Buscar docente')"), false);
       assert.equal(await evaluate("[...document.querySelectorAll('textarea')].every(t => t.readOnly)"), true);
       assert.equal(await evaluate("adminTest.calls.some(r => r.path.includes('/pedagogical-profile') && !r.path.includes('/t0/'))"), false);
     });
@@ -277,7 +278,7 @@ test("integrações administrativas usam contratos existentes e preservam estado
       await capture("oportunidades-matriz-desktop");
       await evaluate("adminTest.select('Turno', '1'); adminTest.click('Analisar período')");
       await waitFor("document.body.innerText.includes('Disponibilidade indeterminada')");
-      assert.equal(await evaluate("document.body.innerText.includes('disponibilidade do professor e da turma não foi verificada')"), true);
+      assert.equal(await evaluate("document.body.innerText.includes('disponibilidade do instrutor e da turma não foi verificada')"), true);
       await command("Emulation.setDeviceMetricsOverride", { width: 390, height: 844, deviceScaleFactor: 1, mobile: true });
       assert.equal(await evaluate("document.documentElement.scrollWidth <= window.innerWidth + 1"), true);
       await evaluate("document.querySelector('[aria-label=\"Matriz de compatibilidade técnica\"]').scrollIntoView({block:'start'})");

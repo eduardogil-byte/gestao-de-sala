@@ -45,6 +45,8 @@ public sealed class RoomResource
     public int Id { get; set; }
     public int RoomId { get; set; }
     public Room Room { get; set; } = null!;
+    public int? ResourceCatalogItemId { get; set; }
+    public ResourceCatalogItem? ResourceCatalogItem { get; set; }
     public string Name { get; set; } = "";
     public string NormalizedName { get; set; } = "";
     public string Type { get; set; } = "";
@@ -57,6 +59,16 @@ public sealed class RoomResource
     public int? Voltage { get; set; }
     public DateOnly? WarrantyExpiresOn { get; set; }
     public DateOnly? LicenseExpiresOn { get; set; }
+}
+
+public sealed class ResourceCatalogItem
+{
+    public int Id { get; set; }
+    public string Name { get; set; } = "";
+    public string NormalizedName { get; set; } = "";
+    public string Category { get; set; } = "";
+    public string? Description { get; set; }
+    public bool Active { get; set; } = true;
 }
 
 public sealed class ComputerGroup

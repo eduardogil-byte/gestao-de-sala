@@ -57,6 +57,7 @@ const api = {
         { ...room, id: 11, code: "LAB-11", name: "Laboratório B", seats: 20 },
         { ...room, id: 12, code: "SALA-12", name: "Sala C", kind: "Sala", seats: 15 }] : [room],
       "/api/software": [{ id: 1, name: "CAD" }],
+      "/api/resource-catalog": [{ id: 9, name: "Bancada", category: "Equipamento", description: null, active: true }],
       "/api/shifts": [{ id: 1, name: "Manhã", startsAt: "08:00:00", endsAt: "12:00:00" }],
       "/api/teachers": Array.from({ length: 14 }, (_, i) => ({ id: `t${i}`, displayName: `Docente ${i}`, email: mode === "teachers" && role === "Admin" ? `docente${i}@example.test` : null })),
       "/api/teachers/t0/availability": [{ weekday: 1, shiftId: 1 }],

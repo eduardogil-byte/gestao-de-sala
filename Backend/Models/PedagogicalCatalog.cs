@@ -64,6 +64,8 @@ public sealed class CapabilityEnvironmentRequirement
 public sealed class CapabilityResourceRequirement
 {
     public int Id { get; set; }
+    public int? ResourceCatalogItemId { get; set; }
+    public ResourceCatalogItem? ResourceCatalogItem { get; set; }
     public int CurricularCapabilityId { get; set; }
     public CapabilityEnvironmentRequirement EnvironmentRequirement { get; set; } = null!;
     public string Name { get; set; } = "";

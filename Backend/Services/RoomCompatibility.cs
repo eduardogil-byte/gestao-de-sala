@@ -11,8 +11,9 @@ public static class RoomCompatibility
     {
         if (!room.Active) return "Sala inativa";
         if (room.Seats < need.Students) return "Capacidade de alunos insuficiente";
-        if (need.Projector && !room.HasProjector) return "Sem projetor";
-        if (need.TeacherComputer && !room.HasTeacherComputer) return "Sem computador do professor";
+        if (need.Projector && !HasOperationalOrLegacy(room, "PROJETOR", room.HasProjector)) return "Sem projetor";
+        if (need.TeacherComputer && !HasOperationalOrLegacy(room, "PC DO INSTRUTOR", room.HasTeacherComputer))
+            return "Sem computador do instrutor";
 
         var software = need.SoftwareIds.Distinct().ToArray();
         var requiresStudentPcs = need.StudentComputers || software.Length > 0 ||
@@ -43,6 +44,12 @@ public static class RoomCompatibility
             compatibleComputers += count;
         }
         return compatibleComputers >= (int)Math.Ceiling((double)need.Students / Math.Max(1, need.StudentsPerComputer)) ? null : "Computadores ou softwares insuficientes";
+    }
+
+    private static bool HasOperationalOrLegacy(Room room, string normalizedName, bool legacy)
+    {
+        var resources = room.Resources.Where(x => x.NormalizedName == normalizedName).ToArray();
+        return resources.Length == 0 ? legacy : resources.Any(x => x.OperationalQuantity > 0);
     }
 
     public static int Score(Room room, RoomNeed need)

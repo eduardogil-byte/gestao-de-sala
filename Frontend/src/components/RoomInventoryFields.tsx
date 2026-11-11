@@ -1,4 +1,4 @@
-import type { ComputerGroup, RoomResource, Software } from "../types";
+import type { ComputerGroup, ResourceCatalogItem, RoomResource, Software } from "../types";
 import { Checkbox, Field, SectionHeading } from "./UI";
 
 const textFields = [
@@ -13,8 +13,8 @@ const booleanFields = [
 ] as const;
 const optionalNumber = (value: string) => value === "" ? null : Number(value);
 
-export function RoomInventoryFields({ groups, resources, software, onGroups, onResources, onRemoveGroup, onRemoveSoftware }: {
-  groups: ComputerGroup[]; resources: RoomResource[]; software: Software[];
+export function RoomInventoryFields({ groups, resources, software, catalog, onGroups, onResources, onRemoveGroup, onRemoveSoftware }: {
+  groups: ComputerGroup[]; resources: RoomResource[]; software: Software[]; catalog: ResourceCatalogItem[];
   onGroups: (groups: ComputerGroup[]) => void; onResources: (resources: RoomResource[]) => void;
   onRemoveGroup: (index: number) => void; onRemoveSoftware: (index: number, softwareId: number) => void;
 }) {
@@ -86,17 +86,26 @@ export function RoomInventoryFields({ groups, resources, software, onGroups, onR
     </fieldset>)}
     <div className="flex flex-wrap justify-between gap-3 items-center border-t border-line pt-5">
       <SectionHeading title="Equipamentos e recursos" subtitle="Máquinas, ferramentas, mobiliário e demais recursos do ambiente." />
-      <button type="button" className="btn-secondary" onClick={() => onResources([...resources, {
-        name: "", type: "", quantity: 1, operationalQuantity: null, description: null, condition: null,
-        technicalDetails: null, voltage: null, warrantyExpiresOn: null, licenseExpiresOn: null,
-      }])}>Adicionar equipamento</button>
+      <Field label="Adicionar recurso do catálogo"><select className="field" value="" onChange={(event) => {
+        const selected = catalog.find((item) => item.id === Number(event.target.value));
+        if (selected) onResources([...resources, { resourceCatalogItemId: selected.id,
+          name: selected.name, type: selected.category, quantity: 1, operationalQuantity: null,
+          description: null, condition: null, technicalDetails: null, voltage: null,
+          warrantyExpiresOn: null, licenseExpiresOn: null }]);
+      }}><option value="">Selecione um recurso</option>{catalog.filter((item) => item.active &&
+        !resources.some((resource) => resource.resourceCatalogItemId === item.id ||
+          (resource.name.toLocaleUpperCase("pt-BR") === item.name.toLocaleUpperCase("pt-BR") &&
+            resource.type.toLocaleUpperCase("pt-BR") === item.category.toLocaleUpperCase("pt-BR"))))
+        .map((item) => <option key={item.id} value={item.id}>{item.name} · {item.category}</option>)}</select></Field>
     </div>
     {resources.length === 0 && <p className="rounded-control border border-dashed border-line p-4 muted">Nenhum equipamento ou recurso cadastrado.</p>}
     {resources.map((resource, index) => <fieldset key={resource.id ?? `new-${index}`} className="border border-line rounded-panel p-4 sm:p-5">
       <legend className="font-semibold px-1">Equipamento {index + 1}{resource.id ? ` · ID ${resource.id}` : " · Novo"}</legend>
       <div className="grid sm:grid-cols-2 gap-3">
+        {resource.resourceCatalogItemId && <p className="sm:col-span-2 text-sm text-muted-ink">{resource.name} · {resource.type} — identidade do catálogo preservada.</p>}
         {([["name", "Nome", 120], ["type", "Tipo", 80], ["description", "Descrição", 500],
-          ["condition", "Condição", 80], ["technicalDetails", "Detalhes técnicos", 2000]] as const).map(([key, label, maxLength]) =>
+          ["condition", "Condição", 80], ["technicalDetails", "Detalhes técnicos", 2000]] as const).filter(([key]) =>
+            !resource.resourceCatalogItemId || (key !== "name" && key !== "type")).map(([key, label, maxLength]) =>
           <Field key={key} label={label}><input className="field" required={key === "name" || key === "type"} maxLength={maxLength}
             value={resource[key] ?? ""} onChange={(e) => changeResource(index, { [key]: e.target.value })} /></Field>)}
         <Field label="Quantidade cadastrada"><input className="field" required type="number" min={0} max={100000} value={resource.quantity}

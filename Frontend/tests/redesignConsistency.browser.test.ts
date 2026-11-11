@@ -121,6 +121,49 @@ test("menu móvel e sidebar recolhível preservam teclado e navegação por perf
   } finally { await close(); }
 });
 
+test("avatar do cabeçalho abre conta, alterna tema e preserva senha e saída", { skip: !chromePath, timeout: 60000 }, async () => {
+  const { evaluate, waitFor, command, close } = await openAdminFixture("appShell");
+  try {
+    await command("Emulation.setDeviceMetricsOverride", { width: 1366, height: 850, deviceScaleFactor: 1, mobile: false });
+    await waitFor("!!document.querySelector('button[aria-label=\"Opções da conta\"]')");
+    assert.equal(await evaluate("!!document.querySelector('#account-actions')"), false);
+    await evaluate("document.querySelector('button[aria-label=\"Opções da conta\"]').click()");
+    await waitFor("document.querySelector('button[aria-label=\"Opções da conta\"]')?.getAttribute('aria-expanded') === 'true'");
+    assert.equal(await evaluate("!!document.querySelector('header #account-actions')"), true);
+    assert.equal(await evaluate("(() => { const trigger = document.querySelector('button[aria-label=\"Opções da conta\"]').getBoundingClientRect(); const panel = document.querySelector('#account-actions').getBoundingClientRect(); return panel.top >= trigger.bottom && panel.right <= innerWidth + 1; })()"), true);
+    assert.equal(await evaluate("document.querySelector('#account-actions')?.textContent?.includes('Modo escuro')"), true);
+    assert.equal(await evaluate("document.querySelector('#account-actions')?.textContent?.includes('Alterar senha')"), true);
+    assert.equal(await evaluate("document.querySelector('#account-actions')?.textContent?.includes('Sair')"), true);
+    await evaluate("document.querySelector('#account-actions button[aria-pressed]').click()");
+    await waitFor("document.documentElement.dataset.theme === 'light'");
+    assert.equal(await evaluate("document.querySelector('#account-actions button[aria-pressed]')?.getAttribute('aria-pressed')"), "false");
+    await evaluate("document.querySelector('#account-actions button[aria-pressed]').click()");
+    await waitFor("document.documentElement.dataset.theme === 'dark'");
+    await evaluate("[...document.querySelectorAll('#account-actions button')].find(button => button.textContent?.includes('Alterar senha')).click()");
+    await waitFor("!!document.querySelector('#account-actions form input[autocomplete=\"current-password\"]')");
+    await command("Input.dispatchKeyEvent", { type: "keyDown", key: "Escape", code: "Escape" });
+    await command("Input.dispatchKeyEvent", { type: "keyUp", key: "Escape", code: "Escape" });
+    await waitFor("!document.querySelector('#account-actions')");
+    await waitFor("document.activeElement?.getAttribute('aria-label') === 'Opções da conta'");
+    assert.equal(await evaluate("document.activeElement?.getAttribute('aria-label')"), "Opções da conta");
+
+    await command("Emulation.setDeviceMetricsOverride", { width: 360, height: 640, deviceScaleFactor: 1, mobile: true });
+    await evaluate("document.querySelector('button[aria-label=\"Opções da conta\"]').click()");
+    await waitFor("!!document.querySelector('header #account-actions')");
+    assert.equal(await evaluate("document.documentElement.scrollWidth <= innerWidth + 1"), true);
+    assert.equal(await evaluate("(() => { const trigger = document.querySelector('button[aria-label=\"Opções da conta\"]').getBoundingClientRect(); const panel = document.querySelector('#account-actions').getBoundingClientRect(); return panel.top >= trigger.bottom && panel.left >= 0 && panel.right <= innerWidth + 1; })()"), true);
+    assert.equal(await evaluate("document.querySelector('button[aria-label=\"Abrir menu\"]')?.getAttribute('aria-expanded')"), "false");
+    await command("Input.dispatchKeyEvent", { type: "keyDown", key: "Escape", code: "Escape" });
+    await command("Input.dispatchKeyEvent", { type: "keyUp", key: "Escape", code: "Escape" });
+    await waitFor("!document.querySelector('#account-actions')");
+    await evaluate("document.querySelector('button[aria-label=\"Opções da conta\"]').click()");
+    await waitFor("!!document.querySelector('#account-actions')");
+    await evaluate("[...document.querySelectorAll('#account-actions button')].find(button => button.textContent?.trim() === 'Sair').click()");
+    await waitFor("!document.querySelector('button[aria-label=\"Opções da conta\"]')");
+    assert.equal(await evaluate("sessionStorage.getItem('salagest_access_token') === null"), true);
+  } finally { await close(); }
+});
+
 test("formulário de reserva permanece utilizável no celular sem rolagem lateral", { skip: !chromePath, timeout: 60000 }, async () => {
   const { evaluate, waitFor, command, close } = await openAdminFixture("adminIntegrations");
   try {

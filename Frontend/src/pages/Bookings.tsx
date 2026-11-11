@@ -85,7 +85,7 @@ export function Bookings({
       .map((d) => d.start.slice(0, 10)) ?? [];
   const teacher = (id: string | null) =>
     data.teachers.find((t) => t.id === id)?.displayName ||
-    "Professor não identificado";
+    "Instrutor não identificado";
   const turma = (id: number | null) =>
     data.classes.find((c) => c.id === id)?.name || "Turma não informada";
   function conflicts(list: ConflictInfo[]) {
@@ -455,7 +455,7 @@ export function Bookings({
                 {replace && (
                   <Notice
                     type="info"
-                    message="Ao confirmar, o backend substituirá apenas ocorrências próprias elegíveis; reservas de outros professores não serão apagadas."
+                    message="Ao confirmar, o backend substituirá apenas ocorrências próprias elegíveis; reservas de outros instrutores não serão apagadas."
                   />
                 )}
                 {availability && availability.unavailable > 0 && (

@@ -33,9 +33,11 @@ public static partial class ApiEndpoints
         api.MapPost("/rooms/{roomId:int}/resources", async (int roomId,
             RoomResourceInput input, AppDbContext db, ClaimsPrincipal current) =>
         {
-            var roomExists = await db.Rooms.AnyAsync(r => r.Id == roomId);
-            if (!roomExists) return Results.NotFound();
+            var room = await db.Rooms.Include(r => r.Resources).FirstOrDefaultAsync(r => r.Id == roomId);
+            if (room is null) return Results.NotFound();
             if (varError(input) is string error) return Results.BadRequest(new ApiError(error));
+            if (await ValidateCatalogSelection(db, input) is string catalogError)
+                return Results.BadRequest(new ApiError(catalogError));
             var normalizedName = NormalizeInventoryKey(input.Name);
             var normalizedType = NormalizeInventoryKey(input.Type);
             if (await db.RoomResources.AnyAsync(r => r.RoomId == roomId &&
@@ -43,7 +45,8 @@ public static partial class ApiEndpoints
                 return Results.Conflict(new ApiError("Este recurso já está cadastrado no ambiente"));
             var item = CreateResource(roomId, input, normalizedName, normalizedType);
             await using var createTx = await db.Database.BeginTransactionAsync();
-            db.RoomResources.Add(item);
+            room.Resources.Add(item);
+            SyncLegacyResourceFlags(room);
             await db.SaveChangesAsync();
             AuditTrail.Add(db, "Resource", item.Id.ToString(), "Criado", UserId(current), null,
                 ResourceAudit(item));
@@ -58,6 +61,8 @@ public static partial class ApiEndpoints
             if (varError(input) is string error) return Results.BadRequest(new ApiError(error));
             var item = await db.RoomResources.FirstOrDefaultAsync(r => r.Id == id);
             if (item is null) return Results.NotFound();
+            if (await ValidateCatalogSelection(db, input, item.ResourceCatalogItemId) is string catalogError)
+                return Results.BadRequest(new ApiError(catalogError));
             var normalizedName = NormalizeInventoryKey(input.Name);
             var normalizedType = NormalizeInventoryKey(input.Type);
             if (await db.RoomResources.AnyAsync(r => r.RoomId == item.RoomId && r.Id != id &&
@@ -65,6 +70,8 @@ public static partial class ApiEndpoints
                 return Results.Conflict(new ApiError("Este recurso já está cadastrado no ambiente"));
             var before = ResourceAudit(item);
             UpdateResource(item, input, normalizedName, normalizedType);
+            var room = await db.Rooms.Include(r => r.Resources).FirstAsync(r => r.Id == item.RoomId);
+            SyncLegacyResourceFlags(room);
             AuditTrail.Add(db, "Resource", item.Id.ToString(), "Alterado", UserId(current), before,
                 ResourceAudit(item));
             await db.SaveChangesAsync();
@@ -191,6 +198,7 @@ public static partial class ApiEndpoints
         string normalizedName, string normalizedType)
     {
         item.Name = input.Name.Trim();
+        item.ResourceCatalogItemId = input.ResourceCatalogItemId;
         item.NormalizedName = normalizedName;
         item.Type = input.Type.Trim();
         item.NormalizedType = normalizedType;
@@ -226,14 +234,14 @@ public static partial class ApiEndpoints
 
     private static object ResourceView(RoomResource resource) => new
     {
-        resource.Id, resource.RoomId, resource.Name, resource.Type, resource.Quantity,
+        resource.Id, resource.RoomId, resource.ResourceCatalogItemId, resource.Name, resource.Type, resource.Quantity,
         resource.OperationalQuantity, resource.Description, resource.Condition,
         resource.TechnicalDetails, resource.Voltage, resource.WarrantyExpiresOn, resource.LicenseExpiresOn
     };
 
     private static object ResourceAudit(RoomResource resource) => new
     {
-        resource.RoomId, resource.Name, resource.Type, resource.Quantity,
+        resource.RoomId, resource.ResourceCatalogItemId, resource.Name, resource.Type, resource.Quantity,
         resource.OperationalQuantity, resource.Description, resource.Condition,
         resource.TechnicalDetails, resource.Voltage,
         resource.WarrantyExpiresOn, resource.LicenseExpiresOn

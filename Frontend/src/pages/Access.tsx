@@ -58,13 +58,13 @@ export function Access({ onLogin, initialMessage = "" }: { onLogin: (user: User)
           </h1>
           <p className="text-slate-300 text-lg leading-relaxed mt-5">
             Organize a grade da instituição, aloque laboratórios com
-            inteligência e facilite reservas e empréstimos entre professores.
+            inteligência e facilite reservas e empréstimos entre instrutores.
           </p>
           <div className="mt-12 grid grid-cols-3 gap-3">
             {[
               { icon: CalendarDays, title: "Grades", desc: "sem conflitos" },
               { icon: DoorOpen, title: "Salas", desc: "bem utilizadas" },
-              { icon: UserRound, title: "Professores", desc: "conectados" },
+              { icon: UserRound, title: "Instrutores", desc: "conectados" },
             ].map((a) => (
               <div
                 key={a.title}
@@ -107,7 +107,7 @@ export function Access({ onLogin, initialMessage = "" }: { onLogin: (user: User)
                 required
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
-                placeholder="professor@instituicao.edu.br"
+                placeholder="instrutor@instituicao.edu.br"
               />
             </Field>
             <Field label="Senha">

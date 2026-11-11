@@ -13,7 +13,7 @@ const calendarNames: Record<string, string> = {
   Planning: "Planejamento", NonTeaching: "Não letivo", NaoLetivo: "Não letivo",
 };
 const conflictNames: Record<string, string> = {
-  Room: "Ambiente", Teacher: "Professor", ClassGroup: "Turma", Loan: "Empréstimo",
+  Room: "Ambiente", Teacher: "Instrutor", ClassGroup: "Turma", Loan: "Empréstimo",
   BookingStatus: "Estado da reserva",
 };
 const sourceNames: Record<string, string> = {
@@ -238,12 +238,12 @@ export function InstructorAgenda({ user, onOpenRelated, onManage }: { user: User
       </Card>
     </>}
     {selected && <Modal title="Detalhes da atividade" onClose={() => setSelected(null)}><dl className="grid sm:grid-cols-2 gap-3 text-sm">
-      {[["Professor efetivo", selected.actualTeacherName], ["Turma", selected.actualClassGroupName], ["Ambiente", selected.roomName], ["Data", dateBR(selected.date)],
+      {[["Instrutor efetivo", selected.actualTeacherName], ["Turma", selected.actualClassGroupName], ["Ambiente", selected.roomName], ["Data", dateBR(selected.date)],
         ["Turno", selected.shiftName ? selected.shiftName + " · " + selected.startsAt.slice(11, 16) + "–" + selected.endsAt.slice(11, 16) : "Não identificado"],
         ["Curso", selected.courseName], ["UC", selected.curricularUnitName], ["Capacidade", selected.curricularCapabilityDescription],
         ["Estado", occupationStatusNames[selected.status] ?? statusText(selected.status)], ["Reserva", selected.bookingStatus ? statusText(selected.bookingStatus) : null],
         ["Origem", sourceNames[selected.source] ?? "Registro de ocupação"], ["Calendário", special(selected) || "Sem situação especial informada"],
-        ["Empréstimo", selected.isBorrowed ? "Professor efetivo de empréstimo aprovado" : null],
+        ["Empréstimo", selected.isBorrowed ? "Instrutor efetivo de empréstimo aprovado" : null],
         ["Conflitos", selected.conflicts.length ? selected.conflicts.map((entry) => conflictNames[entry] ?? "Inconsistência").join(", ") : "Nenhum indicado"]]
         .filter((pair) => pair[1]).map(([label, value]) => <div key={label}><dt className="font-semibold text-slate-700">{label}</dt><dd>{value}</dd></div>)}
     </dl><div className="flex flex-wrap gap-2 mt-5">

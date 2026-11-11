@@ -44,7 +44,7 @@ export function Loans({
     return () => window.clearTimeout(timer);
   }, [focusId, data.loans]);
   const teacher = (id: string) =>
-    (id === user.id ? user.displayName : data.teachers.find((t) => t.id === id)?.displayName) || "Professor não identificado";
+    (id === user.id ? user.displayName : data.teachers.find((t) => t.id === id)?.displayName) || "Instrutor não identificado";
   async function load() {
     try {
       setOccupations(
@@ -225,7 +225,7 @@ export function Loans({
             <ul className="max-h-28 overflow-y-auto space-y-1">{[...chosenDetails].sort((a, b) => a.startsAt.localeCompare(b.startsAt)).map((o) =>
               <li key={o.id}>{dateTimeBR(o.startsAt)} · {data.rooms.find((r) => r.id === o.roomId)?.name ?? `Sala ${o.roomId}`}{o.originalClassGroupId && <> · {data.classes.find((c) => c.id === o.originalClassGroupId)?.name ?? "Turma não identificada"}</>}</li>)}</ul>
           </div>}
-          <Field label="Professor destinatário">
+          <Field label="Instrutor destinatário">
             <select
               className="field"
               value={borrower}
@@ -297,7 +297,7 @@ export function Loans({
                     <Badge status={l.status} />
                   </div>
                   <p className="text-xs text-slate-600">
-                    {l.ownerTeacherId === user.id ? "Enviado" : l.borrowerId === user.id ? "Recebido" : "Entre professores"} · Titular: {teacher(l.ownerTeacherId)} · Destinatário: {teacher(l.borrowerId)}
+                    {l.ownerTeacherId === user.id ? "Enviado" : l.borrowerId === user.id ? "Recebido" : "Entre instrutores"} · Titular: {teacher(l.ownerTeacherId)} · Destinatário: {teacher(l.borrowerId)}
                   </p>
                   {l.classGroupId && <p className="text-xs text-slate-600">Turma destinatária: {data.classes.find((c) => c.id === l.classGroupId)?.name ?? "Não identificada"}</p>}
                   {l.reason && <p className="text-xs text-slate-600">Motivo: {l.reason}</p>}

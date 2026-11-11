@@ -40,10 +40,12 @@ public static partial class ApiEndpoints
             int capabilityId, CapabilityEnvironmentInput input, AppDbContext db) =>
         {
             if (!await CapabilityExists(db, courseId, moduleId, unitId, capabilityId)) return Results.NotFound();
-            var error = await ValidateRequirements(db, input);
-            if (error is not null) return Error(error);
             var item = await RequirementQuery(db).FirstOrDefaultAsync(x => x.CurricularCapabilityId == capabilityId);
             if (item is null) return Results.NotFound();
+            var error = await ValidateRequirements(db, input,
+                item.Resources.Where(x => x.ResourceCatalogItemId.HasValue)
+                    .Select(x => x.ResourceCatalogItemId!.Value).ToHashSet());
+            if (error is not null) return Error(error);
             await using var transaction = await db.Database.BeginTransactionAsync();
             db.CapabilityResourceRequirements.RemoveRange(item.Resources);
             db.CapabilitySoftwareRequirements.RemoveRange(item.Software);
@@ -103,7 +105,8 @@ public static partial class ApiEndpoints
         => db.Rooms.AsNoTracking().AsSplitQuery().Include(x => x.Resources)
             .Include(x => x.ComputerGroups).ThenInclude(x => x.Software).ThenInclude(x => x.Software);
 
-    private static async Task<string?> ValidateRequirements(AppDbContext db, CapabilityEnvironmentInput input)
+    private static async Task<string?> ValidateRequirements(AppDbContext db, CapabilityEnvironmentInput input,
+        IReadOnlySet<int>? allowedExistingCatalogIds = null)
     {
         if (input is null || input.Resources is null || input.Software is null ||
             (input.RoomKind is not null && !Enum.IsDefined(input.RoomKind.Value)) ||
@@ -120,6 +123,14 @@ public static partial class ApiEndpoints
                 resource.Quantity is < 1 or > 100000 ||
                 !keys.Add((NormalizeInventoryKey(resource.Name), NormalizeInventoryKey(resource.Type))))
                 return "Recurso exigido inválido ou repetido";
+            if (resource.ResourceCatalogItemId is int catalogId)
+            {
+                var item = await db.ResourceCatalog.AsNoTracking().FirstOrDefaultAsync(x => x.Id == catalogId);
+                if (item is null || (!item.Active && allowedExistingCatalogIds?.Contains(catalogId) != true) ||
+                    item.NormalizedName != NormalizeInventoryKey(resource.Name) ||
+                    NormalizeInventoryKey(item.Category) != NormalizeInventoryKey(resource.Type))
+                    return "Selecione um recurso ativo e válido do catálogo.";
+            }
         }
         var ids = input.Software.Select(x => x.SoftwareId).ToArray();
         if (ids.Any(x => x <= 0) || ids.Distinct().Count() != ids.Length ||
@@ -138,6 +149,7 @@ public static partial class ApiEndpoints
             Resources = input.Resources.Select(x => new CapabilityResourceRequirement
             {
                 CurricularCapabilityId = capabilityId, Name = x.Name.Trim(), Type = x.Type.Trim(),
+                ResourceCatalogItemId = x.ResourceCatalogItemId,
                 NormalizedName = NormalizeInventoryKey(x.Name), NormalizedType = NormalizeInventoryKey(x.Type),
                 Quantity = x.Quantity, Critical = x.Critical
             }).ToList(),
@@ -153,7 +165,7 @@ public static partial class ApiEndpoints
         {
             Registered = true, item.CurricularCapabilityId, item.RoomKind, item.RequiresProjector,
             item.RequiredComputers, item.MinRamGb, item.ComputersCritical,
-            Resources = item.Resources.Select(x => new { x.Name, x.Type, x.Quantity, x.Critical }),
+            Resources = item.Resources.Select(x => new { x.ResourceCatalogItemId, x.Name, x.Type, x.Quantity, x.Critical }),
             Software = item.Software.Select(x => new { x.SoftwareId, x.RequiredLicenses, x.Critical })
         };
 }

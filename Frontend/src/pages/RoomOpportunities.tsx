@@ -220,7 +220,7 @@ export function RoomOpportunities({ initial, onTimeline }: {
           {visiblePeriods.availability === "Known" && visiblePeriods.potentiallyFreeMeetings === 0 && <Notice message="Nenhum turno potencialmente livre neste filtro." />}
           {visiblePeriods.availability === "Known" && visiblePeriods.compatibility === "Compatible" && <p className="text-sm text-slate-700">{visiblePeriods.suitableMeetings >= visiblePeriods.requiredMeetings ? "Há encontros potencialmente suficientes neste filtro; cada data ainda exige confirmação." : "Os encontros adequados neste filtro não cobrem a quantidade estimada."}</p>}
           {visiblePeriods.compatibility !== "Compatible" && <Notice message="A adequação técnica não foi comprovada. Analise os recursos antes de planejar o uso." />}
-          <p className="text-sm text-slate-600">A disponibilidade do professor e da turma não foi verificada. Datas livres exigem revalidação no fluxo oficial de Reservas.</p>
+          <p className="text-sm text-slate-600">A disponibilidade do instrutor e da turma não foi verificada. Datas livres exigem revalidação no fluxo oficial de Reservas.</p>
         </div>}
         <button type="button" className="btn-secondary" onClick={() => onTimeline(Number(semesterId), room.id, from || undefined, shiftId ? Number(shiftId) : undefined)}>Ver cronograma</button>
       </Card>}

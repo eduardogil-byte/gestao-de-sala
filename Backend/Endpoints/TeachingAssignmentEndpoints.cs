@@ -57,9 +57,9 @@ public static partial class ApiEndpoints
         assignments.MapPost("", async (AssignmentCreate input, AppDbContext db, ClaimsPrincipal current,
             UserManager<AppUser> users) =>
         {
-            if (string.IsNullOrWhiteSpace(input.TeacherId)) return Error("Professor não encontrado");
+            if (string.IsNullOrWhiteSpace(input.TeacherId)) return Error("Instrutor não encontrado");
             var teacher = await FindTeacher(users, input.TeacherId);
-            if (teacher is null) return Error("Professor não encontrado");
+            if (teacher is null) return Error("Instrutor não encontrado");
             var classGroup = await db.Classes.FirstOrDefaultAsync(c => c.Id == input.ClassGroupId);
             if (classGroup is null) return Error("Turma não encontrada");
             var softwareIds = input.SoftwareIds?.Distinct().ToArray() ?? [];
@@ -125,8 +125,8 @@ public static partial class ApiEndpoints
             if (item.EndedAtUtc is not null) return CatalogConflict("Atribuição já encerrada");
             if (await db.WeeklyClasses.AnyAsync(w => w.AssignmentId == id))
                 return CatalogConflict("Atribuição utilizada por uma grade não pode ser alterada");
-            if (string.IsNullOrWhiteSpace(input.TeacherId)) return Error("Professor não encontrado");
-            if (await FindTeacher(users, input.TeacherId) is null) return Error("Professor não encontrado");
+            if (string.IsNullOrWhiteSpace(input.TeacherId)) return Error("Instrutor não encontrado");
+            if (await FindTeacher(users, input.TeacherId) is null) return Error("Instrutor não encontrado");
             var validation = await ValidatePedagogicalAssignment(db, item.ClassGroup, input.TeacherId,
                 input.CurricularUnitId, input.Weekday, input.ShiftId, id);
             if (validation.Error is not null) return validation.Error;
@@ -200,11 +200,11 @@ public static partial class ApiEndpoints
             a.CurricularUnitId != null && a.Weekday == weekday && a.PreferredShiftId == shiftId &&
             (a.ClassGroupId == classGroup.Id ||
                 (a.TeacherId == teacherId && a.ClassGroup.SemesterId == classGroup.SemesterId))))
-            return (null, CatalogConflict("Professor ou turma já possui atribuição neste dia e turno"));
+            return (null, CatalogConflict("Instrutor ou turma já possui atribuição neste dia e turno"));
         if (await db.WeeklyClasses.AnyAsync(w => w.Schedule.Status != ScheduleStatus.Arquivada &&
             w.Schedule.SemesterId == classGroup.SemesterId && w.Weekday == weekday && w.ShiftId == shiftId &&
             (w.Assignment.ClassGroupId == classGroup.Id || w.Assignment.TeacherId == teacherId)))
-            return (null, CatalogConflict("Professor ou turma já possui aula em uma grade neste dia e turno"));
+            return (null, CatalogConflict("Instrutor ou turma já possui aula em uma grade neste dia e turno"));
         return (unit, null);
     }
 

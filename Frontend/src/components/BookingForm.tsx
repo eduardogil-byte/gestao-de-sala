@@ -80,7 +80,7 @@ export function BookingForm({ onCreated, user }: { onCreated: (id: number, quali
       setError("Cadastre ao menos um turno para criar reservas.");
       return;
     }
-    if (admin && !teacherId) { setError("Selecione o professor responsável."); return; }
+    if (admin && !teacherId) { setError("Selecione o instrutor responsável."); return; }
     if (recurring && (!dates.length || repeatUntil < start)) {
       setError("Selecione dias e um término válido para a recorrência.");
       return;
@@ -121,11 +121,11 @@ export function BookingForm({ onCreated, user }: { onCreated: (id: number, quali
   return (
     <form onSubmit={submit} className="space-y-5">
       {error && <Notice message={error} />}
-      {admin && <Field label="Professor responsável">
+      {admin && <Field label="Instrutor responsável">
         <select className="field" required value={teacherId} onChange={(e) => {
           setTeacherId(e.target.value); setClassGroupId(""); setUnitId(""); setCapabilityId("");
         }}>
-          <option value="">Selecione um professor</option>
+          <option value="">Selecione um instrutor</option>
           {data.teachers.map((teacher) => <option key={teacher.id} value={teacher.id}>{teacher.displayName}</option>)}
         </select>
       </Field>}

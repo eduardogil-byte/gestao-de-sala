@@ -79,7 +79,7 @@ export function Schedules({
     <>
       <Title
         title="Geração de grade"
-        subtitle="Organize professores, turmas e salas sem conflitos de turno."
+        subtitle="Organize instrutores, turmas e salas sem conflitos de turno."
       />
       {error && (
         <div className="mb-4">
@@ -245,7 +245,7 @@ export function Schedules({
                                 }{" "}
                                 •{" "}
                                 {data.teachers.find((t) => t.id === l.teacherId)
-                                  ?.displayName || "Professor"}
+                                  ?.displayName || "Instrutor"}
                               </span>
                             </td>
                             <td className="table-cell font-medium">{l.room}</td>

@@ -2,10 +2,13 @@ using SalaGest.Api.Models;
 
 namespace SalaGest.Api.Contracts;
 
+public record ResourceCatalogInput(string Name, string Category, string? Description, bool Active = true);
+
 public record RoomResourceInput(string Name, string Type, int Quantity,
     int? OperationalQuantity = null, string? Description = null, string? Condition = null,
     string? TechnicalDetails = null, int? Voltage = null,
-    DateOnly? WarrantyExpiresOn = null, DateOnly? LicenseExpiresOn = null);
+    DateOnly? WarrantyExpiresOn = null, DateOnly? LicenseExpiresOn = null,
+    int? ResourceCatalogItemId = null);
 
 public record ComputerGroupInventoryInput(string Description, int Quantity, int RamGb,
     HardwareTier Tier, bool DedicatedGpu, int? OperationalQuantity = null,

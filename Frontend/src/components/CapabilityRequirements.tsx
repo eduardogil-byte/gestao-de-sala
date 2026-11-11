@@ -3,11 +3,12 @@ import { post, put, read } from "../lib/api";
 import { useData } from "../lib/data";
 import { resultMessage } from "../lib/utils";
 import { Busy, Checkbox, Field, Notice, SubmitButton } from "./UI";
+import type { ResourceCatalogItem } from "../types";
 
 type Requirements = {
   roomKind: string | null; requiresProjector: boolean; requiredComputers: number | null;
   minRamGb: number | null; computersCritical: boolean;
-  resources: { name: string; type: string; quantity: number; critical: boolean }[];
+  resources: { resourceCatalogItemId?: number | null; name: string; type: string; quantity: number; critical: boolean }[];
   software: { softwareId: number; requiredLicenses: number | null; critical: boolean }[];
 };
 const empty: Requirements = { roomKind: null, requiresProjector: false, requiredComputers: null,
@@ -22,7 +23,14 @@ export function CapabilityRequirements({ path, admin }: { path: string; admin: b
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
+  const [resourceCatalog, setResourceCatalog] = useState<ResourceCatalogItem[]>([]);
   const mounted = useRef(false);
+  useEffect(() => {
+    let active = true;
+    read<ResourceCatalogItem[]>("/resource-catalog").then((items) => { if (active) setResourceCatalog(items); })
+      .catch((cause) => { if (active) setError(resultMessage(cause)); });
+    return () => { active = false; };
+  }, []);
   useEffect(() => {
     mounted.current = true;
     let active = true;
@@ -71,15 +79,19 @@ export function CapabilityRequirements({ path, admin }: { path: string; admin: b
           return <fieldset key={index} className="border border-line rounded-xl p-4 space-y-3">
             <legend className="px-1">Recurso {index + 1}</legend>
             <div className="grid sm:grid-cols-2 gap-3">
-              <Field label="Nome do recurso"><input className="field" required maxLength={120} value={resource.name} onChange={(e) => change({ name: e.target.value })} /></Field>
-              <Field label="Tipo do recurso"><input className="field" required maxLength={80} value={resource.type} onChange={(e) => change({ type: e.target.value })} /></Field>
+              <Field label="Recurso do catálogo"><select className="field" required={!resource.name} value={resource.resourceCatalogItemId ?? ""} onChange={(e) => {
+                const item = resourceCatalog.find((candidate) => candidate.id === Number(e.target.value));
+                if (item) change({ resourceCatalogItemId: item.id, name: item.name, type: item.category });
+              }}><option value="">{resource.name ? `${resource.name} · ${resource.type} (legado)` : "Selecione"}</option>
+                {resourceCatalog.filter((item) => item.active || item.id === resource.resourceCatalogItemId).map((item) =>
+                  <option key={item.id} value={item.id}>{item.name} · {item.category}{item.active ? "" : " (inativo)"}</option>)}</select></Field>
               <Field label="Quantidade exigida"><input className="field" required type="number" min={1} max={100000} value={resource.quantity} onChange={(e) => change({ quantity: Number(e.target.value) })} /></Field>
             </div>
             <Checkbox label="Recurso crítico" checked={resource.critical} onChange={(critical) => change({ critical })} />
             {admin && <button type="button" className="btn-danger" onClick={() => setDraft((current) => current && ({ ...current, resources: current.resources.filter((_, i) => i !== index) }))}>Remover requisito de recurso {index + 1}</button>}
           </fieldset>;
         })}
-        {admin && <button type="button" className="btn-secondary" disabled={draft.resources.length >= 100} onClick={() => setDraft({ ...draft, resources: [...draft.resources, { name: "", type: "", quantity: 1, critical: false }] })}>Adicionar requisito de recurso</button>}
+        {admin && <button type="button" className="btn-secondary" disabled={draft.resources.length >= 100} onClick={() => setDraft({ ...draft, resources: [...draft.resources, { resourceCatalogItemId: null, name: "", type: "", quantity: 1, critical: false }] })}>Adicionar requisito de recurso</button>}
         <h3 className="font-semibold text-ink border-t border-line pt-4">Softwares exigidos</h3>
         {admin && <Field label="Adicionar software exigido"><select className="field" value="" onChange={(e) => {
           if (e.target.value) setDraft({ ...draft, software: [...draft.software, { softwareId: Number(e.target.value), requiredLicenses: null, critical: true }] });

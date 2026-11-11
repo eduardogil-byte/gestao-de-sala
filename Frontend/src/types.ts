@@ -39,6 +39,7 @@ export type WorkloadSummary = {
   requiredMeetings: number | null;
 };
 export type Software = { id: number; name: string };
+export type ResourceCatalogItem = { id: number; name: string; category: string; description: string | null; active: boolean };
 export type InstalledSoftware = {
   softwareId: number;
   name: string;
@@ -68,7 +69,7 @@ export type ComputerGroup = {
   software: InstalledSoftware[];
 };
 export type RoomResource = {
-  id?: number; name: string; type: string; quantity: number; operationalQuantity: number | null;
+  id?: number; resourceCatalogItemId?: number | null; name: string; type: string; quantity: number; operationalQuantity: number | null;
   description: string | null; condition: string | null; technicalDetails: string | null;
   voltage: number | null; warrantyExpiresOn: string | null; licenseExpiresOn: string | null;
 };

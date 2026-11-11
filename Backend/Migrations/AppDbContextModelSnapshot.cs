@@ -513,12 +513,17 @@ namespace SalaGest.Api.Migrations
                     b.Property<int>("Quantity")
                         .HasColumnType("int");
 
+                    b.Property<int?>("ResourceCatalogItemId")
+                        .HasColumnType("int");
+
                     b.Property<string>("Type")
                         .IsRequired()
                         .HasMaxLength(80)
                         .HasColumnType("nvarchar(80)");
 
                     b.HasKey("Id");
+
+                    b.HasIndex("ResourceCatalogItemId");
 
                     b.HasIndex("CurricularCapabilityId", "NormalizedName", "NormalizedType")
                         .IsUnique();
@@ -1035,6 +1040,44 @@ namespace SalaGest.Api.Migrations
                     b.ToTable("PlanProposals");
                 });
 
+            modelBuilder.Entity("SalaGest.Api.Models.ResourceCatalogItem", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<bool>("Active")
+                        .HasColumnType("bit");
+
+                    b.Property<string>("Category")
+                        .IsRequired()
+                        .HasMaxLength(80)
+                        .HasColumnType("nvarchar(80)");
+
+                    b.Property<string>("Description")
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(120)
+                        .HasColumnType("nvarchar(120)");
+
+                    b.Property<string>("NormalizedName")
+                        .IsRequired()
+                        .HasMaxLength(120)
+                        .HasColumnType("nvarchar(120)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("NormalizedName")
+                        .IsUnique();
+
+                    b.ToTable("ResourceCatalog");
+                });
+
             modelBuilder.Entity("SalaGest.Api.Models.Room", b =>
                 {
                     b.Property<int>("Id")
@@ -1273,6 +1316,9 @@ namespace SalaGest.Api.Migrations
                     b.Property<int>("Quantity")
                         .HasColumnType("int");
 
+                    b.Property<int?>("ResourceCatalogItemId")
+                        .HasColumnType("int");
+
                     b.Property<int>("RoomId")
                         .HasColumnType("int");
 
@@ -1292,6 +1338,8 @@ namespace SalaGest.Api.Migrations
                         .HasColumnType("date");
 
                     b.HasKey("Id");
+
+                    b.HasIndex("ResourceCatalogItemId");
 
                     b.HasIndex("RoomId", "NormalizedName", "NormalizedType")
                         .IsUnique();
@@ -1814,7 +1862,14 @@ namespace SalaGest.Api.Migrations
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
 
+                    b.HasOne("SalaGest.Api.Models.ResourceCatalogItem", "ResourceCatalogItem")
+                        .WithMany()
+                        .HasForeignKey("ResourceCatalogItemId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
                     b.Navigation("EnvironmentRequirement");
+
+                    b.Navigation("ResourceCatalogItem");
                 });
 
             modelBuilder.Entity("SalaGest.Api.Models.CapabilitySoftwareRequirement", b =>
@@ -2042,11 +2097,18 @@ namespace SalaGest.Api.Migrations
 
             modelBuilder.Entity("SalaGest.Api.Models.RoomResource", b =>
                 {
+                    b.HasOne("SalaGest.Api.Models.ResourceCatalogItem", "ResourceCatalogItem")
+                        .WithMany()
+                        .HasForeignKey("ResourceCatalogItemId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
                     b.HasOne("SalaGest.Api.Models.Room", "Room")
                         .WithMany("Resources")
                         .HasForeignKey("RoomId")
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
+
+                    b.Navigation("ResourceCatalogItem");
 
                     b.Navigation("Room");
                 });

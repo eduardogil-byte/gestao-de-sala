@@ -174,7 +174,7 @@ test("indicadores gerenciais aparecem só para Admin; visão do professor perman
     }));
     assert.match(admin, /Dashboard gerencial de ocupação/);
     assert.doesNotMatch(teacher, /Dashboard gerencial de ocupação/);
-    assert.doesNotMatch(teacher, /Utilização dos ambientes|Ambientes cadastrados|Professores<\/span>/);
+    assert.doesNotMatch(teacher, /Utilização dos ambientes|Ambientes cadastrados|Instrutores<\/span>/);
     assert.match(teacher, /Próximas aulas e reservas/);
     assert.match(teacher, /2 aviso\(s\) não lido\(s\)/);
     assert.match(teacher, /Disponibilidade dos ambientes/);

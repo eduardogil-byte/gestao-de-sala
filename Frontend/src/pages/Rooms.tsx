@@ -6,10 +6,11 @@ import {
   Search,
   Settings2,
 } from "lucide-react";
-import type { Room, RoomInventory, RoomResource, User } from "../types";
+import type { ResourceCatalogItem, Room, RoomInventory, RoomResource, User } from "../types";
 import { useData } from "../lib/data";
 import { post, put, read } from "../lib/api";
 import { RoomInventoryFields } from "../components/RoomInventoryFields";
+import { ResourceCatalogManager } from "../components/ResourceCatalogManager";
 import { OperatingShiftEditor } from "../components/OperatingShiftEditor";
 import { indicatorPath, isSemesterIndicators, type SemesterIndicators } from "../lib/occupancyIndicators";
 import { resultMessage, roomKind } from "../lib/utils";
@@ -41,9 +42,9 @@ const emptyRoom: RoomInput = {
   kind: "Comum",
   seats: 30,
   desks: 30,
-  hasProjector: true,
-  hasTeacherComputer: true,
-  hasInternet: true,
+  hasProjector: false,
+  hasTeacherComputer: false,
+  hasInternet: false,
   active: true,
   computerGroups: [],
   resources: [],
@@ -74,6 +75,19 @@ export function Rooms({ user, onImport }: { user: User; onImport?: (kind: "Ambie
   const [error, setError] = useState("");
   const [softwareName, setSoftwareName] = useState("");
   const [softwareBusy, setSoftwareBusy] = useState(false);
+  const [resourceCatalog, setResourceCatalog] = useState<ResourceCatalogItem[]>([]);
+  const [resourceCatalogError, setResourceCatalogError] = useState("");
+  async function refreshResourceCatalog() {
+    const items = await read<ResourceCatalogItem[]>("/resource-catalog");
+    setResourceCatalog(items);
+    setResourceCatalogError("");
+  }
+  useEffect(() => {
+    let active = true;
+    read<ResourceCatalogItem[]>("/resource-catalog").then((items) => { if (active) setResourceCatalog(items); })
+      .catch((cause) => { if (active) setResourceCatalogError(resultMessage(cause)); });
+    return () => { active = false; };
+  }, []);
   const set = <K extends keyof RoomInput>(k: K, v: RoomInput[K]) =>
     setForm((prev) => (prev ? { ...prev, [k]: v } : prev));
   const groups = form?.computerGroups || [];
@@ -273,6 +287,7 @@ export function Rooms({ user, onImport }: { user: User; onImport?: (kind: "Ambie
       </div>
       {catalogLoading && <Busy />}
       {catalogError && <Notice message={catalogError} />}
+      {resourceCatalogError && <Notice message={`Catálogo de recursos indisponível: ${resourceCatalogError}`} />}
       {(opening || detailLoading) && <p role="status">Carregando inventário técnico...</p>}
       {indicatorState === "error" && <Notice type="info" message="Não foi possível consultar os turnos oferecidos neste semestre. Nenhuma disponibilidade foi presumida." />}
       {!catalogLoading && list.length === 0 ? (
@@ -301,6 +316,9 @@ export function Rooms({ user, onImport }: { user: User; onImport?: (kind: "Ambie
             {roomAction(room)}
           </article>)}</div>
         </Card>
+      )}
+      {admin && (
+        <ResourceCatalogManager catalog={resourceCatalog} onChanged={refreshResourceCatalog} />
       )}
       {admin && (
         <Card className="p-5 mt-6">
@@ -455,13 +473,19 @@ export function Rooms({ user, onImport }: { user: User; onImport?: (kind: "Ambie
               </div>
             </div>
             <div className="flex flex-wrap gap-4">
+              <Checkbox label="Sala ativa" checked={form.active} onChange={(v) => set("active", v)} />
+            </div>
+            {editing && <details className="rounded-control border border-line p-3">
+              <summary className="cursor-pointer font-semibold">Campos legados de compatibilidade</summary>
+              <p className="muted mt-2">Mantidos para salas e importações anteriores. Recursos do catálogo com quantidade operacional informada passam a prevalecer.</p>
+              <div className="flex flex-wrap gap-4 mt-3">
               <Checkbox
                 label="Projetor"
                 checked={form.hasProjector}
                 onChange={(v) => set("hasProjector", v)}
               />
               <Checkbox
-                label="PC do professor"
+                label="PC do instrutor"
                 checked={form.hasTeacherComputer}
                 onChange={(v) => set("hasTeacherComputer", v)}
               />
@@ -470,13 +494,9 @@ export function Rooms({ user, onImport }: { user: User; onImport?: (kind: "Ambie
                 checked={form.hasInternet}
                 onChange={(v) => set("hasInternet", v)}
               />
-              <Checkbox
-                label="Sala ativa"
-                checked={form.active}
-                onChange={(v) => set("active", v)}
-              />
-            </div>
-            <RoomInventoryFields groups={groups} resources={form.resources} software={data.software}
+              </div>
+            </details>}
+            <RoomInventoryFields groups={groups} resources={form.resources} software={data.software} catalog={resourceCatalog}
               onGroups={(next) => set("computerGroups", next)} onResources={(next) => set("resources", next)}
               onRemoveGroup={(index) => void removeGroup(index)} onRemoveSoftware={(index, id) => void removeSoftware(index, id)} />
             <div className="flex justify-end gap-2 pt-1">

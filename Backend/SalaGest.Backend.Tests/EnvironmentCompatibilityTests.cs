@@ -9,6 +9,37 @@ public sealed class EnvironmentCompatibilityTests
     private static readonly DateOnly Today = new(2026, 10, 28);
 
     [Fact]
+    public void CatalogIdentityMatchesRenamedResourcesWithoutAssumingUnknownOperationalQuantity()
+    {
+        var requirement = new CapabilityEnvironmentRequirement { RoomKind = RoomKind.Comum,
+            Resources = { new CapabilityResourceRequirement { ResourceCatalogItemId = 7,
+                Name = "Lousa digital", Type = "Audiovisual", NormalizedName = "LOUSA DIGITAL",
+                NormalizedType = "AUDIOVISUAL", Quantity = 1, Critical = true } } };
+        var room = new Room { Id = 1, Name = "Sala", Kind = RoomKind.Comum,
+            Resources = { new RoomResource { ResourceCatalogItemId = 7, Name = "Painel interativo",
+                NormalizedName = "PAINEL INTERATIVO", NormalizedType = "AUDIOVISUAL",
+                Quantity = 1, OperationalQuantity = null } } };
+        Assert.Equal("Partial", EnvironmentCompatibility.Evaluate(requirement, room, null, Today).Classification);
+        room.Resources[0].OperationalQuantity = 1;
+        Assert.Equal("Compatible", EnvironmentCompatibility.Evaluate(requirement, room, null, Today).Classification);
+        room.Resources[0].ResourceCatalogItemId = null;
+        Assert.Equal("Incompatible", EnvironmentCompatibility.Evaluate(requirement, room, null, Today).Classification);
+    }
+
+    [Fact]
+    public void OrdinaryBookingUsesOperationalCatalogProjectorAndLegacyFallback()
+    {
+        var room = new Room { Active = true, Seats = 30, HasProjector = true };
+        var need = new RoomNeed(20, true, false, false, HardwareTier.Basico, [], 0, false);
+        Assert.Null(RoomCompatibility.Incompatibility(room, need));
+        room.Resources.Add(new RoomResource { ResourceCatalogItemId = 2, NormalizedName = "PROJETOR",
+            Quantity = 1, OperationalQuantity = null });
+        Assert.Equal("Sem projetor", RoomCompatibility.Incompatibility(room, need));
+        room.Resources[0].OperationalQuantity = 1;
+        Assert.Null(RoomCompatibility.Incompatibility(room, need));
+    }
+
+    [Fact]
     public void ComputersMustMeetRamSoftwareAndQuantityInTheSameGroup()
     {
         var requirement = ComputerRequirement(20, 16, 1, 20);

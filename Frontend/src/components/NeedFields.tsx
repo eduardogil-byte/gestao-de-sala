@@ -30,7 +30,7 @@ export function NeedFields({
           onChange={(v) => set("needsProjector", v)}
         />
         <Checkbox
-          label="Computador do professor"
+          label="Computador do instrutor"
           checked={value.needsTeacherComputer}
           onChange={(v) => set("needsTeacherComputer", v)}
         />

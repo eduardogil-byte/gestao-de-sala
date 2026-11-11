@@ -12,7 +12,7 @@ const calendarLabels: Record<string, string> = {
   Planning: "Planejamento", NonTeaching: "Não letivo", NaoLetivo: "Não letivo",
 };
 const conflictLabels: Record<string, string> = {
-  Room: "Ambiente", Teacher: "Professor", ClassGroup: "Turma",
+  Room: "Ambiente", Teacher: "Instrutor", ClassGroup: "Turma",
   Loan: "Empréstimo", BookingStatus: "Estado da reserva",
 };
 const sourceLabels: Record<string, string> = {
@@ -343,7 +343,7 @@ export function RoomTimeline({ user, openBookings, initialFilter }: { user: User
       action={<div className="flex flex-wrap gap-2"><button type="button" className="btn-secondary" onClick={openBookings}>Abrir reservas</button>
         {admin && <button type="button" className="btn-secondary" disabled={!range || exportBusy} onClick={() => void exportCurrentPeriod()}>{exportBusy ? "Gerando Excel..." : "Exportar ocupações"}</button>}</div>} />
     {exportError && <div className="mb-4"><Notice type="error" message={exportError} onClose={() => setExportError("")} /></div>}
-    {admin && (teacherId || classGroupId || kind || roomKind) && <p className="mb-4 text-sm text-amber-800" role="status">A exportação preserva período, ambiente e turno. Os filtros de professor, turma, tipo de ambiente e tipo de ocupação não são aplicados ao arquivo.</p>}
+    {admin && (teacherId || classGroupId || kind || roomKind) && <p className="mb-4 text-sm text-amber-800" role="status">A exportação preserva período, ambiente e turno. Os filtros de instrutor, turma, tipo de ambiente e tipo de ocupação não são aplicados ao arquivo.</p>}
     {moveSuccess && <div className="mb-4"><Notice type="success" message={moveSuccess} onClose={() => setMoveSuccess("")} /></div>}
     {operationError && <div className="mb-4"><Notice message={operationError} onClose={() => setOperationError("")} /></div>}
     <Card className="p-4 sm:p-5 mb-5 space-y-5">
@@ -371,7 +371,7 @@ export function RoomTimeline({ user, openBookings, initialFilter }: { user: User
         <Field label="Ambiente"><select className="field" value={roomId} onChange={(e) => setRoomId(e.target.value)}>
           <option value="">Todos</option>{data.rooms.filter((room) => !roomKind || room.kind === roomKind).map((r) => <option key={r.id} value={r.id}>{r.code ? `${r.code} · ` : ""}{r.name}</option>)}
         </select></Field>
-        {admin && <Field label="Professor"><select className="field" value={teacherId} onChange={(e) => setTeacherId(e.target.value)}>
+        {admin && <Field label="Instrutor"><select className="field" value={teacherId} onChange={(e) => setTeacherId(e.target.value)}>
           <option value="">Todos</option>{data.teachers.map((t) => <option key={t.id} value={t.id}>{t.displayName}</option>)}
         </select></Field>}
         <Field label="Turma"><select className="field" value={classGroupId} onChange={(e) => setClassGroupId(e.target.value)}>
@@ -466,7 +466,7 @@ export function RoomTimeline({ user, openBookings, initialFilter }: { user: User
     {selected && <Modal title="Detalhes da ocupação" onClose={() => setSelected(null)}><dl className="grid sm:grid-cols-2 gap-3 text-sm">
       {([[
         "Ambiente", selected.roomName], ["Data", dateBR(selected.date)], ["Turno", selected.shiftName ?? `${selected.startsAt.slice(11, 16)}–${selected.endsAt.slice(11, 16)} (sem turno correspondente)`],
-        ["Professor efetivo", selected.actualTeacherName ?? "Não informado ou não autorizado"], ["Turma", selected.actualClassGroupName ?? "Não informada ou não autorizada"],
+        ["Instrutor efetivo", selected.actualTeacherName ?? "Não informado ou não autorizado"], ["Turma", selected.actualClassGroupName ?? "Não informada ou não autorizada"],
         ["Curso", selected.courseName ?? "Não vinculado ou não autorizado"], ["UC", selected.curricularUnitName ?? "Não vinculada ou não autorizada"],
         ["Capacidade", selected.curricularCapabilityDescription ?? "Não vinculada ou não autorizada"], ["Situação", selected.bookingStatus ?? ({ Confirmed: "Confirmada", Blocked: "Bloqueada" }[selected.status] ?? "Não informada")],
         ["Origem", sourceLabels[selected.source] ?? "Não informada"], ["Dia letivo", dayLabels[selected.dayStatus ?? ""] ?? "Não informado"],
@@ -502,7 +502,7 @@ export function RoomTimeline({ user, openBookings, initialFilter }: { user: User
     </Modal>}
     {blockItem && <Modal title="Mover bloco pedagógico" onClose={() => { if (!blockBusy) setBlockItem(null); }}>
       <div className="space-y-4 text-sm">
-        <p><strong>{blockItem.actualTeacherName ?? "Professor não informado"}</strong>{blockItem.actualClassGroupName ? ` · ${blockItem.actualClassGroupName}` : ""}</p>
+        <p><strong>{blockItem.actualTeacherName ?? "Instrutor não informado"}</strong>{blockItem.actualClassGroupName ? ` · ${blockItem.actualClassGroupName}` : ""}</p>
         <p>{blockItem.courseName ?? "Curso"} · {blockItem.curricularUnitName ?? "UC não identificada"} · {blockItem.shiftName ?? "Turno não identificado"}</p>
         <p className="text-slate-600">A análise considera somente a oferta publicada e suas capacidades vinculadas. A prévia não altera dados nem garante reserva.</p>
         <div className="grid sm:grid-cols-2 gap-3">
@@ -543,7 +543,7 @@ export function RoomTimeline({ user, openBookings, initialFilter }: { user: User
       </div>
     </Modal>}    {moveItem && <Modal title="Remanejar ocupação" onClose={() => { if (!moveBusy) { previewRequest.current++; setMoveItem(null); } }}>
       <div className="space-y-4 text-sm">
-        <p><strong>{moveItem.actualTeacherName ?? "Professor não informado"}</strong>{moveItem.actualClassGroupName ? ` · ${moveItem.actualClassGroupName}` : ""}</p>
+        <p><strong>{moveItem.actualTeacherName ?? "Instrutor não informado"}</strong>{moveItem.actualClassGroupName ? ` · ${moveItem.actualClassGroupName}` : ""}</p>
         <p><strong>Origem:</strong> {moveItem.roomName} · {dateBR(moveItem.date)} · {moveItem.shiftName ?? "Turno não identificado"}</p>
         <div className="grid sm:grid-cols-3 gap-3">
           <Field label="Novo ambiente"><select className="field" value={moveRoomId} disabled={moveBusy} onChange={(event) => updateMove(setMoveRoomId, event.target.value)}>

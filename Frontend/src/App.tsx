@@ -12,13 +12,16 @@ import {
   Import,
   LayoutDashboard,
   Link2,
+  LockKeyhole,
   Layers3,
   LogOut,
   Menu,
+  Moon,
   PanelLeftClose,
   PanelLeftOpen,
   RefreshCcw,
   SearchCheck,
+  Sun,
   Table2,
   UserRound,
   Users,
@@ -79,11 +82,14 @@ function Workspace({ user, onLogout, onPasswordChanged, institutionalNotice = ""
   const [importKind, setImportKind] = useState<"Ambientes" | "Recursos" | "Docentes">("Ambientes");
   const [menu, setMenu] = useState(false);
   const [collapsed, setCollapsed] = useState(false);
+  const [accountOpen, setAccountOpen] = useState(false);
+  const [darkMode, setDarkMode] = useState(() => localStorage.getItem("salagest-theme") !== "light");
   const menuButtonRef = useRef<HTMLButtonElement>(null);
   const accountHeaderRef = useRef<HTMLButtonElement>(null);
   const menuReturnFocusRef = useRef<HTMLButtonElement | null>(null);
   const menuRef = useRef<HTMLElement>(null);
-  const accountButtonRef = useRef<HTMLButtonElement>(null);
+  const accountAreaRef = useRef<HTMLDivElement>(null);
+  const firstAccountActionRef = useRef<HTMLButtonElement>(null);
   const [occupations, setOccupations] = useState<Occupation[]>([]);
   const [agendaError, setAgendaError] = useState("");
   const [unread, setUnread] = useState<number | null>(null);
@@ -97,6 +103,10 @@ function Workspace({ user, onLogout, onPasswordChanged, institutionalNotice = ""
   const [newPassword, setNewPassword] = useState("");
   const [passwordError, setPasswordError] = useState("");
   const [passwordBusy, setPasswordBusy] = useState(false);
+  useEffect(() => {
+    document.documentElement.dataset.theme = darkMode ? "dark" : "light";
+    localStorage.setItem("salagest-theme", darkMode ? "dark" : "light");
+  }, [darkMode]);
   async function changePassword(event: React.FormEvent) {
     event.preventDefault(); setPasswordError(""); setPasswordBusy(true);
     try {
@@ -186,6 +196,24 @@ function Workspace({ user, onLogout, onPasswordChanged, institutionalNotice = ""
       if (returnFocus?.isConnected) returnFocus.focus();
     };
   }, [menu]);
+  useEffect(() => {
+    if (!accountOpen) return;
+    const onPointerDown = (event: PointerEvent) => {
+      if (!accountAreaRef.current?.contains(event.target as Node)) setAccountOpen(false);
+    };
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setAccountOpen(false);
+        window.requestAnimationFrame(() => accountHeaderRef.current?.focus());
+      }
+    };
+    document.addEventListener("pointerdown", onPointerDown);
+    document.addEventListener("keydown", onKeyDown);
+    return () => {
+      document.removeEventListener("pointerdown", onPointerDown);
+      document.removeEventListener("keydown", onKeyDown);
+    };
+  }, [accountOpen]);
   const reloadAgenda = useCallback(async () => {
     try {
       const from = localDate(new Date());
@@ -203,6 +231,7 @@ function Workspace({ user, onLogout, onPasswordChanged, institutionalNotice = ""
   }, [reloadAgenda]);
   const scrollToTop = () => window.scrollTo({ top: 0, behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth" });
   const open = (p: string) => {
+    setAccountOpen(false);
     setRelated(null);
     setAgendaFocus(null);
     setTimelineFilter(null);
@@ -232,12 +261,9 @@ function Workspace({ user, onLogout, onPasswordChanged, institutionalNotice = ""
   const navigation = getNavigationSections(admin);
   const current = navigation.flatMap((section) => section.items).find((item) => item.page === page);
   const openAccount = () => {
-    setCollapsed(false);
-    if (window.matchMedia("(max-width: 1023px)").matches) {
-      menuReturnFocusRef.current = accountHeaderRef.current;
-      setMenu(true);
-    }
-    window.requestAnimationFrame(() => accountButtonRef.current?.focus());
+    const next = !accountOpen;
+    setAccountOpen(next);
+    if (next) window.requestAnimationFrame(() => firstAccountActionRef.current?.focus());
   };
   return (
     <div className="app-workspace min-h-screen bg-canvas flex">
@@ -246,48 +272,43 @@ function Workspace({ user, onLogout, onPasswordChanged, institutionalNotice = ""
         <div
           aria-hidden="true"
           className="fixed inset-0 bg-slate-900/60 z-30 lg:hidden"
-          onClick={() => setMenu(false)}
+          onClick={() => { setAccountOpen(false); setMenu(false); }}
         />
       )}
       <aside
         id="primary-navigation"
         ref={menuRef}
         aria-label="Menu principal"
-        className={`fixed top-0 bottom-0 left-0 z-40 w-[264px] ${collapsed ? "lg:w-[76px]" : "lg:w-[264px]"} bg-navy-950 text-white flex flex-col border-r border-white/10 shadow-2xl shadow-slate-950/10 transition-[width,transform] lg:translate-x-0 ${menu ? "visible translate-x-0" : "invisible -translate-x-full lg:visible"}`}
+        className={`salagest-sidebar fixed top-0 bottom-0 left-0 z-40 w-[256px] ${collapsed ? "lg:w-[76px]" : "lg:w-[256px]"} bg-[#0e172a] text-white flex flex-col border-r border-[#2b3b57] transition-[width,transform] lg:translate-x-0 ${menu ? "visible translate-x-0" : "invisible -translate-x-full lg:visible"}`}
       >
-        <div className={`h-[83px] flex items-center justify-between border-b border-white/10 ${collapsed ? "px-4 lg:px-3 lg:justify-center" : "px-6"}`}>
-          <div className={`flex items-center gap-2.5 ${collapsed ? "lg:hidden" : ""}`}>
-            <div className="h-10 w-10 rounded-xl bg-skybrand-600 ring-1 ring-white/15 flex items-center justify-center shadow-lg shadow-sky-950/20">
-              <Layers3 aria-hidden="true" size={23} />
-            </div>
-            <div className={collapsed ? "lg:hidden" : ""}>
-              <span className="block text-[21px] font-extrabold tracking-tight">SalaGest</span>
-              <span className="block text-[10px] font-medium tracking-wide text-slate-400">Gestão de ambientes</span>
-            </div>
+        <div className={`h-[90px] shrink-0 flex items-center justify-between ${collapsed ? "px-4 lg:px-3 lg:justify-center" : "pl-6 pr-2"}`}>
+          <div className={collapsed ? "lg:hidden" : ""}>
+            <span className="block text-[35px] leading-none font-black italic tracking-[-.075em] text-white">SalaGest</span>
+            <span className="sr-only">Gestão de ambientes</span>
           </div>
           <button
             type="button"
             aria-label="Fechar menu"
-            className="lg:hidden min-w-11 min-h-11 flex items-center justify-center rounded-lg hover:bg-white/10"
-            onClick={() => setMenu(false)}
+            className="lg:hidden min-w-11 min-h-11 flex items-center justify-center rounded-lg text-slate-200 hover:bg-white/10 focus-visible:outline-2 focus-visible:outline-sky-300"
+            onClick={() => { setAccountOpen(false); setMenu(false); }}
           >
             <X size={20} />
           </button>
           <button type="button" aria-label={collapsed ? "Expandir menu lateral" : "Recolher menu lateral"}
             aria-expanded={!collapsed} aria-controls="primary-navigation"
-            className="hidden lg:flex min-w-10 min-h-10 items-center justify-center rounded-lg text-slate-300 hover:bg-white/10 hover:text-white"
-            onClick={() => setCollapsed(!collapsed)}>
+            className="hidden lg:flex min-w-10 min-h-10 items-center justify-center rounded-lg border border-[#32435f] bg-[#111d32] text-slate-200 hover:bg-white/10 hover:text-white"
+            onClick={() => { setAccountOpen(false); setCollapsed(!collapsed); }}>
             {collapsed ? <PanelLeftOpen size={19} /> : <PanelLeftClose size={19} />}
           </button>
         </div>
-        <div className={`${collapsed ? "lg:px-2" : ""} px-3 py-5 flex-1 overflow-y-auto overflow-x-hidden`}>
+        <div className={`salagest-sidebar-scroll ${collapsed ? "lg:px-2" : ""} min-h-0 px-3 pt-2 pb-4 flex-1 overflow-y-auto overflow-x-hidden`}>
           <nav aria-label="Navegação principal" className="space-y-4">
             {navigation.map((section) => (
               <section key={section.title} aria-label={section.title}>
-                <p className={`text-[10px] font-bold tracking-[.14em] text-slate-400 px-3 mb-1.5 uppercase ${collapsed ? "lg:sr-only" : ""}`}>
+                <p className={`mb-1.5 px-4 text-[10px] font-bold uppercase tracking-[.14em] text-[#94a8c8] ${collapsed ? "lg:sr-only" : ""}`}>
                   {section.title}
                 </p>
-                <div className="space-y-1">
+                <div className="space-y-1.5">
                   {section.items.map((item) => {
                     const Icon = navIcons[item.icon];
                     const active = page === item.page;
@@ -299,9 +320,9 @@ function Workspace({ user, onLogout, onPasswordChanged, institutionalNotice = ""
                         title={collapsed ? (item.teacherLabel && !admin ? item.teacherLabel : item.label) : undefined}
                         aria-current={active ? "page" : undefined}
                         onClick={() => open(item.page)}
-                        className={`w-full min-h-11 flex items-center gap-3 rounded-control px-3 py-2.5 text-[13px] text-left font-semibold transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-sky-300 ${collapsed ? "lg:justify-center lg:px-2" : ""} ${active ? "bg-skybrand-600 text-white shadow-md shadow-sky-950/25" : "text-slate-300 hover:bg-white/[.1] hover:text-white"}`}
+                        className={`w-full min-h-[50px] flex items-center gap-4 rounded-[9px] px-4 py-2.5 text-[14px] leading-5 text-left font-medium transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-sky-300 ${collapsed ? "lg:justify-center lg:px-2" : ""} ${active ? "bg-[#12377e] text-white font-semibold" : "text-[#d4e0f2] hover:bg-white/[.07] hover:text-white"}`}
                       >
-                        <Icon aria-hidden="true" size={19} />
+                        <Icon aria-hidden="true" size={19} strokeWidth={1.8} className="shrink-0" />
                         <span className={collapsed ? "lg:sr-only" : ""}>{item.teacherLabel && !admin ? item.teacherLabel : item.label}</span>
                       </button>
                     );
@@ -311,62 +332,14 @@ function Workspace({ user, onLogout, onPasswordChanged, institutionalNotice = ""
             ))}
           </nav>
         </div>
-        <div className={`${collapsed ? "lg:px-2" : ""} px-4 pb-5`}>
-          {collapsed && <button type="button" className="hidden lg:flex w-full min-h-11 items-center justify-center rounded-xl bg-white/10 text-white hover:bg-white/20" aria-label="Expandir menu e acessar conta" title="Conta" onClick={() => { setCollapsed(false); window.requestAnimationFrame(() => accountButtonRef.current?.focus()); }}>{user.displayName.charAt(0).toUpperCase()}</button>}
-          <div className={`p-3 bg-white/5 border border-white/10 rounded-xl ${collapsed ? "lg:hidden" : ""}`}>
-            <p className="text-sm font-semibold">{user.displayName}</p>
-            <p className="text-xs text-slate-400 mt-1">
-              {admin ? "Administrador" : "Professor"}
-            </p>
-            <button
-              className="mt-3 flex min-h-10 items-center text-xs font-semibold gap-2 text-slate-300 hover:text-white"
-              onClick={onLogout}
-            >
-              <LogOut size={14} />
-              Sair da conta
-            </button>
-            <button ref={accountButtonRef} type="button" className="mt-3 block min-h-10 text-xs font-semibold text-slate-300 underline"
-              onClick={() => { setChangingPassword(!changingPassword); setPasswordError(""); }}>Alterar senha</button>
-            {changingPassword && <form className="mt-3 space-y-2" onSubmit={(event) => void changePassword(event)}>
-              <label className="block text-xs text-slate-300">Senha atual
-                <input className="field mt-1" type="password" autoComplete="current-password" required
-                  value={currentPassword} onChange={(event) => setCurrentPassword(event.target.value)} /></label>
-              <label className="block text-xs text-slate-300">Nova senha
-                <input className="field mt-1" type="password" autoComplete="new-password" required minLength={8}
-                  value={newPassword} onChange={(event) => setNewPassword(event.target.value)} /></label>
-              <button type="submit" className="text-xs font-semibold text-white underline" disabled={passwordBusy}>Salvar senha</button>
-              {passwordError && <p role="alert" className="text-xs text-rose-200">{passwordError}</p>}
-            </form>}
-            {ssoEnabled && !linking && <button type="button"
-              className="mt-3 flex min-h-10 items-center text-xs font-semibold gap-2 text-slate-300 hover:text-white"
-              onClick={() => { setLinkError(""); setLinking(true); }}>
-              <Link2 size={14} />Vincular conta institucional
-            </button>}
-            {ssoEnabled && linking && <div className="mt-3 space-y-2">
-              <label className="block text-xs text-slate-300" htmlFor="institutional-link-password">Confirme sua senha local</label>
-              <input id="institutional-link-password" type="password" autoComplete="current-password"
-                className="field" value={linkPassword}
-                onChange={(event) => setLinkPassword(event.target.value)} disabled={linkBusy} />
-              <div className="flex gap-2">
-                <button type="button" className="text-xs underline text-slate-300" disabled={linkBusy}
-                  onClick={() => { setLinking(false); setLinkPassword(""); setLinkError(""); }}>Cancelar</button>
-                <button type="button" className="text-xs font-semibold text-white underline disabled:opacity-60"
-                  disabled={linkBusy || !linkPassword} onClick={() => void beginInstitutionalLink()}>
-                  {linkBusy ? "Abrindo provedor..." : "Continuar"}
-                </button>
-              </div>
-            </div>}
-            {linkError && <p role="alert" className="mt-2 text-xs text-rose-200">{linkError}</p>}
-          </div>
-        </div>
       </aside>
-      <div className={`flex-1 min-w-0 ${collapsed ? "lg:pl-[76px]" : "lg:pl-[264px]"}`}>
-        <header className="h-[76px] bg-surface border-b border-line px-3 sm:px-5 md:px-8 flex items-center justify-between gap-3 sticky top-0 z-20">
+      <div className={`flex-1 min-w-0 ${collapsed ? "lg:pl-[76px]" : "lg:pl-[256px]"}`}>
+        <header className="h-[76px] bg-[#0e172a] border-b border-[#2b3b57] px-3 sm:px-5 md:px-8 flex items-center justify-between gap-3 sticky top-0 z-20">
           <div className="flex min-w-0 items-center gap-3">
             <button
               type="button"
               ref={menuButtonRef}
-              className="lg:hidden min-w-11 min-h-11 flex items-center justify-center rounded-lg text-slate-600 hover:bg-slate-100"
+              className="lg:hidden min-w-11 min-h-11 flex items-center justify-center rounded-lg text-slate-200 hover:bg-white/10"
               aria-label="Abrir menu"
               aria-expanded={menu}
               aria-controls="primary-navigation"
@@ -375,10 +348,10 @@ function Workspace({ user, onLogout, onPasswordChanged, institutionalNotice = ""
               <Menu size={23} />
             </button>
             <div>
-              <p className="text-[10px] uppercase font-bold tracking-[.12em] text-slate-500">
+              <p className="text-[10px] uppercase font-bold tracking-[.12em] text-slate-400">
                 SalaGest · Plataforma institucional
               </p>
-              <p className="text-sm font-semibold text-ink mt-1 truncate max-w-[28vw] sm:max-w-none">
+              <p className="text-sm font-semibold text-white mt-1 truncate max-w-[28vw] sm:max-w-none">
                 {(current?.teacherLabel && !admin ? current.teacherLabel : current?.label) || "Painel"}
               </p>
             </div>
@@ -387,7 +360,7 @@ function Workspace({ user, onLogout, onPasswordChanged, institutionalNotice = ""
             <button
               aria-label="Atualizar dados"
               title="Atualizar"
-              className="hidden sm:flex rounded-xl min-w-11 min-h-11 items-center justify-center text-slate-600 hover:bg-slate-100"
+              className="hidden sm:flex rounded-xl min-w-11 min-h-11 items-center justify-center text-slate-200 hover:bg-white/10"
               onClick={() => {
                 void reload();
                 void reloadAgenda();
@@ -403,7 +376,7 @@ function Workspace({ user, onLogout, onPasswordChanged, institutionalNotice = ""
                   : "Ver notificações"
               }
               onClick={() => open("notifications")}
-              className="rounded-xl min-w-11 min-h-11 flex items-center justify-center text-slate-600 hover:bg-slate-100 relative"
+              className="rounded-xl min-w-11 min-h-11 flex items-center justify-center text-slate-200 hover:bg-white/10 relative"
             >
               <Bell size={19} />
               {unread !== null && unread > 0 && (
@@ -412,19 +385,48 @@ function Workspace({ user, onLogout, onPasswordChanged, institutionalNotice = ""
                 </span>
               )}
             </button>
-            <div className="hidden sm:block h-9 w-px bg-line" />
-            <button ref={accountHeaderRef} type="button" onClick={openAccount} aria-label="Abrir opções da conta" className="flex min-h-11 items-center gap-2 rounded-xl px-1 hover:bg-slate-100">
-              <div className="w-9 h-9 rounded-full bg-skybrand-700 text-white font-bold flex items-center justify-center">
-                {user.displayName.charAt(0).toUpperCase()}
-              </div>
-              <span className="hidden sm:block text-sm font-semibold text-slate-700 max-w-32 truncate">
-                {user.displayName}
-              </span>
-              <ChevronDown
-                size={15}
-                className="hidden sm:block text-slate-400"
-              />
-            </button>
+            <div className="hidden sm:block h-9 w-px bg-[#32435f]" />
+            <div ref={accountAreaRef} className="relative">
+              <button ref={accountHeaderRef} type="button" onClick={openAccount} aria-label="Opções da conta" aria-expanded={accountOpen} aria-controls="account-actions" className="flex min-h-11 min-w-11 items-center justify-center rounded-full bg-[#17243a] text-sm font-bold text-white hover:bg-[#243754] focus-visible:outline-2 focus-visible:outline-sky-300">
+                {user.displayName.trim().split(/\s+/).slice(0, 2).map((part) => part.charAt(0).toUpperCase()).join("")}
+              </button>
+              {accountOpen && <div id="account-actions" role="group" aria-label="Ações da conta" className="absolute right-0 top-[calc(100%+8px)] z-50 w-[min(260px,calc(100vw-24px))] max-h-[min(70dvh,440px)] overflow-y-auto rounded-xl border border-[#32435f] bg-[#111d32] p-2 text-white shadow-2xl shadow-black/40">
+                <div className="px-2 py-2.5">
+                  <p className="truncate text-sm font-bold" title={user.displayName}>{user.displayName}</p>
+                  <p className="text-xs text-[#93a6c6]">{admin ? "Administrador" : "Instrutor"}</p>
+                </div>
+                <div className="my-1 border-t border-[#32435f]" />
+                <button ref={firstAccountActionRef} type="button" aria-pressed={darkMode} className="flex w-full min-h-11 items-center gap-3 rounded-lg px-3 text-left text-sm font-semibold hover:bg-white/[.08] focus-visible:outline-2 focus-visible:outline-sky-300" onClick={() => setDarkMode(!darkMode)}>
+                  {darkMode ? <Moon size={18} aria-hidden="true" /> : <Sun size={18} aria-hidden="true" />}Modo escuro<span className="ml-auto text-xs text-[#93a6c6]">{darkMode ? "Ativado" : "Desativado"}</span>
+                </button>
+                <button type="button" className="flex w-full min-h-11 items-center gap-3 rounded-lg px-3 text-left text-sm font-semibold hover:bg-white/[.08] focus-visible:outline-2 focus-visible:outline-sky-300" onClick={() => { setChangingPassword(!changingPassword); setPasswordError(""); }}>
+                  <LockKeyhole size={18} aria-hidden="true" />Alterar senha
+                </button>
+                {changingPassword && <form className="space-y-2 border-b border-white/10 px-2 pb-3" onSubmit={(event) => void changePassword(event)}>
+                  <label className="block text-xs text-slate-300">Senha atual
+                    <input className="field mt-1" type="password" autoComplete="current-password" required value={currentPassword} onChange={(event) => setCurrentPassword(event.target.value)} /></label>
+                  <label className="block text-xs text-slate-300">Nova senha
+                    <input className="field mt-1" type="password" autoComplete="new-password" required minLength={8} value={newPassword} onChange={(event) => setNewPassword(event.target.value)} /></label>
+                  <button type="submit" className="min-h-10 text-xs font-semibold text-white underline" disabled={passwordBusy}>Salvar senha</button>
+                  {passwordError && <p role="alert" className="text-xs text-rose-200">{passwordError}</p>}
+                </form>}
+                {ssoEnabled && !linking && <button type="button" className="flex w-full min-h-11 items-center gap-3 rounded-lg px-3 text-left text-sm font-semibold hover:bg-white/[.08]" onClick={() => { setLinkError(""); setLinking(true); }}>
+                  <Link2 size={18} aria-hidden="true" />Vincular conta institucional
+                </button>}
+                {ssoEnabled && linking && <div className="space-y-2 px-2 pb-3">
+                  <label className="block text-xs text-slate-300" htmlFor="institutional-link-password">Confirme sua senha local</label>
+                  <input id="institutional-link-password" type="password" autoComplete="current-password" className="field" value={linkPassword} onChange={(event) => setLinkPassword(event.target.value)} disabled={linkBusy} />
+                  <div className="flex gap-2">
+                    <button type="button" className="min-h-10 text-xs underline text-slate-300" disabled={linkBusy} onClick={() => { setLinking(false); setLinkPassword(""); setLinkError(""); }}>Cancelar</button>
+                    <button type="button" className="min-h-10 text-xs font-semibold text-white underline disabled:opacity-60" disabled={linkBusy || !linkPassword} onClick={() => void beginInstitutionalLink()}>{linkBusy ? "Abrindo provedor..." : "Continuar"}</button>
+                  </div>
+                </div>}
+                {linkError && <p role="alert" className="px-2 text-xs text-rose-200">{linkError}</p>}
+                <button type="button" className="flex w-full min-h-11 items-center gap-3 rounded-lg px-3 text-left text-sm font-semibold hover:bg-white/[.08] focus-visible:outline-2 focus-visible:outline-sky-300" onClick={onLogout}>
+                  <LogOut size={18} aria-hidden="true" />Sair
+                </button>
+              </div>}
+            </div>
           </div>
         </header>
         <main id="main-content" tabIndex={-1} className="max-w-[1540px] mx-auto p-4 sm:p-6 lg:p-8 xl:p-10">

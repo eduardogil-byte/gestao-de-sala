@@ -9,6 +9,7 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : Ident
     public DbSet<Room> Rooms => Set<Room>();
     public DbSet<RoomOperatingShift> RoomOperatingShifts => Set<RoomOperatingShift>();
     public DbSet<RoomResource> RoomResources => Set<RoomResource>();
+    public DbSet<ResourceCatalogItem> ResourceCatalog => Set<ResourceCatalogItem>();
     public DbSet<ComputerGroup> ComputerGroups => Set<ComputerGroup>();
     public DbSet<Software> SoftwareCatalog => Set<Software>();
     public DbSet<GroupSoftware> GroupSoftware => Set<GroupSoftware>();
@@ -76,6 +77,15 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : Ident
         b.Entity<ComputerGroup>().ToTable(t => t.HasCheckConstraint("CK_ComputerGroups_OperationalQuantity",
             "[OperationalQuantity] IS NULL OR ([OperationalQuantity] >= 0 AND [OperationalQuantity] <= [Quantity])"));
         b.Entity<RoomResource>().Property(x => x.Name).IsRequired().HasMaxLength(120);
+        b.Entity<ResourceCatalogItem>().Property(x => x.Name).IsRequired().HasMaxLength(120);
+        b.Entity<ResourceCatalogItem>().Property(x => x.NormalizedName).IsRequired().HasMaxLength(120);
+        b.Entity<ResourceCatalogItem>().Property(x => x.Category).IsRequired().HasMaxLength(80);
+        b.Entity<ResourceCatalogItem>().Property(x => x.Description).HasMaxLength(500);
+        b.Entity<ResourceCatalogItem>().HasIndex(x => x.NormalizedName).IsUnique();
+        b.Entity<RoomResource>().HasOne(x => x.ResourceCatalogItem).WithMany()
+            .HasForeignKey(x => x.ResourceCatalogItemId).OnDelete(DeleteBehavior.Restrict);
+        b.Entity<CapabilityResourceRequirement>().HasOne(x => x.ResourceCatalogItem).WithMany()
+            .HasForeignKey(x => x.ResourceCatalogItemId).OnDelete(DeleteBehavior.Restrict);
         b.Entity<RoomResource>().Property(x => x.NormalizedName).IsRequired().HasMaxLength(120);
         b.Entity<RoomResource>().Property(x => x.Type).IsRequired().HasMaxLength(80);
         b.Entity<RoomResource>().Property(x => x.NormalizedType).IsRequired().HasMaxLength(80);

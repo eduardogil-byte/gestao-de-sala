@@ -21,8 +21,8 @@ test("cronograma renderiza controles de consulta e reserva o filtro de professor
     assert.match(admin, /Mês/);
     assert.match(admin, /Semestre/);
     assert.match(admin, /Novo ambiente|Ambiente/);
-    assert.match(admin, /Professor<\/span>/);
-    assert.doesNotMatch(teacher, /Professor<\/span>/);
+    assert.match(admin, /Instrutor<\/span>/);
+    assert.doesNotMatch(teacher, /Instrutor<\/span>/);
     assert.match(teacher, /Sem registro/);
   } finally {
     await server.close();

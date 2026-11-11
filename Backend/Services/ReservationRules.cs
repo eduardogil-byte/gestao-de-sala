@@ -25,7 +25,7 @@ public static class ReservationRules
             var actualTeacherId = loan?.BorrowerId ?? item.TeacherId;
             var actualClassId = loan is null ? item.ClassGroupId : loan.BookingRequest.ClassGroupId;
             if (teacherId is not null && actualTeacherId == teacherId)
-                return "O professor já possui uma aula ou reserva nesse horário";
+                return "O instrutor já possui uma aula ou reserva nesse horário";
             if (classId is not null && actualClassId == classId)
                 return "A turma já possui uma aula ou reserva nesse horário";
         }

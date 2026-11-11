@@ -18,6 +18,7 @@ public static partial class ApiEndpoints
         MapPasswords(app);
         MapCatalog(app);
         MapEnvironmentInventory(app);
+        MapResourceCatalog(app);
         MapEnvironmentCompatibility(app);
         MapPedagogicalCatalog(app);
         MapCurricularWorkload(app);
@@ -75,7 +76,7 @@ public static partial class ApiEndpoints
     };
 
     private static async Task<List<Room>> AllRooms(AppDbContext db)
-        => await db.Rooms.AsNoTracking().Include(r => r.ComputerGroups)
+        => await db.Rooms.AsNoTracking().Include(r => r.Resources).Include(r => r.ComputerGroups)
             .ThenInclude(g => g.Software).ThenInclude(s => s.Software).ToListAsync();
 
     private static void MapAccounts(IEndpointRouteBuilder app)
@@ -99,7 +100,7 @@ public static partial class ApiEndpoints
                 }
                 var roleResult = await manager.AddToRoleAsync(user, "Professor");
                 if (!roleResult.Succeeded)
-                    return Results.Problem("Não foi possível concluir o cadastro do professor.");
+                    return Results.Problem("Não foi possível concluir o cadastro do instrutor.");
                 await transaction.CommitAsync();
                 return Results.Created("/api/me", new { user.Id, user.DisplayName, user.Email, Role = "Professor" });
             }
@@ -144,7 +145,7 @@ public static partial class ApiEndpoints
                 u.DisplayName,
                 Email = isAdmin ? u.Email : null
             }));
-        }).RequireAuthorization().WithTags("Professores");
+        }).RequireAuthorization().WithTags("Instrutores");
     }
 
     private static void MapCatalog(IEndpointRouteBuilder app)
@@ -210,6 +211,7 @@ public static partial class ApiEndpoints
             await using var createTx = await db.Database.BeginTransactionAsync();
             db.Rooms.Add(room);
             if (input.Inventory is not null) ApplyInventory(db, room, input.Inventory, UserId(current));
+            SyncLegacyResourceFlags(room);
             await db.SaveChangesAsync();
             if (input.Inventory is not null) AuditNewInventory(db, room, UserId(current));
             AuditTrail.Add(db, "Room", room.Id.ToString(), "Criado", UserId(current), null,
@@ -258,6 +260,7 @@ public static partial class ApiEndpoints
             existing.HasInternet = input.HasInternet; existing.Active = input.Active;
             UpdateComputerGroups(existing.ComputerGroups, input.ComputerGroups);
             if (input.Inventory is not null) ApplyInventory(db, existing, input.Inventory, UserId(current));
+            SyncLegacyResourceFlags(existing);
             var newGroups = existing.ComputerGroups.Where(g => g.Id == 0).ToList();
             var newResources = existing.Resources.Where(r => r.Id == 0).ToList();
             AuditTrail.Add(db, "Room", existing.Id.ToString(), "Alterado", UserId(current), before,

@@ -42,14 +42,14 @@ public static partial class ApiEndpoints
             if (isAdmin)
             {
                 if (string.IsNullOrWhiteSpace(input.TeacherId))
-                    return Error("Selecione o professor responsável pela reserva.");
+                    return Error("Selecione o instrutor responsável pela reserva.");
                 responsibleId = input.TeacherId;
                 var responsible = await db.Users.AnyAsync(u => u.Id == responsibleId);
                 var hasTeacherRole = await db.UserRoles.Join(db.Roles,
                     link => link.RoleId, role => role.Id, (link, role) => new { link.UserId, role.Name })
                     .AnyAsync(x => x.UserId == responsibleId && x.Name == "Professor");
                 if (!responsible || !hasTeacherRole)
-                    return Error("Professor responsável não encontrado.");
+                    return Error("Instrutor responsável não encontrado.");
             }
             else if (input.TeacherId is not null && input.TeacherId != responsibleId)
                 return Results.Forbid();

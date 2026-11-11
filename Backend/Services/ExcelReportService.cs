@@ -175,7 +175,7 @@ public sealed class ExcelReportService(AppDbContext db, IConfiguration configura
         var capIds = bookings.Values.Where(x => x.CurricularCapabilityId != null).Select(x => x.CurricularCapabilityId!.Value).Distinct().ToArray();
         var caps = await db.CurricularCapabilities.AsNoTracking().Where(x => capIds.Contains(x.Id))
             .ToDictionaryAsync(x => x.Id, x => x.Description, ct);
-        var sheet = Sheet(book, "Ocupações", ["Data", "Dia", "Turno", "Início", "Fim", "Código ambiente", "Ambiente", "Professor", "Turma", "Curso", "UC", "Capacidade", "Tipo", "Situação"]);
+        var sheet = Sheet(book, "Ocupações", ["Data", "Dia", "Turno", "Início", "Fim", "Código ambiente", "Ambiente", "Instrutor", "Turma", "Curso", "UC", "Capacidade", "Tipo", "Situação"]);
         foreach (var x in items)
         {
             var date = DateOnly.FromDateTime(x.StartsAt);
@@ -215,7 +215,7 @@ public sealed class ExcelReportService(AppDbContext db, IConfiguration configura
                 x.DecidedAtUtc, x.RejectionReason, x.SemesterPlan.Published })
             .ToListAsync(ct);
         Limit(rows.Count);
-        var sheet = Sheet(book, "Planejamento", ["Semestre", "Professor", "Turma", "Curso", "UC", "Capacidade", "Ambiente proposto", "Turno", "Início", "Fim", "Estado da proposta", "Decidida em (UTC)", "Motivo rejeição", "Plano publicado"]);
+        var sheet = Sheet(book, "Planejamento", ["Semestre", "Instrutor", "Turma", "Curso", "UC", "Capacidade", "Ambiente proposto", "Turno", "Início", "Fim", "Estado da proposta", "Decidida em (UTC)", "Motivo rejeição", "Plano publicado"]);
         foreach (var x in rows) Row(sheet, [x.Semester, x.Teacher, x.Class, x.Course, x.UC, x.Capability,
             x.Room, x.Shift, x.StartDate, x.EndDate, x.Status.ToString(), x.DecidedAtUtc, x.RejectionReason, x.Published]);
         return rows.Count > 0;

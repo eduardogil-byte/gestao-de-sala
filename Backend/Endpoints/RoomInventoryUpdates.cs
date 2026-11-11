@@ -52,7 +52,12 @@ public static partial class ApiEndpoints
         if (descriptions.Distinct(StringComparer.OrdinalIgnoreCase).Count() != descriptions.Length)
             return "Já existe um grupo de computadores com esta identificação.";
         foreach (var update in resources)
+        {
             if (varError(update.Details) is string error) return error;
+            if (await ValidateCatalogSelection(db, update.Details,
+                    room.Resources.FirstOrDefault(r => r.Id == update.Id)?.ResourceCatalogItemId) is string catalogError)
+                return catalogError;
+        }
         var keys = room.Resources.Where(r => !resources.Any(x => x.Id == r.Id))
             .Select(r => (r.NormalizedName, r.NormalizedType))
             .Concat(resources.Select(x => (NormalizeInventoryKey(x.Details.Name), NormalizeInventoryKey(x.Details.Type)))).ToArray();

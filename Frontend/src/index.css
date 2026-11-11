@@ -18,6 +18,15 @@
   background: var(--color-canvas);
   font-synthesis: none;
 }
+[data-theme="light"] {
+  --color-canvas: #f3f6fb;
+  --color-surface: #ffffff;
+  --color-ink: #17243a;
+  --color-muted-ink: #52647d;
+  --color-line: #cbd6e5;
+  --shadow-soft: 0 8px 28px rgba(14, 23, 42, .08);
+  --shadow-raised: 0 14px 36px rgba(14, 23, 42, .12);
+}
 body {
   margin: 0;
   min-width: 320px;
@@ -130,3 +139,8 @@ button:disabled {
 .app-workspace :is(.bg-emerald-50, .bg-green-50) { background-color: #193c38; }
 .app-workspace :is(.text-emerald-700, .text-emerald-800, .text-green-700) { color: #a6f3d3; }
 .app-workspace :is(.border-sky-200, .border-blue-200, .border-amber-200, .border-rose-200, .border-red-200, .border-emerald-200) { border-color: var(--color-line); }
+
+/* Barra lateral: trilho discreto sem ocultar a rolagem dos itens do menu. */
+.salagest-sidebar-scroll { scrollbar-width: thin; scrollbar-color: #425574 transparent; }
+.salagest-sidebar-scroll::-webkit-scrollbar { width: 5px; }
+.salagest-sidebar-scroll::-webkit-scrollbar-thumb { background: #425574; border-radius: 999px; }
