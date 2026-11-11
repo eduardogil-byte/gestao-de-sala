@@ -72,4 +72,23 @@ public class RoomCompatibilityTests
             Array.Empty<int>(), 0, false);
         Assert.Equal("Capacidade de alunos insuficiente", RoomCompatibility.Incompatibility(room, need));
     }
+
+    [Fact]
+    public void IntermediateRequirement_RejectsBasicAndUnknownButAcceptsIntermediateAndHigh()
+    {
+        var group = new ComputerGroup { Quantity = 20, OperationalQuantity = 20, RamGb = 8, Tier = HardwareTier.Basico };
+        var room = new Room { Active = true, Seats = 20, ComputerGroups = [group] };
+        var need = new RoomNeed(20, false, false, true, HardwareTier.Intermediario, [], 8, false);
+        Assert.NotNull(RoomCompatibility.Incompatibility(room, need));
+        group.Tier = 0;
+        Assert.NotNull(RoomCompatibility.Incompatibility(room, need));
+        group.Tier = HardwareTier.Intermediario;
+        Assert.Null(RoomCompatibility.Incompatibility(room, need));
+        var intermediateScore = RoomCompatibility.Score(room, need);
+        group.Tier = HardwareTier.Alto;
+        Assert.Null(RoomCompatibility.Incompatibility(room, need));
+        Assert.True(RoomCompatibility.Score(room, need) > intermediateScore);
+        group.OperationalQuantity = 19;
+        Assert.NotNull(RoomCompatibility.Incompatibility(room, need));
+    }
 }

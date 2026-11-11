@@ -3,7 +3,8 @@ import { post, read } from "../lib/api";
 import { localDate, nextDate, resultMessage, dateBR } from "../lib/utils";
 import { useData } from "../lib/data";
 import { NeedFields, defaultNeed } from "./NeedFields";
-import { Checkbox, Field, Notice, SearchableSelect, SubmitButton } from "./UI";
+import { WeeklyCalendar, RepeatUntilCalendar, recurrenceLimit } from "./BookingCalendars";
+import { Checkbox, Field, Notice, SearchableSelect, SubmitButton, useConfirmation } from "./UI";
 import type { Need, Shift, User } from "../types";
 
 type PedagogicalOption = {
@@ -15,6 +16,10 @@ type PedagogicalOption = {
 
 const names = ["Dom", "Seg", "Ter", "Qua", "Qui", "Sex", "Sáb"];
 const asDay = (d: string) => new Date(`${d}T12:00:00`).getDay();
+export function uniqueShift(ids: (number | null | undefined)[]) {
+  const found = [...new Set(ids.filter((id): id is number => id != null))];
+  return found.length === 1 ? found[0] : null;
+}
 export function firstSelected(date: string, days: number[]) {
   for (let i = 0; i < 7; i++) {
     const candidate = nextDate(date, i);
@@ -29,6 +34,7 @@ export function actualDates(from: string, to: string, days: number[]) {
   return found;
 }
 export function BookingForm({ onCreated, user }: { onCreated: (id: number, qualificationWarning: boolean) => void; user: User }) {
+  const confirm = useConfirmation();
   const { data, reload } = useData();
   const admin = user.roles.includes("Admin");
   const [teacherId, setTeacherId] = useState("");
@@ -40,6 +46,7 @@ export function BookingForm({ onCreated, user }: { onCreated: (id: number, quali
   const [recurring, setRecurring] = useState(false);
   const [weekdays, setWeekdays] = useState<number[]>([asDay(today)]);
   const [repeatUntil, setRepeatUntil] = useState(nextDate(today, 28));
+  const [untilOpen, setUntilOpen] = useState(false);
   const [eadDay, setEadDay] = useState("");
   const [perComputer, setPerComputer] = useState(1);
   const [classGroupId, setClassGroupId] = useState("");
@@ -50,9 +57,33 @@ export function BookingForm({ onCreated, user }: { onCreated: (id: number, quali
   const [optionsError, setOptionsError] = useState("");
   const [optionsBusy, setOptionsBusy] = useState(false);
   const [lessonPlanLink, setLessonPlanLink] = useState("");
-  const [need, setNeed] = useState<Need>(defaultNeed);
+  const [need, setNeed] = useState<Need>({ ...defaultNeed, minRamGb: 8 });
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const classAssignments = data.assignments.filter((assignment) => assignment.classGroupId === Number(classGroupId) &&
+    assignment.teacherId === (admin ? teacherId : user.id) && assignment.endedAtUtc == null &&
+    (!pedagogical || !unitId || assignment.curricularUnitId === Number(unitId)));
+  const identifiedShift = uniqueShift(classAssignments.map((assignment) => assignment.preferredShiftId)) ??
+    uniqueShift(classAssignments.filter((assignment) => assignment.weekday == null || assignment.weekday === asDay(date)).map((assignment) => assignment.preferredShiftId));
+  function applyClassShift(groupId: string, curricularUnitId = "") {
+    const candidates = data.assignments.filter((assignment) => assignment.classGroupId === Number(groupId) &&
+      assignment.teacherId === (admin ? teacherId : user.id) && assignment.endedAtUtc == null &&
+      (!curricularUnitId || assignment.curricularUnitId === Number(curricularUnitId)));
+    const found = uniqueShift(candidates.map((assignment) => assignment.preferredShiftId)) ??
+      uniqueShift(candidates.filter((assignment) => assignment.weekday == null || assignment.weekday === asDay(date)).map((assignment) => assignment.preferredShiftId));
+    if (found != null && (!shiftId || !candidates.some((assignment) => assignment.preferredShiftId === Number(shiftId)))) setShiftId(String(found));
+  }
+  async function chooseShift(next: string) {
+    if (next === String(shift?.id)) return;
+    if (identifiedShift != null && next !== String(identifiedShift)) {
+      const oldName = data.shifts.find((item) => item.id === identifiedShift)?.name?.toLowerCase() ?? "identificado";
+      const newName = data.shifts.find((item) => String(item.id) === next)?.name?.toLowerCase() ?? "selecionado";
+      const accepted = await confirm({ title: "Alterar turno", message: `Esta turma está vinculada ao turno da ${oldName}. Deseja realmente selecionar o turno da ${newName}?`, confirmLabel: "Confirmar alteração" });
+      if (!accepted) return;
+      if (pedagogical) { setError("Na reserva pedagógica, o dia e o turno devem corresponder à atribuição ativa. Escolha o turno vinculado à UC."); return; }
+    }
+    setShiftId(next);
+  }
   useEffect(() => {
     if (!pedagogical || (admin && !teacherId)) { setOptions([]); return; }
     setOptionsError("");
@@ -65,6 +96,8 @@ export function BookingForm({ onCreated, user }: { onCreated: (id: number, quali
   const units = classOptions.filter((x, i, all) =>
     all.findIndex((a) => a.curricularUnitId === x.curricularUnitId) === i);
   const selectedUnit = classOptions.find((x) => String(x.curricularUnitId) === unitId);
+  const unitAssignments = classOptions.filter((x) => String(x.curricularUnitId) === unitId);
+  const selectedUnitDay = uniqueShift(unitAssignments.map((x) => x.weekday));
   const start =
     recurring && weekdays.length ? firstSelected(date, weekdays) : date;
   const dates = useMemo(
@@ -81,7 +114,7 @@ export function BookingForm({ onCreated, user }: { onCreated: (id: number, quali
       return;
     }
     if (admin && !teacherId) { setError("Selecione o instrutor responsável."); return; }
-    if (recurring && (!dates.length || repeatUntil < start)) {
+    if (recurring && (!dates.length || repeatUntil < start || repeatUntil > recurrenceLimit(start))) {
       setError("Selecione dias e um término válido para a recorrência.");
       return;
     }
@@ -108,7 +141,10 @@ export function BookingForm({ onCreated, user }: { onCreated: (id: number, quali
         studentsPerComputer: perComputer,
         reason,
         lessonPlanLink: lessonPlanLink || null,
-        ...need,
+        ...(pedagogical ? defaultNeed :
+          !need.needsStudentComputers && need.softwareIds.length === 0
+            ? { ...need, minRamGb: 0, minTier: "Basico", needsDedicatedGpu: false }
+            : need),
       });
       await reload();
       onCreated(created.id, created.qualificationWarning);
@@ -131,6 +167,7 @@ export function BookingForm({ onCreated, user }: { onCreated: (id: number, quali
       </Field>}
       <Checkbox label="Vincular ao planejamento pedagógico" checked={pedagogical}
         onChange={(value) => { setPedagogical(value); setClassGroupId(""); setUnitId(""); setCapabilityId(""); }} />
+      <p className="text-xs text-muted-ink">Reserva comum: turma opcional e requisitos informados aqui. Planejamento pedagógico: exige atribuição ativa, turma, UC e capacidade; os requisitos técnicos vêm da capacidade.</p>
       {pedagogical && optionsBusy && <p className="text-sm text-slate-500">Carregando atribuições...</p>}
       {pedagogical && optionsError && <Notice message={optionsError} />}
       {pedagogical && !optionsBusy && options.length === 0 && !optionsError &&
@@ -141,6 +178,7 @@ export function BookingForm({ onCreated, user }: { onCreated: (id: number, quali
           onChange={(value) => {
               setClassGroupId(value);
               setUnitId(""); setCapabilityId("");
+              applyClassShift(value);
               const c = data.classes.find(
                 (c) => String(c.id) === value,
               );
@@ -148,7 +186,7 @@ export function BookingForm({ onCreated, user }: { onCreated: (id: number, quali
             }} options={[{ value: "", label: pedagogical ? "Selecione uma turma" : "Sem turma vinculada" },
               ...(pedagogical ? data.classes.filter((c) => options.some((x) => x.classGroupId === c.id)) : data.classes)
                 .map((c) => ({ value: String(c.id), label: [c.code, c.name,
-                  data.shifts.find((s) => s.id === options.find((x) => x.classGroupId === c.id)?.preferredShiftId)?.name].filter(Boolean).join(" · ") }))]} />
+                  data.shifts.find((s) => s.id === uniqueShift(options.filter((x) => x.classGroupId === c.id).map((x) => x.preferredShiftId)))?.name].filter(Boolean).join(" · ") }))]} />
         <Field label="Atividade / justificativa (obrigatória)">
           <input className="field" required maxLength={250} value={reason}
             onChange={(e) => setReason(e.target.value)} placeholder="Ex.: Prática de SolidWorks" />
@@ -156,12 +194,15 @@ export function BookingForm({ onCreated, user }: { onCreated: (id: number, quali
         {pedagogical && <Field label="Unidade curricular">
           <select className="field" required value={unitId} onChange={(e) => {
             setUnitId(e.target.value); setCapabilityId("");
-            const assignment = classOptions.find((x) => String(x.curricularUnitId) === e.target.value);
-            if (assignment?.preferredShiftId) {
-              setShiftId(String(assignment.preferredShiftId));
-              const assignedDate = firstSelected(date, [assignment.weekday]);
+            applyClassShift(classGroupId, e.target.value);
+            const assignments = classOptions.filter((x) => String(x.curricularUnitId) === e.target.value);
+            const assignedShift = uniqueShift(assignments.map((x) => x.preferredShiftId));
+            const assignedDay = uniqueShift(assignments.map((x) => x.weekday));
+            if (assignedShift != null && (!shiftId || shiftId === String(identifiedShift))) setShiftId(String(assignedShift));
+            if (assignedDay != null) {
+              const assignedDate = firstSelected(date, [assignedDay]);
               setDate(assignedDate);
-              setWeekdays([assignment.weekday]);
+              setWeekdays([assignedDay]);
               if (repeatUntil < assignedDate) setRepeatUntil(assignedDate);
             }
           }}>
@@ -178,7 +219,7 @@ export function BookingForm({ onCreated, user }: { onCreated: (id: number, quali
         {pedagogical && selectedUnit?.qualificationWarning &&
           <Notice type="info" message="Habilitação para esta UC não cadastrada no perfil. A reserva pode prosseguir." />}
         {pedagogical && selectedUnit &&
-          <p className="text-xs text-slate-500">Dia atribuído: {names[selectedUnit.weekday]}; use o turno correspondente.</p>}
+          <p className="text-xs text-muted-ink">{selectedUnitDay == null ? "Há mais de um dia atribuído; selecione a data e o turno correspondentes." : `Dia atribuído: ${names[selectedUnitDay]}; use o turno correspondente.`}</p>}
         <Field label="Alunos">
           <input
             className="field"
@@ -190,26 +231,11 @@ export function BookingForm({ onCreated, user }: { onCreated: (id: number, quali
             onChange={(e) => setStudents(Number(e.target.value))}
           />
         </Field>
-        <Field label="Data inicial">
-          <input
-            type="date"
-            className="field"
-            required
-            value={date}
-            onChange={(e) => {
-              setDate(e.target.value);
-              if (e.target.value) {
-                setWeekdays([asDay(e.target.value)]);
-                if (repeatUntil < e.target.value) setRepeatUntil(e.target.value);
-              }
-            }}
-          />
-        </Field>
         <Field label="Turno completo">
           <select
             className="field"
             value={shift?.id ?? ""}
-            onChange={(e) => setShiftId(e.target.value)}
+            onChange={(e) => void chooseShift(e.target.value)}
             required
           >
             {data.shifts.map((s) => (
@@ -219,6 +245,18 @@ export function BookingForm({ onCreated, user }: { onCreated: (id: number, quali
             ))}
           </select>
         </Field>
+        <WeeklyCalendar date={date} weekdays={weekdays} recurring={recurring} today={today} onSelect={(selected) => {
+          if (recurring) {
+            const selectedDay = asDay(selected);
+            const next = weekdays.includes(selectedDay) ? weekdays.filter((item) => item !== selectedDay) : [...weekdays, selectedDay];
+            setWeekdays(next);
+            if (!next.includes(asDay(date)) && next.length) setDate(firstSelected(date, next));
+            if (selected < date && next.includes(selectedDay)) setDate(selected);
+            if (eadDay === String(selectedDay) && !next.includes(selectedDay)) setEadDay("");
+          } else { setDate(selected); setWeekdays([asDay(selected)]); }
+          if (repeatUntil < selected) setRepeatUntil(selected);
+          if (repeatUntil > recurrenceLimit(selected)) setRepeatUntil(recurrenceLimit(selected));
+        }} />
       </div>
       <Checkbox
         label="Repetir em outras semanas"
@@ -227,36 +265,9 @@ export function BookingForm({ onCreated, user }: { onCreated: (id: number, quali
       />
       {recurring && (
         <div className="bg-slate-50 rounded-xl border border-slate-200 p-4 space-y-3">
-          <p className="field-label">Dias da semana para repetir a partir de {dateBR(date)}</p>
-          <div className="flex flex-wrap gap-2">
-            {[1, 2, 3, 4, 5, 6, 0].map((d) => (
-              <button
-                type="button"
-                key={d}
-                onClick={() => {
-                  setWeekdays((prev) =>
-                    prev.includes(d)
-                      ? prev.filter((x) => x !== d)
-                      : [...prev, d],
-                  );
-                  if (eadDay === String(d)) setEadDay("");
-                }}
-                className={`rounded-lg border px-3 py-2 text-sm font-semibold ${weekdays.includes(d) ? "border-sky-500 bg-sky-100 text-sky-800" : "border-slate-200 bg-white text-slate-600"}`}
-                aria-pressed={weekdays.includes(d)}
-              >
-                {names[d]}
-              </button>
-            ))}
-          </div>
-          <Field label="Manter esta alocação até">
-            <input
-              type="date"
-              className="field"
-              min={date}
-              value={repeatUntil}
-              onChange={(e) => setRepeatUntil(e.target.value)}
-            />
-          </Field>
+          <button type="button" className="field text-left" aria-label="Manter esta alocação até" aria-haspopup="dialog" onClick={() => setUntilOpen(true)}>
+            <span className="field-label !mb-0">Manter esta alocação até</span>{dateBR(repeatUntil)}
+          </button>
           <Field label="Dia com EAD semanal (opcional)">
             <select
               className="field"
@@ -279,9 +290,11 @@ export function BookingForm({ onCreated, user }: { onCreated: (id: number, quali
           </p>
         </div>
       )}
+      {untilOpen && <RepeatUntilCalendar start={start} value={repeatUntil} weekdays={weekdays} today={today}
+        onClose={() => setUntilOpen(false)} onConfirm={(selected) => { setRepeatUntil(selected); setUntilOpen(false); }} />}
       {pedagogical ? <Notice type="info" message="Os requisitos técnicos desta capacidade serão consultados no Catálogo Pedagógico." /> : <div className="border-t pt-4 space-y-3">
         <h3 className="font-semibold text-sm">Recursos necessários</h3>
-        <NeedFields value={need} onChange={setNeed} software={data.software} />
+        <NeedFields value={need} onChange={setNeed} software={data.software} resourcePicker />
         {(need.needsStudentComputers || need.softwareIds.length > 0) && (
           <Field label="Alunos por computador (1, dupla ou grupo)">
             <input
@@ -305,7 +318,7 @@ export function BookingForm({ onCreated, user }: { onCreated: (id: number, quali
         />
       </Field>
       <p className="text-xs text-slate-500">Após criar a solicitação, escolha uma sala e confira as datas elegíveis antes de confirmar.</p>
-      <div className="flex justify-end">
+      <div className="sticky bottom-0 z-10 flex justify-end border-t border-line bg-surface py-3">
         <SubmitButton busy={busy}>Continuar para escolha da sala</SubmitButton>
       </div>
     </form>

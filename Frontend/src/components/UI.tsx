@@ -283,7 +283,7 @@ export function Modal({
 
   return (
     <div
-      className="fixed inset-0 z-50 bg-slate-900/60 p-3 sm:p-4 overflow-y-auto flex items-start md:items-center justify-center"
+      className="fixed inset-0 z-50 bg-slate-900/60 p-3 sm:p-4 flex items-center justify-center"
       onMouseDown={(e) => {
         if (e.currentTarget === e.target) onClose();
       }}
@@ -295,9 +295,9 @@ export function Modal({
         aria-labelledby={titleId}
         aria-describedby={descriptionId}
         tabIndex={-1}
-        className={`bg-surface text-ink rounded-panel shadow-xl w-full ${width} my-4 md:my-8`}
+        className={`bg-surface text-ink rounded-panel shadow-xl w-full ${width} max-h-[calc(100dvh-1.5rem)] sm:max-h-[calc(100dvh-2rem)] flex flex-col min-h-0`}
       >
-        <div className="flex justify-between items-center border-b border-line px-4 sm:px-6 py-4 gap-3">
+        <div className="flex shrink-0 justify-between items-center border-b border-line px-4 sm:px-6 py-3 sm:py-4 gap-3">
           <h2 id={titleId} className="text-lg font-semibold">{title}</h2>
           <button
             type="button"
@@ -308,7 +308,7 @@ export function Modal({
             <X aria-hidden="true" size={19} />
           </button>
         </div>
-        <div className="p-4 sm:p-6">{children}</div>
+        <div className="modal-scroll min-h-0 overflow-y-auto overscroll-contain p-4 sm:p-6">{children}</div>
       </div>
     </div>
   );

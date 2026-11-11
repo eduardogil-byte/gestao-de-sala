@@ -291,9 +291,9 @@ public static partial class ApiEndpoints
                     Score = RoomCompatibility.Score(room, need)
                 };
             }).OrderByDescending(x => x.Compatible)
-                .ThenByDescending(x => x.Compatible ? x.Score : x.Seats >= booking.Students ? 1 : 0)
                 .ThenByDescending(x => x.Available)
                 .ThenByDescending(x => x.AvailableOccurrences)
+                .ThenByDescending(x => x.Compatible ? x.Score : x.Seats >= booking.Students ? 1 : 0)
                 .ToList();
             return Results.Ok(list);
         });

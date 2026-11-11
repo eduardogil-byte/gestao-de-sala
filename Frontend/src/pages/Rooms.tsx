@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import {
   DoorOpen,
   HardDrive,
+  AppWindow,
   Plus,
   Search,
   Settings2,
@@ -75,6 +76,8 @@ export function Rooms({ user, onImport }: { user: User; onImport?: (kind: "Ambie
   const [error, setError] = useState("");
   const [softwareName, setSoftwareName] = useState("");
   const [softwareBusy, setSoftwareBusy] = useState(false);
+  const [softwareSuccess, setSoftwareSuccess] = useState("");
+  const [softwareSearch, setSoftwareSearch] = useState("");
   const [resourceCatalog, setResourceCatalog] = useState<ResourceCatalogItem[]>([]);
   const [resourceCatalogError, setResourceCatalogError] = useState("");
   async function refreshResourceCatalog() {
@@ -193,10 +196,12 @@ export function Rooms({ user, onImport }: { user: User; onImport?: (kind: "Ambie
     e.preventDefault();
     setSoftwareBusy(true);
     setError("");
+    setSoftwareSuccess("");
     try {
       await post("/software", { name: softwareName });
       setSoftwareName("");
       await reload();
+      setSoftwareSuccess("Software adicionado ao catálogo.");
     } catch (e) {
       setError(resultMessage(e));
     } finally {
@@ -323,17 +328,18 @@ export function Rooms({ user, onImport }: { user: User; onImport?: (kind: "Ambie
       {admin && (
         <Card className="p-5 mt-6">
           <SectionHeading title="Catálogo de softwares" subtitle="Softwares disponíveis para associar aos grupos de computadores." />
-          <div className="flex flex-wrap gap-2 mb-4">
-            {data.software.length ? (
-              data.software.map((s) => (
-                <span key={s.id} className="pill bg-slate-100 text-slate-600">
-                  {s.name}
-                </span>
-              ))
-            ) : (
-              <p className="muted">Nenhum software cadastrado.</p>
-            )}
-          </div>
+          {softwareSuccess && <div className="mt-3"><Notice type="success" message={softwareSuccess} onClose={() => setSoftwareSuccess("")} /></div>}
+          <p className="muted mt-3 mb-3" role="status">{data.software.length} software(s) cadastrado(s)</p>
+          {data.software.length > 8 && <Field label="Buscar software"><input className="field" type="search" value={softwareSearch} onChange={(event) => setSoftwareSearch(event.target.value)} placeholder="Nome do software…" /></Field>}
+          {data.software.length ? <ul className="grid gap-2 sm:grid-cols-2 mt-3">
+            {data.software.filter((item) => item.name.toLocaleLowerCase("pt-BR").includes(softwareSearch.toLocaleLowerCase("pt-BR"))).map((item) =>
+              <li key={item.id} className="flex min-w-0 items-center gap-3 rounded-panel border border-line bg-surface px-3 py-3">
+                <AppWindow size={18} className="shrink-0 text-skybrand-500" aria-hidden="true" />
+                <span className="min-w-0 flex-1 break-words font-semibold text-ink">{item.name}</span>
+                <span className="pill border border-line text-muted-ink">Cadastrado</span>
+              </li>)}
+          </ul> : <Empty title="Nenhum software cadastrado" text="Adicione um software para associá-lo aos computadores dos ambientes." />}
+          {data.software.length > 0 && softwareSearch && !data.software.some((item) => item.name.toLocaleLowerCase("pt-BR").includes(softwareSearch.toLocaleLowerCase("pt-BR"))) && <p className="muted mt-3">Nenhum software encontrado para esta busca.</p>}
           <form className="flex flex-wrap gap-2 mt-4" onSubmit={addSoftware}>
             <input
               className="field max-w-sm"

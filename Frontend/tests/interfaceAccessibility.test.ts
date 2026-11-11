@@ -34,6 +34,8 @@ test("modal associa o título ao diálogo e oferece fechamento nomeado", async (
     assert.match(markup, /role="dialog"/);
     assert.match(markup, /aria-modal="true"/);
     assert.match(markup, /aria-label="Fechar"/);
+    assert.match(markup, /max-h-\[calc\(100dvh/);
+    assert.match(markup, /modal-scroll min-h-0 overflow-y-auto overscroll-contain/);
   } finally {
     await server.close();
   }

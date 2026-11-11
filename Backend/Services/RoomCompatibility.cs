@@ -58,9 +58,9 @@ public static class RoomCompatibility
         var requiredPCs = need.StudentComputers || need.SoftwareIds.Count != 0 ||
             need.MinTier != HardwareTier.Basico || need.MinRamGb > 0 || need.DedicatedGpu;
         var totalPCs = room.ComputerGroups.Sum(x => x.Quantity);
-        var highestTier = room.ComputerGroups.Count == 0 ? 0 : room.ComputerGroups.Max(x => (int)x.Tier);
+        var highestTier = room.ComputerGroups.Where(x => x.OperationalQuantity > 0).Select(x => (int)x.Tier).DefaultIfEmpty(0).Max();
         var waste = requiredPCs
-            ? Math.Max(0, highestTier - (int)need.MinTier) * 25 + Math.Max(0, totalPCs - need.Students)
+            ? Math.Max(0, totalPCs - need.Students) - Math.Max(0, highestTier - (int)need.MinTier)
             : totalPCs * 2 + highestTier * 10;
         return 1000 - excessSeats * 2 - waste;
     }
