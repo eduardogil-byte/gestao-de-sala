@@ -22,6 +22,119 @@ namespace SalaGest.Backend.Tests;
 public sealed class PedagogicalBookingTests
 {
     [Fact]
+    public async Task OfficialShiftExceptionIsSingleDateAndPendingEditsRequireOwnerAndVersion()
+    {
+        await using var host = await Host.CreateAsync();
+        host.AsTeacher();
+        int softwareId;
+        using (var scope = host.App.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+            var afternoon = new SchoolShift { Name = "Tarde", StartsAt = new TimeOnly(13, 0), EndsAt = new TimeOnly(17, 0) };
+            db.Shifts.Add(afternoon);
+            var software = new Software { Name = "Editor de teste" };
+            db.SoftwareCatalog.Add(software);
+            var group = await db.Classes.FindAsync(host.ClassId);
+            group!.ShiftId = await db.Shifts.Where(s => s.Name == "Manhã").Select(s => s.Id).SingleAsync();
+            await db.SaveChangesAsync();
+            softwareId = software.Id;
+        }
+        var single = host.Request() with { Recurrence = BookingRecurrence.Nenhuma, RepeatUntil = null,
+            WeekdaysMask = 0, StartsAt = new DateTime(2027, 3, 1, 13, 0, 0),
+            EndsAt = new DateTime(2027, 3, 1, 17, 0, 0), SoftwareIds = new List<int> { softwareId } };
+        Assert.Equal(HttpStatusCode.BadRequest, (await host.Client.PostAsJsonAsync("/api/bookings", single)).StatusCode);
+        Assert.Equal(HttpStatusCode.BadRequest, (await host.Client.PostAsJsonAsync("/api/bookings",
+            single with { TurnExceptionConfirmed = true, Recurrence = BookingRecurrence.Semanal,
+                RepeatUntil = new DateOnly(2027, 3, 29), WeekdaysMask = 2 })).StatusCode);
+        host.AsOtherTeacher();
+        Assert.Equal(HttpStatusCode.Forbidden, (await host.Client.PostAsJsonAsync("/api/bookings",
+            single with { TurnExceptionConfirmed = true })).StatusCode);
+        host.AsTeacher();
+        var created = await host.Client.PostAsJsonAsync("/api/bookings", single with { TurnExceptionConfirmed = true });
+        Assert.Equal(HttpStatusCode.Created, created.StatusCode);
+        var id = (await created.Content.ReadFromJsonAsync<System.Text.Json.JsonElement>()).GetProperty("id").GetInt32();
+        var listed = await host.Client.GetFromJsonAsync<List<System.Text.Json.JsonElement>>("/api/bookings");
+        var version = listed!.Single(b => b.GetProperty("id").GetInt32() == id).GetProperty("version").GetString()!;
+        host.AsOtherTeacher();
+        Assert.Equal(HttpStatusCode.Forbidden, (await host.Client.PutAsJsonAsync($"/api/bookings/{id}",
+            new BookingUpdate(single, version))).StatusCode);
+        host.AsTeacher();
+        Assert.Equal(HttpStatusCode.Conflict, (await host.Client.PutAsJsonAsync($"/api/bookings/{id}",
+            new BookingUpdate(single with { TurnExceptionConfirmed = true }, Guid.NewGuid().ToString()))).StatusCode);
+        var revised = host.Request() with { StartsAt = new DateTime(2027, 3, 8, 8, 0, 0),
+            EndsAt = new DateTime(2027, 3, 8, 12, 0, 0), Reason = "Prática editada",
+            SoftwareIds = new List<int> { softwareId } };
+        var updated = await host.Client.PutAsJsonAsync($"/api/bookings/{id}",
+            new BookingUpdate(revised, version));
+        Assert.Equal(HttpStatusCode.OK, updated.StatusCode);
+        Assert.Equal(HttpStatusCode.Conflict, (await host.Client.PutAsJsonAsync($"/api/bookings/{id}",
+            new BookingUpdate(single with { TurnExceptionConfirmed = true }, version))).StatusCode);
+        using (var scope = host.App.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+            Assert.Equal(1, await db.Classes.Where(c => c.Id == host.ClassId).Select(c => c.ShiftId).SingleAsync());
+            Assert.Empty(await db.Occupations.Where(o => o.BookingRequestId == id).ToListAsync());
+            var edited = await db.Bookings.SingleAsync(b => b.Id == id);
+            Assert.Equal(revised.StartsAt, edited.StartsAt);
+            Assert.Equal(BookingRecurrence.Semanal, edited.Recurrence);
+            Assert.False(edited.TurnExceptionConfirmed);
+            Assert.Equal(softwareId, await db.BookingSoftware.Where(s => s.BookingRequestId == id)
+                .Select(s => s.SoftwareId).SingleAsync());
+        }
+        Assert.Equal(HttpStatusCode.OK, (await host.Client.PostAsJsonAsync($"/api/bookings/{id}/reject", new { })).StatusCode);
+        var latestVersion = (await updated.Content.ReadFromJsonAsync<System.Text.Json.JsonElement>()).GetProperty("version").GetString()!;
+        Assert.Equal(HttpStatusCode.Conflict, (await host.Client.PutAsJsonAsync($"/api/bookings/{id}",
+            new BookingUpdate(single with { TurnExceptionConfirmed = true }, latestVersion))).StatusCode);
+        var holidayRequest = await host.Client.PostAsJsonAsync("/api/bookings",
+            single with { TurnExceptionConfirmed = true,
+                StartsAt = new DateTime(2027, 3, 15, 13, 0, 0),
+                EndsAt = new DateTime(2027, 3, 15, 17, 0, 0) });
+        Assert.Equal(HttpStatusCode.Created, holidayRequest.StatusCode);
+        var holidayId = (await holidayRequest.Content.ReadFromJsonAsync<System.Text.Json.JsonElement>())
+            .GetProperty("id").GetInt32();
+        Assert.Equal(HttpStatusCode.Conflict, (await host.Client.PostAsJsonAsync(
+            $"/api/bookings/{holidayId}/confirm", new ConfirmBooking(host.CompatibleRoomId, true,
+                ExpectedAvailableDates: new List<DateOnly>()))).StatusCode);
+        var approvedRequest = await host.Client.PostAsJsonAsync("/api/bookings",
+            single with { TurnExceptionConfirmed = true });
+        Assert.Equal(HttpStatusCode.Created, approvedRequest.StatusCode);
+        var approvedId = (await approvedRequest.Content.ReadFromJsonAsync<System.Text.Json.JsonElement>())
+            .GetProperty("id").GetInt32();
+        int blockingId;
+        using (var scope = host.App.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+            var blocker = new RoomOccupation { RoomId = host.CompatibleRoomId, TeacherId = "other",
+                StartsAt = single.StartsAt, EndsAt = single.EndsAt, Kind = OccupationKind.Avulsa };
+            db.Occupations.Add(blocker);
+            await db.SaveChangesAsync();
+            blockingId = blocker.Id;
+        }
+        Assert.Equal(HttpStatusCode.Conflict, (await host.Client.PostAsJsonAsync(
+            $"/api/bookings/{approvedId}/confirm", new ConfirmBooking(host.CompatibleRoomId, true,
+                ExpectedAvailableDates: new List<DateOnly>()))).StatusCode);
+        using (var scope = host.App.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+            db.Occupations.Remove((await db.Occupations.FindAsync(blockingId))!);
+            await db.SaveChangesAsync();
+        }
+        var confirmation = await host.Client.PostAsJsonAsync(
+            $"/api/bookings/{approvedId}/confirm", new ConfirmBooking(host.CompatibleRoomId,
+                ExpectedAvailableDates: new List<DateOnly> { new(2027, 3, 1) }));
+        Assert.True(confirmation.StatusCode == HttpStatusCode.OK, await confirmation.Content.ReadAsStringAsync());
+        var approvedList = await host.Client.GetFromJsonAsync<List<System.Text.Json.JsonElement>>("/api/bookings");
+        var approvedVersion = approvedList!.Single(b => b.GetProperty("id").GetInt32() == approvedId)
+            .GetProperty("version").GetString()!;
+        Assert.Equal(HttpStatusCode.Conflict, (await host.Client.PutAsJsonAsync($"/api/bookings/{approvedId}",
+            new BookingUpdate(single with { TurnExceptionConfirmed = true }, approvedVersion))).StatusCode);
+        using var approvedScope = host.App.Services.CreateScope();
+        var approvedDb = approvedScope.ServiceProvider.GetRequiredService<AppDbContext>();
+        Assert.Equal(1, await approvedDb.Occupations.CountAsync(o => o.BookingRequestId == approvedId &&
+            o.StartsAt == single.StartsAt && o.EndsAt == single.EndsAt));
+    }
+
+    [Fact]
     public async Task CalendarCompatibilityConflictsAndPartialConfirmationUseExistingBooking()
     {
         await using var host = await Host.CreateAsync();

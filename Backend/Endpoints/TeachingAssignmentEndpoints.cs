@@ -183,6 +183,8 @@ public static partial class ApiEndpoints
     {
         if (weekday is < 1 or > 5) return (null, Error("Dia deve estar entre 1 e 5"));
         if (!await db.Shifts.AnyAsync(s => s.Id == shiftId)) return (null, Error("Turno não encontrado"));
+        if (classGroup.ShiftId is int officialShiftId && shiftId != officialShiftId)
+            return (null, CatalogConflict("O turno da atribuição difere do turno oficial da turma"));
         if (!await db.Semesters.AnyAsync(s => s.Id == classGroup.SemesterId))
             return (null, Error("Semestre não encontrado"));
         if (classGroup.CourseId is null)

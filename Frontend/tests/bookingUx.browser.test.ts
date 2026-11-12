@@ -11,13 +11,15 @@ test("reserva: turno, calendários, recursos e modal móvel", { skip: !chromePat
     await waitFor("document.querySelector('label:has(select) span') && [...document.querySelectorAll('label')].find(x => x.querySelector('span')?.textContent === 'Turno completo')?.querySelector('select')?.value === '1'");
     await evaluate("adminTest.select('Turno completo', '2')");
     await waitFor("document.querySelectorAll('[role=dialog]').length === 2");
-    assert.match(await evaluate<string>("[...document.querySelectorAll('[role=dialog]')].at(-1).innerText"), /Esta turma está vinculada ao turno da manhã/);
+    assert.match(await evaluate<string>("[...document.querySelectorAll('[role=dialog]')].at(-1).innerText"), /está cadastrada no turno da manhã/);
     await evaluate("adminTest.click('Cancelar')");
     assert.equal(await evaluate("[...document.querySelectorAll('label')].find(x => x.querySelector('span')?.textContent === 'Turno completo')?.querySelector('select')?.value"), "1");
     await evaluate("adminTest.select('Turno completo', '2')");
     await waitFor("document.querySelectorAll('[role=dialog]').length === 2");
     await evaluate("adminTest.click('Confirmar alteração')");
     await waitFor("[...document.querySelectorAll('label')].find(x => x.querySelector('span')?.textContent === 'Turno completo')?.querySelector('select')?.value === '2'");
+    await evaluate("adminTest.select('Turno completo', '1')");
+    await waitFor("[...document.querySelectorAll('label')].find(x => x.querySelector('span')?.textContent === 'Turno completo')?.querySelector('select')?.value === '1'");
     assert.equal(await evaluate<number>("document.querySelectorAll('[aria-label^=\"Semana anterior\"]').length"), 1);
     const firstWeek = await evaluate<string>("document.querySelector('[aria-label=\"Calendário semanal\"] button[aria-pressed]')?.getAttribute('aria-label') ?? ''");
     await evaluate("document.querySelector('button[aria-label=\"Próxima semana\"]')?.click()");
@@ -59,6 +61,15 @@ test("reserva: turno, calendários, recursos e modal móvel", { skip: !chromePat
     })()`);
     assert.equal(geometry.scroll, true);
     assert.ok(geometry.header >= 0 && geometry.footer <= 640);
+    const themeColors = await evaluate<{ light: string; dark: string; fits: boolean }>(`(() => {
+      document.documentElement.dataset.theme = 'light';
+      const light = getComputedStyle(document.querySelector('.app-workspace')).color;
+      document.documentElement.dataset.theme = 'dark';
+      const dark = getComputedStyle(document.querySelector('.app-workspace')).color;
+      return { light, dark, fits: document.documentElement.scrollWidth <= innerWidth };
+    })()`);
+    assert.notEqual(themeColors.light, themeColors.dark);
+    assert.equal(themeColors.fits, true);
     await evaluate("[...document.querySelectorAll('label')].find(x => x.textContent?.includes('Vincular ao planejamento pedagógico'))?.querySelector('input')?.click()");
     await waitFor("[...document.querySelectorAll('label')].some(x => x.querySelector('span')?.textContent === 'Turma obrigatória')");
     await evaluate("adminTest.select('Turma obrigatória', '20')");
@@ -66,10 +77,9 @@ test("reserva: turno, calendários, recursos e modal móvel", { skip: !chromePat
     await evaluate("adminTest.select('Capacidade', '50')");
     await waitFor("[...document.querySelectorAll('label')].find(x => x.querySelector('span')?.textContent === 'Turno completo')?.querySelector('select')?.value === '1'");
     await evaluate("adminTest.select('Turno completo', '2')");
-    await waitFor("document.querySelectorAll('[role=dialog]').length === 2");
-    await evaluate("adminTest.click('Confirmar alteração')");
+    await waitFor("document.querySelector('[role=alert]')?.textContent.includes('Exceção de turno')");
     assert.equal(await evaluate("[...document.querySelectorAll('label')].find(x => x.querySelector('span')?.textContent === 'Turno completo')?.querySelector('select')?.value"), "1");
-    assert.match(await evaluate<string>("document.querySelector('[role=alert]')?.textContent ?? ''"), /atribuição ativa/);
+    assert.match(await evaluate<string>("document.querySelector('[role=alert]')?.textContent ?? ''"), /Exceção de turno/);
     await evaluate("document.querySelector('form')?.requestSubmit()");
     await waitFor("adminTest.requests.length === 3");
     assert.deepEqual(await evaluate("({ ram: adminTest.requests[2].minRamGb, capacity: adminTest.requests[2].curricularCapabilityId })"), { ram: 0, capacity: 50 });

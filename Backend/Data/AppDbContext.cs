@@ -111,6 +111,8 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : Ident
         b.Entity<ClassGroup>().Property(x => x.Name).HasMaxLength(100);
         b.Entity<ClassGroup>().Property(x => x.Code).HasMaxLength(30);
         b.Entity<ClassGroup>().Property(x => x.NormalizedCode).HasMaxLength(30);
+        b.Entity<ClassGroup>().HasOne(x => x.Shift).WithMany()
+            .HasForeignKey(x => x.ShiftId).OnDelete(DeleteBehavior.Restrict);
         b.Entity<ClassGroup>().HasIndex(x => new { x.SemesterId, x.NormalizedCode }).IsUnique()
             .HasFilter("[NormalizedCode] IS NOT NULL");
         b.Entity<ClassGroup>().HasOne(x => x.Course).WithMany()
@@ -132,6 +134,7 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : Ident
         b.Entity<GroupSoftware>().HasKey(x => new { x.ComputerGroupId, x.SoftwareId });
         b.Entity<BookingRequest>().HasOne(x => x.CurricularUnit).WithMany()
             .HasForeignKey(x => x.CurricularUnitId).OnDelete(DeleteBehavior.Restrict);
+        b.Entity<BookingRequest>().Property(x => x.Revision).IsConcurrencyToken();
         b.Entity<BookingRequest>().HasOne(x => x.CurricularCapability).WithMany()
             .HasForeignKey(x => x.CurricularCapabilityId).OnDelete(DeleteBehavior.Restrict);
         b.Entity<AssignmentSoftware>().HasKey(x => new { x.TeachingAssignmentId, x.SoftwareId });

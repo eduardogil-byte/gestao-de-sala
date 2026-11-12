@@ -71,7 +71,9 @@ public static partial class ApiEndpoints
         var days = BookingPeriods.Expand(booking).Select(p => (int)p.Start.DayOfWeek).Distinct().ToArray();
         var assigned = await db.Assignments.AsNoTracking()
             .Where(x => x.TeacherId == booking.TeacherId && x.ClassGroupId == booking.ClassGroupId &&
-                x.CurricularUnitId == booking.CurricularUnitId && x.PreferredShiftId == shiftId &&
+                x.CurricularUnitId == booking.CurricularUnitId &&
+                (x.PreferredShiftId == shiftId || (booking.TurnExceptionConfirmed &&
+                    booking.Recurrence == BookingRecurrence.Nenhuma)) &&
                 x.EndedAtUtc == null && x.Weekday != null)
             .Select(x => x.Weekday!.Value).Distinct().ToListAsync();
         return days.All(assigned.Contains);

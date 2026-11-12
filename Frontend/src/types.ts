@@ -98,6 +98,7 @@ export type Semester = {
 export type ClassGroup = {
   id: number;
   semesterId: number;
+  shiftId?: number | null;
   code?: string | null;
   name: string;
   students: number;
@@ -223,6 +224,8 @@ export type OccupationBlockMovePreview = {
 };
 export type Booking = {
   id: number;
+  version: string;
+  turnExceptionConfirmed: boolean;
   teacherId: string;
   classGroupId: number | null;
   curricularUnitId?: number | null;

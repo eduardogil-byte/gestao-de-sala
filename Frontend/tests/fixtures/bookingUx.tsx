@@ -11,7 +11,7 @@ const catalog: Record<string, unknown> = {
   "/api/rooms": [], "/api/software": [{ id: 1, name: "CAD" }, { id: 2, name: "Simulador" }],
   "/api/teachers": [], "/api/semesters": [],
   "/api/shifts": [{ id: 1, name: "Manhã", startsAt: "08:00:00", endsAt: "12:00:00" }, { id: 2, name: "Tarde", startsAt: "13:00:00", endsAt: "17:00:00" }],
-  "/api/classes": [{ id: 20, name: "Turma A", students: 20, semesterId: 1 }],
+  "/api/classes": [{ id: 20, name: "Turma A", students: 20, semesterId: 1, shiftId: 1 }],
   "/api/assignments": [{ id: 1, classGroupId: 20, teacherId: "teacher", semesterId: 1, curricularUnitId: 40, weekday: today, preferredShiftId: 1, endedAtUtc: null }],
   "/api/schedules": [], "/api/bookings": [], "/api/loans": [],
   "/api/bookings/pedagogical-options": [{ classGroupId: 20, className: "Turma A", students: 20, curricularUnitId: 40, unitName: "UC A", weekday: today, preferredShiftId: 1, qualificationWarning: false, capabilities: [{ id: 50, description: "Capacidade A" }] }],
@@ -32,4 +32,4 @@ window.fetch = async (input, init) => {
   return new Response(JSON.stringify(catalog[path] ?? []));
 };
 (window as unknown as { adminTest: typeof test }).adminTest = test;
-createRoot(document.getElementById("root")!).render(<DataProvider><ConfirmationProvider><Modal title="Criar reserva" onClose={() => {}}><BookingForm user={teacher} onCreated={() => {}} /></Modal></ConfirmationProvider></DataProvider>);
+createRoot(document.getElementById("root")!).render(<div className="app-workspace"><DataProvider><ConfirmationProvider><Modal title="Criar reserva" onClose={() => {}}><BookingForm user={teacher} onCreated={() => {}} /></Modal></ConfirmationProvider></DataProvider></div>);

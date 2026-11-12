@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Data.SqlClient;
 using System.Data.Common;
+using System.Data;
 using SalaGest.Api.Contracts;
 using SalaGest.Api.Data;
 using SalaGest.Api.Models;
@@ -310,6 +311,8 @@ public static partial class ApiEndpoints
                 input.Name.Trim().Length > 100 || (input.Code?.Trim().Length ?? 0) > 30)
                 return Error("Turma deve ter nome e quantidade de alunos válida");
             if (!await db.Semesters.AnyAsync(s => s.Id == input.SemesterId)) return Error("Semestre não encontrado");
+            if (input.ShiftId is not int shiftId || !await db.Shifts.AnyAsync(s => s.Id == shiftId))
+                return Error("Selecione um turno cadastrado para a turma");
             if (input.CourseId is int courseId && !await db.Courses.AnyAsync(c => c.Id == courseId))
                 return Error("Curso não encontrado");
             var normalizedCode = string.IsNullOrWhiteSpace(input.Code) ? null : input.Code.Trim().ToUpperInvariant();
@@ -318,6 +321,7 @@ public static partial class ApiEndpoints
             var item = new ClassGroup
             {
                 SemesterId = input.SemesterId,
+                ShiftId = shiftId,
                 CourseId = input.CourseId,
                 Code = string.IsNullOrWhiteSpace(input.Code) ? null : input.Code.Trim(),
                 NormalizedCode = normalizedCode,
@@ -330,22 +334,35 @@ public static partial class ApiEndpoints
         api.MapPut("/classes/{id:int}", async (int id, ClassUpdate input, AppDbContext db,
             ClaimsPrincipal current) =>
         {
+            await using var shiftTx = await db.Database.BeginTransactionAsync(IsolationLevel.Serializable);
             var item = await db.Classes.FindAsync(id);
             if (item is null) return Results.NotFound();
+            var oldShiftId = item.ShiftId;
             if (string.IsNullOrWhiteSpace(input.Name) || input.Name.Trim().Length > 100 ||
                 (input.Code?.Trim().Length ?? 0) > 30)
                 return Error("Informe nome de até 100 caracteres e código de até 30 caracteres.");
+            if (input.ShiftId is int newShiftId && newShiftId != item.ShiftId)
+            {
+                if (!await db.Shifts.AnyAsync(s => s.Id == newShiftId)) return Error("Turno não encontrado");
+                if (await db.Assignments.AnyAsync(a => a.ClassGroupId == id) ||
+                    await db.Bookings.AnyAsync(b => b.ClassGroupId == id) ||
+                    await db.Occupations.AnyAsync(o => o.ClassGroupId == id) ||
+                    await db.PlanProposals.AnyAsync(p => p.Assignment.ClassGroupId == id))
+                    return Results.Conflict(new ApiError("A turma possui vínculos; regularize atribuições, reservas e planejamento antes de alterar o turno oficial."));
+                item.ShiftId = newShiftId;
+            }
             var normalizedCode = string.IsNullOrWhiteSpace(input.Code) ? null : input.Code.Trim().ToUpperInvariant();
             if (!string.IsNullOrEmpty(normalizedCode) && await db.Classes.AnyAsync(c => c.Id != id &&
                 c.SemesterId == item.SemesterId && c.NormalizedCode == normalizedCode))
                 return Results.Conflict(new ApiError("Já existe uma turma com este código no semestre."));
-            var before = new { item.Name, item.Code };
+            var before = new { item.Name, item.Code, ShiftId = oldShiftId };
             item.Name = input.Name.Trim();
             item.Code = string.IsNullOrWhiteSpace(input.Code) ? null : input.Code.Trim();
             item.NormalizedCode = normalizedCode;
             AuditTrail.Add(db, "ClassGroup", id.ToString(), "Alterada", UserId(current), before,
-                new { item.Name, item.Code });
+                new { item.Name, item.Code, item.ShiftId });
             await db.SaveChangesAsync();
+            await shiftTx.CommitAsync();
             return Results.NoContent();
         }).RequireAuthorization("Admin");
         api.MapPut("/classes/{id:int}/course", async (int id, ClassCourseInput input, AppDbContext db) =>

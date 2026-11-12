@@ -23,6 +23,44 @@ namespace SalaGest.Backend.Tests;
 public sealed class TeachingAssignmentTests
 {
     [Fact]
+    public async Task ClassShiftIsRequiredForNewClassesAndProtectedAfterAssignment()
+    {
+        await using var host = await AssignmentHost.CreateAsync();
+        host.AsAdmin();
+        var create = new ClassCreate(host.SemesterId, "Nova turma", 25, CourseId: host.CourseId, Code: "N1");
+        Assert.Equal(HttpStatusCode.BadRequest, (await host.Client.PostAsJsonAsync("/api/classes", create)).StatusCode);
+        Assert.Equal(HttpStatusCode.BadRequest, (await host.Client.PostAsJsonAsync("/api/classes",
+            create with { ShiftId = 99999 })).StatusCode);
+        Assert.Equal(HttpStatusCode.Created, (await host.Client.PostAsJsonAsync("/api/classes",
+            create with { ShiftId = host.ShiftId })).StatusCode);
+        var classes = await host.Client.GetFromJsonAsync<List<ClassGroup>>("/api/classes");
+        Assert.Contains(classes!, c => c.Name == "Nova turma" && c.ShiftId == host.ShiftId);
+        Assert.Contains(classes!, c => c.Id == host.ClassId && c.ShiftId == null);
+        var newClass = classes!.Single(c => c.Name == "Nova turma");
+        int otherShift;
+        using (var scope = host.App.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+            var afternoon = new SchoolShift { Name = "Tarde", StartsAt = new TimeOnly(13, 0), EndsAt = new TimeOnly(17, 0) };
+            db.Shifts.Add(afternoon); await db.SaveChangesAsync(); otherShift = afternoon.Id;
+        }
+        Assert.Equal(HttpStatusCode.BadRequest, (await host.Client.PutAsJsonAsync($"/api/classes/{newClass.Id}",
+            new ClassUpdate("Nova turma", "N1", 99999))).StatusCode);
+        Assert.Equal(HttpStatusCode.NoContent, (await host.Client.PutAsJsonAsync($"/api/classes/{newClass.Id}",
+            new ClassUpdate("Nova turma", "N1", otherShift))).StatusCode);
+        Assert.Equal(HttpStatusCode.NoContent, (await host.Client.PutAsJsonAsync($"/api/classes/{newClass.Id}",
+            new ClassUpdate("Nova turma", "N1", host.ShiftId))).StatusCode);
+        Assert.Equal(HttpStatusCode.Conflict, (await host.CreateAssignment(host.TeacherId, newClass.Id,
+            host.UnitId, 3, otherShift)).StatusCode);
+        Assert.Equal(HttpStatusCode.Created, (await host.CreateAssignment(host.TeacherId, newClass.Id, host.UnitId, 3)).StatusCode);
+        Assert.Equal(HttpStatusCode.Conflict, (await host.Client.PutAsJsonAsync($"/api/classes/{newClass.Id}",
+            new ClassUpdate("Nova turma", "N1", otherShift))).StatusCode);
+        using var verifyScope = host.App.Services.CreateScope();
+        Assert.Equal(host.ShiftId, await verifyScope.ServiceProvider.GetRequiredService<AppDbContext>()
+            .Classes.Where(c => c.Id == newClass.Id).Select(c => c.ShiftId).SingleAsync());
+    }
+
+    [Fact]
     public async Task MultipleTeachersClassesUnitsAndDaysAreQueryableWithQualificationAlert()
     {
         await using var host = await AssignmentHost.CreateAsync();
@@ -370,10 +408,10 @@ public sealed class TeachingAssignmentTests
             return host;
         }
 
-        public Task<HttpResponseMessage> CreateAssignment(string teacherId, int classId, int unitId, int weekday) =>
+        public Task<HttpResponseMessage> CreateAssignment(string teacherId, int classId, int unitId, int weekday, int? shiftId = null) =>
             Client.PostAsJsonAsync("/api/assignments", new
             { ClassGroupId = classId, TeacherId = teacherId, CurricularUnitId = unitId,
-                Weekday = weekday, PreferredShiftId = ShiftId });
+                Weekday = weekday, PreferredShiftId = shiftId ?? ShiftId });
 
         public void AsAdmin() => SetIdentity("admin", "Admin");
         public void AsTeacher() => SetIdentity(TeacherId, "Professor");

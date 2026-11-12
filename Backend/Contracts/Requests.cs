@@ -14,8 +14,8 @@ public record RoomInput(string Name, string Location, RoomKind Kind, int Seats, 
     RoomInventoryInput? Inventory = null);
 public record ShiftInput(string Name, TimeOnly StartsAt, TimeOnly EndsAt);
 public record SemesterCreate(string Name, DateOnly StartDate, DateOnly EndDate);
-public record ClassCreate(int SemesterId, string Name, int Students, int? CourseId = null, string? Code = null);
-public record ClassUpdate(string Name, string? Code);
+public record ClassCreate(int SemesterId, string Name, int Students, int? CourseId = null, string? Code = null, int? ShiftId = null);
+public record ClassUpdate(string Name, string? Code, int? ShiftId = null);
 public record ClassCourseInput(int CourseId);
 public record AvailabilityInput(int Weekday, int ShiftId);
 public record AssignmentCreate(int ClassGroupId, string TeacherId, string? DisciplineName = null,
@@ -30,7 +30,9 @@ public record BookingCreate(int? ClassGroupId, DateTime StartsAt, DateTime EndsA
     BookingRecurrence Recurrence = BookingRecurrence.Nenhuma, DateOnly? RepeatUntil = null,
     int MinRamGb = 0, bool NeedsDedicatedGpu = false, int WeekdaysMask = 0,
     int StudentsPerComputer = 1, int? RecurringEadWeekday = null,
-    int? CurricularUnitId = null, int? CurricularCapabilityId = null, string? TeacherId = null);
+    int? CurricularUnitId = null, int? CurricularCapabilityId = null, string? TeacherId = null,
+    bool TurnExceptionConfirmed = false);
+public record BookingUpdate(BookingCreate Booking, string Version);
 public record ConfirmBooking(int RoomId, bool ConfirmPartial = false, bool ReplaceOwnClassBooking = false,
     List<DateOnly>? ExpectedAvailableDates = null);
 public record DayStatusChange(ClassDayStatus Status);

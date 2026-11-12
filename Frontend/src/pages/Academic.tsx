@@ -31,8 +31,8 @@ export function Academic({ user }: { user: User }) {
     startDate: "2026-10-12",
     endDate: "2026-12-18",
   });
-  const [cls, setCls] = useState({ semesterId: "", code: "", name: "", students: 25 });
-  const [editingClass, setEditingClass] = useState<{ id: number; code: string; name: string } | null>(null);
+  const [cls, setCls] = useState({ semesterId: "", code: "", name: "", students: 25, shiftId: "" });
+  const [editingClass, setEditingClass] = useState<{ id: number; code: string; name: string; shiftId: string } | null>(null);
   const [as, setAs] = useState({
     classGroupId: "",
     teacherId: "",
@@ -154,7 +154,7 @@ export function Academic({ user }: { user: User }) {
                 e.preventDefault();
                 void handle(
                   "/classes",
-                  { ...cls, semesterId: Number(cls.semesterId) },
+                  { ...cls, semesterId: Number(cls.semesterId), shiftId: Number(cls.shiftId) },
                   "class",
                   () => setCls({ ...cls, name: "" }),
                 );
@@ -204,6 +204,12 @@ export function Academic({ user }: { user: User }) {
                   />
                 </Field>
               </div>
+              <Field label="Turno da turma">
+                <select className="field" required value={cls.shiftId} onChange={(e) => setCls({ ...cls, shiftId: e.target.value })}>
+                  <option value="">Selecione o turno institucional</option>
+                  {data.shifts.map((shift) => <option key={shift.id} value={shift.id}>{shift.name} · {shift.startsAt.slice(0, 5)}–{shift.endsAt.slice(0, 5)}</option>)}
+                </select>
+              </Field>
               <SubmitButton busy={action === "class"}>
                 <Plus size={16} />
                 Adicionar turma
@@ -380,10 +386,11 @@ export function Academic({ user }: { user: User }) {
                               .filter((assignment) => assignment.classGroupId === c.id && !assignment.endedAtUtc)
                               .map((assignment) => data.shifts.find((shift) => shift.id === assignment.preferredShiftId)?.name)
                               .filter((name): name is string => Boolean(name)))];
-                            return <span className="text-muted-ink"> · {c.students} alunos · {shiftNames.length === 0 ? "Turno não cadastrado" : shiftNames.length === 1 ? shiftNames[0] : `Turnos divergentes: ${shiftNames.join(" / ")}`}</span>;
+                            const official = data.shifts.find((shift) => shift.id === c.shiftId)?.name;
+                            return <span className="text-muted-ink"> · {c.students} alunos · {official ?? (shiftNames.length === 0 ? "Turno não cadastrado" : shiftNames.length === 1 ? `${shiftNames[0]} (atribuição; turno oficial pendente)` : `Turnos divergentes: ${shiftNames.join(" / ")}`)}</span>;
                           })()}
                           {admin && <button type="button" className="ml-2 text-sky-700 underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-sky-400"
-                            onClick={() => setEditingClass({ id: c.id, code: c.code || "", name: c.name })}>Editar</button>}
+                            onClick={() => setEditingClass({ id: c.id, code: c.code || "", name: c.name, shiftId: c.shiftId == null ? "" : String(c.shiftId) })}>Editar</button>}
                         </div>
                       ))
                   ) : (
@@ -394,14 +401,18 @@ export function Academic({ user }: { user: User }) {
                   <form className="mt-3 flex flex-wrap gap-2" onSubmit={async (event) => {
                     event.preventDefault(); setError("");
                     try {
-                      await put(`/classes/${editingClass.id}`, { name: editingClass.name, code: editingClass.code });
-                      await reload(); setEditingClass(null); setSuccess("Turma corrigida.");
+                      await put(`/classes/${editingClass.id}`, { name: editingClass.name, code: editingClass.code, shiftId: editingClass.shiftId ? Number(editingClass.shiftId) : null });
+                      await reload(); setEditingClass(null); setSuccess("Turma atualizada.");
                     } catch (reason) { setError(resultMessage(reason)); }
                   }}>
                     <input className="field !w-28" aria-label="Código da turma" maxLength={30}
                       value={editingClass.code} onChange={(event) => setEditingClass({ ...editingClass, code: event.target.value })} />
                     <input className="field !w-48" aria-label="Nome da turma" required maxLength={100}
                       value={editingClass.name} onChange={(event) => setEditingClass({ ...editingClass, name: event.target.value })} />
+                    <select className="field !w-48" aria-label="Turno da turma" required value={editingClass.shiftId} onChange={(event) => setEditingClass({ ...editingClass, shiftId: event.target.value })}>
+                      <option value="">Selecione o turno</option>
+                      {data.shifts.map((shift) => <option key={shift.id} value={shift.id}>{shift.name}</option>)}
+                    </select>
                     <button className="btn-primary" type="submit">Salvar</button>
                     <button className="btn-secondary" type="button" onClick={() => setEditingClass(null)}>Cancelar</button>
                   </form>}

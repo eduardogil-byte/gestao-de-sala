@@ -3,6 +3,7 @@ import {
   CalendarPlus,
   Check,
   Eye,
+  Pencil,
   Plus,
   Trash2,
   AlertTriangle,
@@ -43,6 +44,7 @@ export function Bookings({
   const ask = useConfirmation();
   const [form, setForm] = useState(false),
     [filter, setFilter] = useState("Todos");
+  const [editing, setEditing] = useState<Booking | null>(null);
   const [booking, setBooking] = useState<Booking | null>(null),
     [suggestions, setSuggestions] = useState<Suggestion[]>([]);
   const [selectedRoom, setSelectedRoom] = useState(""),
@@ -303,6 +305,7 @@ export function Bookings({
                 </p>
                 {b.status === "Pendente" && (
                   <div className="flex gap-2">
+                    {(user.roles.includes("Admin") || b.teacherId === user.id) && <button type="button" className="btn-secondary !py-2" onClick={() => { setEditing(b); setError(""); }}><Pencil size={15} aria-hidden="true" />Editar</button>}
                     <button
                       className="btn-secondary !py-2"
                       onClick={() => void choose(b)}
@@ -342,6 +345,9 @@ export function Bookings({
           />
         </Modal>
       )}
+      {editing && <Modal title={`Editar solicitação #${editing.id}`} onClose={() => setEditing(null)}>
+        <BookingForm key={editing.id} user={user} editing={editing} onCreated={() => {}} onSaved={() => { setEditing(null); setBooking(null); setAvailability(null); setSuggestions([]); setSuccess("Solicitação atualizada. Consulte novamente a disponibilidade antes de escolher a sala."); }} />
+      </Modal>}
       {booking && (
         <Modal
           title={`Escolher sala · Reserva #${booking.id}`}

@@ -36,11 +36,14 @@ public sealed class AuthenticationPermissionTests
         });
         Assert.Equal(HttpStatusCode.Created, semester.StatusCode);
         var semesterId = (await semester.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("id").GetInt32();
-        var first = await host.Client.PostAsJsonAsync("/api/classes", new { semesterId, code = "001", name = "Mecatrônica", students = 25 });
+        var shift = await host.Client.PostAsJsonAsync("/api/shifts", new { name = "Manhã", startsAt = "08:00:00", endsAt = "12:00:00" });
+        Assert.Equal(HttpStatusCode.Created, shift.StatusCode);
+        var shiftId = (await shift.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("id").GetInt32();
+        var first = await host.Client.PostAsJsonAsync("/api/classes", new { semesterId, code = "001", name = "Mecatrônica", students = 25, shiftId });
         Assert.Equal(HttpStatusCode.Created, first.StatusCode);
         var classId = (await first.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("id").GetInt32();
         Assert.Equal(HttpStatusCode.Conflict, (await host.Client.PostAsJsonAsync("/api/classes",
-            new { semesterId, code = " 001 ", name = "Outra", students = 20 })).StatusCode);
+            new { semesterId, code = " 001 ", name = "Outra", students = 20, shiftId })).StatusCode);
         Assert.Equal(HttpStatusCode.NoContent, (await host.Client.PutAsJsonAsync($"/api/classes/{classId}",
             new { name = "Mecatrônica corrigida", code = "002" })).StatusCode);
         var room = new { code = "LAB-01", name = "Laboratório", location = "Bloco A", kind = 2,

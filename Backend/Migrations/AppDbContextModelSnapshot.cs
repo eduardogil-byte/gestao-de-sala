@@ -406,6 +406,10 @@ namespace SalaGest.Api.Migrations
                     b.Property<DateOnly?>("RepeatUntil")
                         .HasColumnType("date");
 
+                    b.Property<Guid>("Revision")
+                        .IsConcurrencyToken()
+                        .HasColumnType("uniqueidentifier");
+
                     b.Property<DateTime>("StartsAt")
                         .HasColumnType("datetime2");
 
@@ -421,6 +425,9 @@ namespace SalaGest.Api.Migrations
                     b.Property<string>("TeacherId")
                         .IsRequired()
                         .HasColumnType("nvarchar(450)");
+
+                    b.Property<bool>("TurnExceptionConfirmed")
+                        .HasColumnType("bit");
 
                     b.Property<int>("WeekdaysMask")
                         .HasColumnType("int");
@@ -618,12 +625,17 @@ namespace SalaGest.Api.Migrations
                     b.Property<int>("SemesterId")
                         .HasColumnType("int");
 
+                    b.Property<int?>("ShiftId")
+                        .HasColumnType("int");
+
                     b.Property<int>("Students")
                         .HasColumnType("int");
 
                     b.HasKey("Id");
 
                     b.HasIndex("CourseId");
+
+                    b.HasIndex("ShiftId");
 
                     b.HasIndex("SemesterId", "NormalizedCode")
                         .IsUnique()
@@ -1915,9 +1927,16 @@ namespace SalaGest.Api.Migrations
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
 
+                    b.HasOne("SalaGest.Api.Models.SchoolShift", "Shift")
+                        .WithMany()
+                        .HasForeignKey("ShiftId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
                     b.Navigation("Course");
 
                     b.Navigation("Semester");
+
+                    b.Navigation("Shift");
                 });
 
             modelBuilder.Entity("SalaGest.Api.Models.ComputerGroup", b =>

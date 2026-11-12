@@ -54,9 +54,13 @@ public static partial class ApiEndpoints
             else if (input.TeacherId is not null && input.TeacherId != responsibleId)
                 return Results.Forbid();
 
+            var turnError = await ValidateBookingTurn(db, input, shift.Id);
+            if (turnError is not null) return turnError;
+
             var booking = new BookingRequest
             {
                 TeacherId = responsibleId,
+                TurnExceptionConfirmed = input.TurnExceptionConfirmed,
                 ClassGroupId = input.ClassGroupId,
                 CurricularUnitId = input.CurricularUnitId,
                 CurricularCapabilityId = input.CurricularCapabilityId,
@@ -106,7 +110,7 @@ public static partial class ApiEndpoints
             AuditTrail.Add(db, "Booking", booking.Id.ToString(), "Criada", UserId(current), null,
                 new { booking.TeacherId, booking.ClassGroupId, booking.CurricularUnitId,
                     booking.CurricularCapabilityId, booking.StartsAt, booking.EndsAt,
-                    booking.Recurrence, booking.RepeatUntil, booking.Status });
+                    booking.Recurrence, booking.RepeatUntil, booking.Status, booking.TurnExceptionConfirmed });
             await db.SaveChangesAsync();
             await createTx.CommitAsync();
             return Results.Created($"/api/bookings/{booking.Id}", new
@@ -132,6 +136,8 @@ public static partial class ApiEndpoints
             return Results.Ok(bookings.Select(b => new
             {
                 b.Id,
+                Version = b.Revision.ToString("D"),
+                b.TurnExceptionConfirmed,
                 b.TeacherId,
                 b.ClassGroupId,
                 b.CurricularUnitId,
@@ -158,6 +164,85 @@ public static partial class ApiEndpoints
                 b.ApprovedRoomId,
                 SoftwareIds = b.Software.Select(s => s.SoftwareId)
             }));
+        });
+
+        api.MapPut("/{id:int}", async (int id, BookingUpdate update, ClaimsPrincipal current, AppDbContext db) =>
+        {
+            await using var tx = await db.Database.BeginTransactionAsync(IsolationLevel.Serializable);
+            var booking = await db.Bookings.Include(b => b.Software).FirstOrDefaultAsync(b => b.Id == id);
+            if (booking is null) return Results.NotFound();
+            if (booking.TeacherId != UserId(current) && !current.IsInRole("Admin")) return Results.Forbid();
+            if (booking.Status != BookingStatus.Pendente) return Results.Conflict(new ApiError("Somente solicitações pendentes podem ser editadas"));
+            if (!Guid.TryParse(update.Version, out var version)) return Error("Versão da solicitação inválida");
+            if (booking.Revision != version)
+                return Results.Conflict(new ApiError("A solicitação mudou. Recarregue antes de salvar."));
+            var input = update.Booking;
+            var validation = BookingPeriods.ValidationError(input.StartsAt, input.EndsAt,
+                input.Recurrence, input.RepeatUntil, input.WeekdaysMask);
+            if (validation is not null) return Error(validation);
+            if (input.RecurringEadWeekday is int ed && (ed < 0 || ed > 6 ||
+                input.Recurrence == BookingRecurrence.Nenhuma ||
+                (input.Recurrence == BookingRecurrence.Semanal &&
+                    (input.WeekdaysMask == 0 ? (int)input.StartsAt.DayOfWeek != ed :
+                        (input.WeekdaysMask & (1 << ed)) == 0))))
+                return Error("Dia recorrente de EAD inválido");
+            var shift = await db.Shifts.FirstOrDefaultAsync(s => s.StartsAt == TimeOnly.FromDateTime(input.StartsAt)
+                && s.EndsAt == TimeOnly.FromDateTime(input.EndsAt));
+            if (shift is null) return Error("A reserva deve ocupar um turno cadastrado");
+            if (input.TeacherId is not null && input.TeacherId != booking.TeacherId) return Results.Forbid();
+            if (input.Students is < 1 or > 500 || input.StudentsPerComputer is < 1 or > 20 ||
+                !Enum.IsDefined(input.MinTier) || input.MinRamGb is < 0 or > 512 ||
+                string.IsNullOrWhiteSpace(input.Reason) || input.SoftwareIds is null ||
+                !await SoftwareExists(db, input.SoftwareIds) ||
+                (input.ClassGroupId is int classId && !await db.Classes.AnyAsync(c => c.Id == classId)))
+                return Error("Dados inválidos: confira turma, alunos, computadores e recursos");
+            var turnError = await ValidateBookingTurn(db, input, shift.Id);
+            if (turnError is not null) return turnError;
+            var pedagogical = input.CurricularUnitId is not null || input.CurricularCapabilityId is not null;
+            if (pedagogical)
+            {
+                if (input.ClassGroupId is null || input.CurricularUnitId is null || input.CurricularCapabilityId is null)
+                    return Error("Turma, UC e capacidade são obrigatórias na reserva pedagógica");
+                var group = await db.Classes.FirstAsync(c => c.Id == input.ClassGroupId);
+                if (!await db.CurricularUnits.AnyAsync(u => u.Id == input.CurricularUnitId && u.CourseModule.CourseId == group.CourseId) ||
+                    !await db.CurricularCapabilities.AnyAsync(c => c.Id == input.CurricularCapabilityId && c.CurricularUnitId == input.CurricularUnitId))
+                    return Error("UC ou capacidade não pertence à turma");
+                if (!await db.Assignments.AnyAsync(a => a.TeacherId == booking.TeacherId && a.ClassGroupId == input.ClassGroupId &&
+                    a.CurricularUnitId == input.CurricularUnitId && a.EndedAtUtc == null)) return Results.Forbid();
+                var candidate = new BookingRequest { TeacherId = booking.TeacherId, ClassGroupId = input.ClassGroupId,
+                    CurricularUnitId = input.CurricularUnitId, StartsAt = input.StartsAt, EndsAt = input.EndsAt,
+                    Recurrence = input.Recurrence, RepeatUntil = input.RepeatUntil, WeekdaysMask = input.WeekdaysMask,
+                    TurnExceptionConfirmed = input.TurnExceptionConfirmed };
+                if (!await PedagogicalAssignmentValid(db, candidate, shift.Id))
+                    return Error("Dia e turno não correspondem à atribuição ativa");
+            }
+            var before = new { booking.ClassGroupId, booking.StartsAt, booking.EndsAt, booking.Recurrence,
+                booking.RepeatUntil, booking.TurnExceptionConfirmed };
+            booking.ClassGroupId = input.ClassGroupId;
+            booking.CurricularUnitId = input.CurricularUnitId;
+            booking.CurricularCapabilityId = input.CurricularCapabilityId;
+            booking.StartsAt = input.StartsAt; booking.EndsAt = input.EndsAt;
+            booking.Recurrence = input.Recurrence; booking.RepeatUntil = input.RepeatUntil;
+            booking.WeekdaysMask = input.WeekdaysMask; booking.RecurringEadWeekday = input.RecurringEadWeekday;
+            booking.Students = input.Students; booking.StudentsPerComputer = input.StudentsPerComputer;
+            booking.NeedsProjector = input.NeedsProjector; booking.NeedsTeacherComputer = input.NeedsTeacherComputer;
+            booking.NeedsStudentComputers = input.NeedsStudentComputers; booking.MinTier = input.MinTier;
+            booking.MinRamGb = input.MinRamGb; booking.NeedsDedicatedGpu = input.NeedsDedicatedGpu;
+            booking.Reason = input.Reason.Trim(); booking.LessonPlanLink = input.LessonPlanLink;
+            booking.TurnExceptionConfirmed = input.TurnExceptionConfirmed; booking.ApprovedRoomId = null;
+            booking.Revision = Guid.NewGuid();
+            var requestedSoftware = input.SoftwareIds.ToHashSet();
+            db.BookingSoftware.RemoveRange(booking.Software.Where(s => !requestedSoftware.Contains(s.SoftwareId)));
+            foreach (var softwareId in requestedSoftware.Where(softwareId =>
+                booking.Software.All(s => s.SoftwareId != softwareId)))
+                booking.Software.Add(new BookingSoftware { SoftwareId = softwareId });
+            AuditTrail.Add(db, "Booking", id.ToString(), "Alterada", UserId(current), before,
+                new { booking.ClassGroupId, booking.StartsAt, booking.EndsAt, booking.Recurrence,
+                    booking.RepeatUntil, booking.TurnExceptionConfirmed });
+            try { await db.SaveChangesAsync(); }
+            catch (DbUpdateConcurrencyException) { return Results.Conflict(new ApiError("A solicitação mudou. Recarregue antes de salvar.")); }
+            await tx.CommitAsync();
+            return Results.Ok(new { booking.Id, Version = booking.Revision.ToString("D") });
         });
 
         // Apresenta TODAS as salas, inclusive ocupadas ou incompatíveis.
@@ -369,6 +454,18 @@ public static partial class ApiEndpoints
                 ? (await AllRooms(db)).FirstOrDefault(r => r.Id == input.RoomId)
                 : await RoomQuery(db).FirstOrDefaultAsync(r => r.Id == input.RoomId);
             if (room is null) return Results.NotFound();
+            var bookingShift = await db.Shifts.Where(s => s.StartsAt == TimeOnly.FromDateTime(booking.StartsAt)
+                && s.EndsAt == TimeOnly.FromDateTime(booking.EndsAt)).Select(s => s.Id).FirstOrDefaultAsync();
+            if (bookingShift == 0) return Error("Turno da solicitação não encontrado");
+            var currentTurnError = await ValidateBookingTurn(db, new BookingCreate(booking.ClassGroupId,
+                booking.StartsAt, booking.EndsAt, booking.Students, booking.NeedsProjector,
+                booking.NeedsTeacherComputer, booking.NeedsStudentComputers, booking.MinTier,
+                booking.Software.Select(s => s.SoftwareId).ToList(), booking.Reason, booking.LessonPlanLink,
+                booking.Recurrence, booking.RepeatUntil, booking.MinRamGb, booking.NeedsDedicatedGpu,
+                booking.WeekdaysMask, booking.StudentsPerComputer, booking.RecurringEadWeekday,
+                booking.CurricularUnitId, booking.CurricularCapabilityId, booking.TeacherId,
+                booking.TurnExceptionConfirmed), bookingShift);
+            if (currentTurnError is not null) return currentTurnError;
             Dictionary<DateOnly, CalendarDateResult>? calendar = null;
             if (booking.CurricularCapabilityId is int capabilityId)
             {
@@ -511,5 +608,20 @@ public static partial class ApiEndpoints
             await db.SaveChangesAsync();
             return Results.Ok(new { booking.Id, booking.Status });
         });
+    }
+
+    private static async Task<IResult?> ValidateBookingTurn(AppDbContext db, BookingCreate input, int shiftId)
+    {
+        if (input.ClassGroupId is not int classId)
+            return input.TurnExceptionConfirmed ? Error("Exceção de turno exige turma vinculada") : null;
+        var official = await db.Classes.Where(c => c.Id == classId).Select(c => c.ShiftId).FirstOrDefaultAsync();
+        if (official is null)
+            return input.TurnExceptionConfirmed ? Error("Regularize o turno oficial da turma antes da exceção") : null;
+        if (official == shiftId)
+            return input.TurnExceptionConfirmed ? Error("A reserva já usa o turno oficial da turma") : null;
+        if (!input.TurnExceptionConfirmed) return Error("Confirme explicitamente a exceção ao turno oficial da turma");
+        if (input.Recurrence != BookingRecurrence.Nenhuma)
+            return Error("Exceção de turno permitida apenas para uma data, sem recorrência");
+        return null;
     }
 }

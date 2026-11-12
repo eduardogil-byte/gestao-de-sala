@@ -135,6 +135,8 @@ public sealed class ClassGroup
     public string? Code { get; set; }
     public string? NormalizedCode { get; set; }
     public int SemesterId { get; set; }
+    public int? ShiftId { get; set; } // Nulo apenas para turmas anteriores à implantação.
+    public SchoolShift? Shift { get; set; }
     public Semester Semester { get; set; } = null!;
     public int? CourseId { get; set; }
     public Course? Course { get; set; }
@@ -216,6 +218,8 @@ public sealed class WeeklyClass
 public sealed class BookingRequest
 {
     public int Id { get; set; }
+    public Guid Revision { get; set; } = Guid.NewGuid();
+    public bool TurnExceptionConfirmed { get; set; }
     public string TeacherId { get; set; } = "";
     public AppUser Teacher { get; set; } = null!;
     public int? ClassGroupId { get; set; }
