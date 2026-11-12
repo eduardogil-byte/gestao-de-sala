@@ -13,6 +13,38 @@ export const weekStart = (date: string) => nextDate(date, -day(date));
 export const weekDates = (date: string) => Array.from({ length: 7 }, (_, index) => nextDate(weekStart(date), index));
 export const recurrenceLimit = (start: string) => nextDate(start, 365);
 
+export function WeekPicker({ value, onChange, today }: { value: string; onChange: (week: string) => void; today: string }) {
+  const [open, setOpen] = useState(false);
+  const [view, setView] = useState(value.slice(0, 7) + "-01");
+  const selected = weekStart(value);
+  const selectedDays = weekDates(selected);
+  const days = Array.from({ length: 42 }, (_, index) => nextDate(weekStart(view), index));
+  const moveMonth = (offset: number) => {
+    const date = new Date(`${view}T12:00:00`);
+    date.setMonth(date.getMonth() + offset);
+    setView(localDate(date));
+  };
+  return <>
+    <button type="button" className="field min-h-11 text-left focus-visible:outline focus-visible:outline-2 focus-visible:outline-skybrand-500" aria-label={`Selecionar semana de ${dateBR(selected)} a ${dateBR(selectedDays[6])}`} onClick={() => { setView(selected.slice(0, 7) + "-01"); setOpen(true); }}>
+      {dateBR(selected)} a {dateBR(selectedDays[6])}
+    </button>
+    {open && <Modal title="Selecionar semana" onClose={() => setOpen(false)} width="max-w-md">
+      <div className="mb-3 flex items-center justify-between gap-2">
+        <button type="button" className="btn-secondary min-h-11 min-w-11 !px-2" aria-label="Mês anterior" onClick={() => moveMonth(-1)}><ChevronLeft size={18} aria-hidden="true" /></button>
+        <h3 className="text-sm font-semibold text-ink">{monthLabel(view)}</h3>
+        <button type="button" className="btn-secondary min-h-11 min-w-11 !px-2" aria-label="Próximo mês" onClick={() => moveMonth(1)}><ChevronRight size={18} aria-hidden="true" /></button>
+      </div>
+      <div className="grid grid-cols-7 gap-1 text-center">{names.map((name) => <span key={name} className="py-1 text-xs font-semibold text-muted-ink">{name}</span>)}
+        {days.map((item) => <button key={item} type="button" aria-label={`${dateBR(item)}${item === today ? ", hoje" : ""}, semana de ${dateBR(weekStart(item))}`} aria-pressed={weekStart(item) === selected} onClick={() => { onChange(weekStart(item)); setOpen(false); }}
+          className={`min-h-11 min-w-0 rounded-control border text-sm tabular-nums focus-visible:outline focus-visible:outline-2 focus-visible:outline-skybrand-500 ${weekStart(item) === selected ? "border-skybrand-500 bg-sky-950 text-sky-100" : "border-line text-ink hover:border-skybrand-500"} ${item === today ? "ring-2 ring-skybrand-500 ring-inset" : ""} ${item.slice(0, 7) !== view.slice(0, 7) ? "opacity-60" : ""}`}>
+          {Number(item.slice(-2))}<span className="sr-only">{item === today ? ", hoje" : ""}</span>
+        </button>)}
+      </div>
+      <p className="mt-3 text-xs text-muted-ink">Semana selecionada: {dateBR(selected)} a {dateBR(selectedDays[6])}.</p>
+    </Modal>}
+  </>;
+}
+
 export function WeeklyCalendar({ date, weekdays, recurring, onSelect, today }: {
   date: string; weekdays: number[]; recurring: boolean; onSelect: (date: string) => void; today: string;
 }) {

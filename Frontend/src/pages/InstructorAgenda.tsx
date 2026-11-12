@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { Check, RefreshCcw } from "lucide-react";
 import { api } from "../lib/api";
 import { useData } from "../lib/data";
 import { agendaErrorMessage, assignmentConflicts, loadSemesterAgenda, teacherActivities, teacherWorkload } from "../lib/instructorAgenda";
@@ -34,12 +35,18 @@ function special(item: AgendaOccupation) {
   return [...new Set(marks.filter((value): value is string => Boolean(value)))].join(" · ");
 }
 function Activity({ item, onSelect }: { item: AgendaOccupation; onSelect: (item: AgendaOccupation) => void }) {
+  const { data } = useData();
+  const classGroup = data.classes.find((entry) => entry.id === item.actualClassGroupId);
+  const room = data.rooms.find((entry) => entry.id === item.roomId);
+  const status = item.conflicts.length ? "Conflito" : item.bookingStatus && item.bookingStatus !== "Aprovada" ? statusText(item.bookingStatus) : item.isBorrowed ? "Empréstimo" : occupationStatusNames[item.status] ?? statusText(item.status);
+  const confirmed = status === "Confirmada";
   return <button type="button" onClick={() => onSelect(item)}
-    aria-label={`Detalhes: ${item.actualClassGroupName ?? "Turma não informada"}, ${item.roomName}, ${dateBR(item.date)}${item.conflicts.length ? ", com conflito" : ""}`}
+    aria-label={`Detalhes: ${confirmed ? "Ocupação confirmada" : status}, ${classGroup?.code ? `${classGroup.code} | ` : ""}${item.actualClassGroupName ?? "Turma não informada"}, ${item.roomName}${room?.location ? `, ${room.location}` : ""}, ${dateBR(item.date)}`}
     className={(item.conflicts.length ? "border-rose-300 bg-rose-50 text-rose-900" : "border-sky-200 bg-sky-50 text-sky-900") +
       " block w-full rounded-lg border border-l-4 p-2.5 text-left text-xs leading-5 transition-colors hover:brightness-110 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-400"}>
-    <strong>{item.conflicts.length ? "Conflito" : item.bookingStatus && item.bookingStatus !== "Aprovada" ? statusText(item.bookingStatus) : item.isBorrowed ? "Empréstimo" : occupationStatusNames[item.status] ?? statusText(item.status)} · {item.actualClassGroupName ?? "Turma não informada"}</strong>
-    <span className="block">{item.roomName}{item.shiftName ? ` · ${item.shiftName}` : ""}</span>
+    <strong className="flex items-start gap-1">{confirmed ? <span title="Ocupação confirmada" aria-label="Ocupação confirmada"><Check size={15} aria-hidden="true" /></span> : <span>{status} ·</span>}<span className="min-w-0 break-words">{classGroup?.code ? `${classGroup.code} | ` : ""}{item.actualClassGroupName ?? "Turma não informada"}</span></strong>
+    <span className="block break-words">{item.roomName}</span>
+    {room?.location && <span className="block break-words text-sky-800">{room.location}</span>}
     {(item.courseName || item.curricularUnitName) && <span className="block">{[item.courseName, item.curricularUnitName].filter(Boolean).join(" · ")}</span>}
     {special(item) && <span className="block font-medium text-amber-800">{special(item)}</span>}
   </button>;
@@ -140,8 +147,8 @@ export function InstructorAgenda({ user, onOpenRelated, onManage }: { user: User
   const withinSemester = (date: string) => Boolean(semester && date >= semester.startDate && date <= semester.endDate);
 
   return <>
-    <Title title={admin ? "Agenda dos Instrutores" : "Minha Agenda"} subtitle="Consulte ocupações por docente e turno. A carga semanal e a semestral são calculadas separadamente a partir dos registros efetivos."
-      action={<button type="button" className="btn-secondary" onClick={() => setRevision((value) => value + 1)}>Atualizar agenda</button>} />
+    <Title title={admin ? "Agenda dos Instrutores" : "Minha Agenda"}
+      action={<button type="button" className="btn-secondary min-h-11 min-w-11 !px-2" aria-label="Atualizar agenda" title="Atualizar agenda" aria-busy={loading} disabled={loading || catalogLoading} onClick={() => setRevision((value) => value + 1)}><RefreshCcw size={18} aria-hidden="true" className={loading ? "animate-spin" : ""} /></button>} />
     <Card className="p-4 sm:p-5 mb-5 space-y-5">
       <SectionHeading title="Período da agenda" subtitle="Consulte semana, mês ou semestre mantendo o instrutor e o contexto selecionados." />
       <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
@@ -185,6 +192,19 @@ export function InstructorAgenda({ user, onOpenRelated, onManage }: { user: User
       <p className="text-xs text-muted-ink mt-4">A ausência de atividades no SalaGest não confirma disponibilidade contratual.</p>
     </Card>}
     {ready && teacherId && <>
+      {view === "week" && <Card className="overflow-hidden mb-5"><div className="p-4 sm:p-5 border-b border-line"><SectionHeading title="Agenda da semana" /></div><div className="hidden lg:block data-table-wrap border-0 rounded-none"><table className="w-full min-w-[900px] text-sm">
+        <thead><tr><th className="sticky left-0 bg-surface p-3 text-left border-b border-line min-w-32">Turno</th>{weekDates.map((date) => <th key={date} className={`p-3 text-left border-b border-line min-w-32 ${date === localDate(new Date()) ? "bg-sky-100 text-sky-900" : new Date(date + "T12:00:00").getDay() === 0 ? "bg-violet-50" : new Date(date + "T12:00:00").getDay() === 6 ? "bg-slate-100" : ""}`} aria-current={date === localDate(new Date()) ? "date" : undefined}>{weekDays[new Date(date + "T12:00:00").getDay()]}<span className="block text-xs font-normal">{dateBR(date)}{date === localDate(new Date()) ? " · Hoje" : ""}</span></th>)}</tr></thead>
+        <tbody>{data.shifts.map((shift) => <tr key={shift.id}><th scope="row" className="sticky left-0 bg-surface p-3 border-b border-line text-left align-top">{shift.name}<span className="block text-xs font-normal text-muted-ink">{shift.startsAt.slice(0, 5)}–{shift.endsAt.slice(0, 5)}</span></th>
+          {weekDates.map((date) => { const rows = (byDay.get(date) ?? []).filter((item) => item.shiftId === shift.id); return <td key={date} className={`p-2 border-b align-top ${date === localDate(new Date()) ? "bg-sky-50/70" : new Date(date + "T12:00:00").getDay() === 0 ? "bg-violet-50/60" : new Date(date + "T12:00:00").getDay() === 6 ? "bg-slate-50" : ""}`}>{!withinSemester(date) ? <span className="text-xs text-slate-500">Fora do semestre</span> : rows.length ? <div className="space-y-1">{rows.length > 1 && <p className="text-xs font-bold text-slate-700">{rows.length} ocupações</p>}{rows.map((item) => <Activity key={item.id} item={item} onSelect={setSelected} />)}</div> : <span className="text-xs text-slate-500">Livre</span>}</td>; })}</tr>)}</tbody>
+      </table></div><div className="lg:hidden divide-y divide-line">{weekDates.map((date) => <section key={date} className={`p-4 ${date === localDate(new Date()) ? "bg-sky-50" : new Date(date + "T12:00:00").getDay() === 0 ? "bg-violet-50" : new Date(date + "T12:00:00").getDay() === 6 ? "bg-slate-50" : ""}`} aria-current={date === localDate(new Date()) ? "date" : undefined}>
+        <h3 className="text-sm font-semibold">{weekDays[new Date(date + "T12:00:00").getDay()]} · {dateBR(date)}{date === localDate(new Date()) ? " · Hoje" : ""}</h3>
+        {!withinSemester(date) ? <p className="text-xs text-muted-ink mt-2">Fora do semestre</p> : (byDay.get(date) ?? []).length ? data.shifts.map((shift) => { const rows = (byDay.get(date) ?? []).filter((item) => item.shiftId === shift.id); return rows.length ? <div key={shift.id} className="mt-3">
+          <p className="text-xs font-semibold text-ink mb-1">{shift.name} · {rows.length} ocupação(ões)</p>
+          <div className="space-y-1">{rows.map((item) => <Activity key={item.id} item={item} onSelect={setSelected} />)}</div>
+        </div> : null; }) : <p className="text-xs text-muted-ink mt-2">Sem aula registrada · disponibilidade não confirmada</p>}
+        {withinSemester(date) && (byDay.get(date) ?? []).some((item) => item.shiftId === null) && <p className="text-xs text-amber-800 mt-2">Há atividade sem turno identificado na lista abaixo.</p>}
+      </section>)}</div>{!data.shifts.length && <p className="p-4 text-sm">Não há turnos cadastrados para montar a grade.</p>}
+      {(weekDates.flatMap((date) => byDay.get(date) ?? []).filter((item) => item.shiftId === null)).length > 0 && <div className="p-4"><h3 className="font-semibold text-sm mb-2">Atividades sem turno identificado</h3><div className="space-y-2">{weekDates.flatMap((date) => byDay.get(date) ?? []).filter((item) => item.shiftId === null).map((item) => <Activity key={item.id} item={item} onSelect={setSelected} />)}</div></div>}</Card>}
       <Card className="p-4 sm:p-5 mb-5">
         <SectionHeading title={teacher?.displayName ?? "Instrutor selecionado"} subtitle={`Ocupações efetivas de ${semester?.name ?? "semestre selecionado"}. A semana exibida é ${dateBR(week)} a ${dateBR(nextDate(week, 6))}.`} />
         <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
@@ -199,19 +219,6 @@ export function InstructorAgenda({ user, onOpenRelated, onManage }: { user: User
         <p className="text-xs text-slate-600 mt-2">Horas calculadas pelos turnos cadastrados, sem dupla contagem de intervalos simultâneos. Atribuições pedagógicas sem ocupação não entram na soma. Sem limite institucional de carga configurado.</p>
         {!workload.activities && <p className="text-sm text-slate-600 mt-3">Sem atividades registradas no período. Isso não confirma disponibilidade contratual.</p>}
       </Card>
-      {view === "week" && <Card className="overflow-hidden mb-5"><div className="p-4 sm:p-5 border-b border-line"><SectionHeading title="Agenda da semana" subtitle="Ocupações por dia e turno. Selecione um registro para consultar turma, curso, UC, ambiente e conflitos." /></div><div className="hidden lg:block data-table-wrap border-0 rounded-none"><table className="w-full min-w-[900px] text-sm">
-        <thead><tr><th className="sticky left-0 bg-surface p-3 text-left border-b border-line min-w-32">Turno</th>{weekDates.map((date) => <th key={date} className={`p-3 text-left border-b border-line min-w-32 ${date === localDate(new Date()) ? "bg-sky-50 text-sky-900" : ""}`} aria-current={date === localDate(new Date()) ? "date" : undefined}>{weekDays[new Date(date + "T12:00:00").getDay()]}<span className="block text-xs font-normal">{dateBR(date)}{date === localDate(new Date()) ? " · Hoje" : ""}</span></th>)}</tr></thead>
-        <tbody>{data.shifts.map((shift) => <tr key={shift.id}><th scope="row" className="sticky left-0 bg-surface p-3 border-b border-line text-left align-top">{shift.name}<span className="block text-xs font-normal text-muted-ink">{shift.startsAt.slice(0, 5)}–{shift.endsAt.slice(0, 5)}</span></th>
-          {weekDates.map((date) => { const rows = (byDay.get(date) ?? []).filter((item) => item.shiftId === shift.id); return <td key={date} className="p-2 border-b align-top">{!withinSemester(date) ? <span className="text-xs text-slate-500">Fora do semestre</span> : rows.length ? <div className="space-y-1">{rows.length > 1 && <p className="text-xs font-bold text-slate-700">{rows.length} ocupações</p>}{rows.map((item) => <Activity key={item.id} item={item} onSelect={setSelected} />)}</div> : <span className="text-xs text-slate-500">Sem aula registrada</span>}</td>; })}</tr>)}</tbody>
-      </table></div><div className="lg:hidden divide-y divide-line">{weekDates.map((date) => <section key={date} className={`p-4 ${date === localDate(new Date()) ? "bg-sky-50" : ""}`} aria-current={date === localDate(new Date()) ? "date" : undefined}>
-        <h3 className="text-sm font-semibold">{weekDays[new Date(date + "T12:00:00").getDay()]} · {dateBR(date)}{date === localDate(new Date()) ? " · Hoje" : ""}</h3>
-        {!withinSemester(date) ? <p className="text-xs text-muted-ink mt-2">Fora do semestre</p> : (byDay.get(date) ?? []).length ? data.shifts.map((shift) => { const rows = (byDay.get(date) ?? []).filter((item) => item.shiftId === shift.id); return rows.length ? <div key={shift.id} className="mt-3">
-          <p className="text-xs font-semibold text-ink mb-1">{shift.name} · {rows.length} ocupação(ões)</p>
-          <div className="space-y-1">{rows.map((item) => <Activity key={item.id} item={item} onSelect={setSelected} />)}</div>
-        </div> : null; }) : <p className="text-xs text-muted-ink mt-2">Sem aula registrada · disponibilidade não confirmada</p>}
-        {withinSemester(date) && (byDay.get(date) ?? []).some((item) => item.shiftId === null) && <p className="text-xs text-amber-800 mt-2">Há atividade sem turno identificado na lista abaixo.</p>}
-      </section>)}</div>{!data.shifts.length && <p className="p-4 text-sm">Não há turnos cadastrados para montar a grade.</p>}
-      {(weekDates.flatMap((date) => byDay.get(date) ?? []).filter((item) => item.shiftId === null)).length > 0 && <div className="p-4"><h3 className="font-semibold text-sm mb-2">Atividades sem turno identificado</h3><div className="space-y-2">{weekDates.flatMap((date) => byDay.get(date) ?? []).filter((item) => item.shiftId === null).map((item) => <Activity key={item.id} item={item} onSelect={setSelected} />)}</div></div>}</Card>}
       {view === "month" && <><Card className="p-3 sm:p-5 mb-5"><div className="mb-4"><SectionHeading title="Agenda do mês" subtitle="O número sob cada data indica ocupações. Selecione um dia para consultar detalhes e conflitos." /></div><div className="grid grid-cols-7 gap-1 text-xs text-center font-semibold text-muted-ink mb-2">{["Dom", "Seg", "Ter", "Qua", "Qui", "Sex", "Sáb"].map((name) => <span key={name}>{name}</span>)}</div>
         <div className="grid grid-cols-7 gap-1">{Array.from({ length: firstDayOffset }, (_, index) => <span key={"blank-" + index} />)}{monthDates.map((date) => { const rows = byDay.get(date) ?? []; const count = rows.filter((item) => item.conflicts.length).length; return <button key={date} type="button" onClick={() => setSelectedDay(date)} disabled={!withinSemester(date)} aria-pressed={selectedDay === date}
           aria-label={`${dateBR(date)}: ${rows.length} atividade(s)${count ? `, ${count} conflito(s)` : ""}`}

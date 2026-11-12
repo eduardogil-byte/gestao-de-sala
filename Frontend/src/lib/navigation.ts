@@ -38,7 +38,6 @@ const sections: NavigationSection[] = [
     title: "Planejamento",
     items: [
       { page: "bookings", label: "Reservas", icon: "booking" },
-      { page: "agenda", label: "Agenda", icon: "calendar" },
       { page: "room-timeline", label: "Cronograma de Ambientes", icon: "timeline" },
       { page: "instructor-agenda", label: "Agenda dos Instrutores", teacherLabel: "Minha Agenda", icon: "instructor" },
       { page: "semester-planning", label: "Planejamento Semestral", icon: "planning" },

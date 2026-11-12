@@ -12,6 +12,7 @@ import { dateBR, resultMessage } from "../lib/utils";
 import { NeedFields, defaultNeed } from "../components/NeedFields";
 import {
   Card,
+  Badge,
   Empty,
   Field,
   Notice,
@@ -19,6 +20,8 @@ import {
   Title,
 } from "../components/UI";
 import type { Need, User } from "../types";
+
+const weekdays = ["Domingo", "Segunda", "Terça", "Quarta", "Quinta", "Sexta", "Sábado"];
 
 export function Academic({ user }: { user: User }) {
   const admin = user.roles.includes("Admin");
@@ -367,21 +370,21 @@ export function Academic({ user }: { user: User }) {
                     data.classes
                       .filter((c) => c.semesterId === s.id)
                       .map((c) => (
-                        <span
-                          className="pill bg-sky-50 text-sky-700"
+                        <div
+                          className="rounded-lg border border-line bg-surface px-3 py-2 text-sm text-ink"
                           key={c.id}
                         >
-                          {c.code ? `${c.code} | ` : ""}{c.name}
+                          <strong>{c.code ? `${c.code} | ` : ""}{c.name}</strong>
                           {(() => {
                             const shiftNames = [...new Set(data.assignments
                               .filter((assignment) => assignment.classGroupId === c.id && !assignment.endedAtUtc)
                               .map((assignment) => data.shifts.find((shift) => shift.id === assignment.preferredShiftId)?.name)
                               .filter((name): name is string => Boolean(name)))];
-                            return shiftNames.length ? ` — ${shiftNames.join(" / ")}` : "";
-                          })()} • {c.students} alunos
-                          {admin && <button type="button" className="ml-2 underline"
-                            onClick={() => setEditingClass({ id: c.id, code: c.code || "", name: c.name })}>Corrigir</button>}
-                        </span>
+                            return <span className="text-muted-ink"> · {c.students} alunos · {shiftNames.length === 0 ? "Turno não cadastrado" : shiftNames.length === 1 ? shiftNames[0] : `Turnos divergentes: ${shiftNames.join(" / ")}`}</span>;
+                          })()}
+                          {admin && <button type="button" className="ml-2 text-sky-700 underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-sky-400"
+                            onClick={() => setEditingClass({ id: c.id, code: c.code || "", name: c.name })}>Editar</button>}
+                        </div>
                       ))
                   ) : (
                     <span className="text-xs text-slate-400">Sem turmas</span>
@@ -427,12 +430,11 @@ export function Academic({ user }: { user: User }) {
                   </div>
                   <div>
                     <p className="font-semibold text-sm">{a.disciplineName}</p>
-                    <p className="text-xs text-slate-500 mt-1">
-                      {data.classes.find((c) => c.id === a.classGroupId)?.name}{" "}
-                      •{" "}
-                      {data.teachers.find((t) => t.id === a.teacherId)
-                        ?.displayName || "Instrutor"}
-                    </p>
+                    <p className="text-xs text-slate-600 mt-1">Turma: {data.classes.find((c) => c.id === a.classGroupId)?.name ?? "Não identificada"}</p>
+                    <p className="text-xs text-slate-600">Instrutor: {data.teachers.find((t) => t.id === a.teacherId)?.displayName || "Não identificado"}</p>
+                    <p className="text-xs text-slate-600">UC: {a.curricularUnitId ? a.disciplineName : "Não vinculada"}</p>
+                    <p className="text-xs text-slate-600">Dia: {a.weekday === null ? "Não definido" : weekdays[a.weekday] ?? "Não identificado"} · Turno da atribuição: {data.shifts.find((shift) => shift.id === a.preferredShiftId)?.name ?? "Não definido"}</p>
+                    <Badge status={a.endedAtUtc ? "Inativa" : "Ativa"} />
                     <p className="text-xs text-sky-700 mt-1">
                       {a.meetingsPerWeek} turno(s)/semana{" "}
                       {a.lessonPlanLink && (

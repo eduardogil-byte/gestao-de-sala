@@ -19,9 +19,8 @@ import {
   useConfirmation,
 } from "../components/UI";
 import { OccupationManager } from "../components/OccupationManager";
+import { WeekPicker, weekStart, weekDates } from "../components/BookingCalendars";
 import type { Occupation, User } from "../types";
-
-const sunday = (date: string) => nextDate(date, -new Date(`${date}T12:00:00`).getDay());
 
 export function Agenda({
   user,
@@ -39,7 +38,7 @@ export function Agenda({
   const ask = useConfirmation();
   const [selected, setSelected] = useState<Occupation | null>(null);
   const [chosen, setChosen] = useState<number[]>([]);
-  const [from, setFrom] = useState(sunday(focus?.date ?? localDate(new Date())));
+  const [from, setFrom] = useState(weekStart(focus?.date ?? localDate(new Date())));
   const [roomId, setRoomId] = useState(focus ? String(focus.roomId) : "");
   const [items, setItems] = useState<Occupation[]>(focus ? [] : occupations);
   const [openedFocusId, setOpenedFocusId] = useState<number | null>(null);
@@ -125,12 +124,11 @@ export function Agenda({
       setError(resultMessage(e));
     }
   }
-  const dates = Array.from({ length: 7 }, (_, i) => nextDate(from, i));
+  const dates = weekDates(from);
   return (
     <>
       <Title
         title="Agenda dos ambientes"
-        subtitle="Operação diária: acompanhe reservas, empréstimos e ações sobre as ocupações. Para analisar ambientes por período, use o Cronograma; para carga docente, a Agenda dos Instrutores."
         action={
           admin ? (
             <button
@@ -161,14 +159,10 @@ export function Agenda({
             >
               <ChevronLeft size={18} />
             </button>
-            <Field label="Início da semana (7 dias)">
-              <input
-                className="field"
-                type="date"
-                value={from}
-                onChange={(e) => { if (e.target.value) { setFrom(sunday(e.target.value)); setChosen([]); } }}
-              />
-            </Field>
+            <div className="min-w-0">
+              <span className="field-label">Semana exibida (domingo a sábado)</span>
+              <WeekPicker value={from} today={localDate(new Date())} onChange={(week) => { setFrom(week); setChosen([]); }} />
+            </div>
             <button
               className="btn-secondary !px-3"
               title="Próxima semana"
@@ -194,7 +188,7 @@ export function Agenda({
           <button
             className="btn-quiet"
             onClick={() => {
-              setFrom(sunday(localDate(new Date())));
+              setFrom(weekStart(localDate(new Date())));
               setRoomId("");
               setChosen([]);
             }}

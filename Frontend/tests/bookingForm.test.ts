@@ -15,8 +15,12 @@ test("recorrência começa na data escolhida e propõe apenas os dias selecionad
     assert.equal(uniqueShift([1, 1]), 1);
     assert.equal(uniqueShift([1, 2]), null);
     assert.equal(uniqueShift([]), null);
-    const { weekDates, recurrenceLimit, WeeklyCalendar, RepeatUntilCalendar } = await server.ssrLoadModule("/src/components/BookingCalendars.tsx");
+    const { weekDates, weekStart, recurrenceLimit, WeeklyCalendar, RepeatUntilCalendar, WeekPicker } = await server.ssrLoadModule("/src/components/BookingCalendars.tsx");
     assert.deepEqual(weekDates("2026-11-11"), ["2026-11-08", "2026-11-09", "2026-11-10", "2026-11-11", "2026-11-12", "2026-11-13", "2026-11-14"]);
+    assert.equal(weekStart("2027-01-01"), "2026-12-27");
+    assert.deepEqual(weekDates("2027-01-01").slice(-1), ["2027-01-02"]);
+    const picker = renderToStaticMarkup(createElement(WeekPicker, { value: "2027-01-01", today: "2027-01-01", onChange: () => {} }));
+    assert.match(picker, /Selecionar semana de 27\/12\/2026 a 02\/01\/2027/);
     assert.equal(recurrenceLimit("2026-11-11"), "2027-11-11");
     const week = renderToStaticMarkup(createElement(WeeklyCalendar, { date: "2026-11-11", weekdays: [3], recurring: false, today: "2026-11-11", onSelect: () => {} }));
     assert.match(week, /Semana anterior/);
