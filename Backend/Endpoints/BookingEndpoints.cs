@@ -19,6 +19,7 @@ public static partial class ApiEndpoints
             var error = BookingPeriods.ValidationError(input.StartsAt, input.EndsAt,
                 input.Recurrence, input.RepeatUntil, input.WeekdaysMask);
             if (error is not null) return Error(error);
+            if (input.StartsAt.Date < DateTime.Today) return Error("Não é permitido solicitar datas passadas");
             if (input.RecurringEadWeekday is int ed && (ed < 0 || ed > 6 ||
                 input.Recurrence == BookingRecurrence.Nenhuma ||
                 (input.Recurrence == BookingRecurrence.Semanal &&
@@ -180,6 +181,7 @@ public static partial class ApiEndpoints
             var validation = BookingPeriods.ValidationError(input.StartsAt, input.EndsAt,
                 input.Recurrence, input.RepeatUntil, input.WeekdaysMask);
             if (validation is not null) return Error(validation);
+            if (input.StartsAt.Date < DateTime.Today) return Error("Não é permitido solicitar datas passadas");
             if (input.RecurringEadWeekday is int ed && (ed < 0 || ed > 6 ||
                 input.Recurrence == BookingRecurrence.Nenhuma ||
                 (input.Recurrence == BookingRecurrence.Semanal &&
@@ -466,6 +468,7 @@ public static partial class ApiEndpoints
                 booking.CurricularUnitId, booking.CurricularCapabilityId, booking.TeacherId,
                 booking.TurnExceptionConfirmed), bookingShift);
             if (currentTurnError is not null) return currentTurnError;
+            string[]? technicalReasons = [];
             Dictionary<DateOnly, CalendarDateResult>? calendar = null;
             if (booking.CurricularCapabilityId is int capabilityId)
             {
@@ -477,22 +480,40 @@ public static partial class ApiEndpoints
                 var technical = EnvironmentCompatibility.Evaluate(requirement, room, booking.Students,
                     DateOnly.FromDateTime(BookingPeriods.Expand(booking).Max(p => p.Start)));
                 if (technical.Classification != "Compatible")
-                    return Results.Conflict(new { Error = "Compatibilidade técnica não comprovada",
-                        technical.Classification, technical.Findings });
+                {
+                    technicalReasons = BookingTechnicalException.Pedagogical(requirement, room, technical);
+                    if (technicalReasons is null)
+                        return Results.Conflict(new { Error = "Compatibilidade técnica não comprovada",
+                            technical.Classification, technical.Findings });
+                }
                 calendar = await CalendarForBooking(db, booking);
             }
             if (booking.CurricularCapabilityId is null)
             {
                 var mismatch = RoomCompatibility.Incompatibility(room, Need(booking),
                     DateOnly.FromDateTime(BookingPeriods.Expand(booking).Max(p => p.Start)));
-                if (mismatch is not null) return Error($"A sala não atende aos requisitos: {mismatch}");
+                if (mismatch is not null)
+                {
+                    technicalReasons = BookingTechnicalException.Common(room, Need(booking),
+                        DateOnly.FromDateTime(BookingPeriods.Expand(booking).Max(p => p.Start)));
+                    if (technicalReasons is null) return Error($"A sala não atende aos requisitos: {mismatch}");
+                }
             }
             else if (!room.Active) return Results.Conflict(new ApiError("Sala inativa"));
+            if (technicalReasons.Length > 0 && (input.AcceptedTechnicalReasons is null ||
+                !technicalReasons.SequenceEqual(input.AcceptedTechnicalReasons)))
+                return Results.Conflict(new { Error = "Este ambiente não atende a todos os requisitos",
+                    TechnicalReasons = technicalReasons });
             var free = new List<(DateTime Start, DateTime End)>();
             var unavailable = new List<object>();
             var replaced = new List<int>();
             foreach (var period in BookingPeriods.Expand(booking))
             {
+                if (period.Start.Date < DateTime.Today)
+                {
+                    unavailable.Add(new { period.Start, period.End, Reason = "Data passada" });
+                    continue;
+                }
                 if (calendar is not null &&
                     !calendar[DateOnly.FromDateTime(period.Start)].CountsAsPresential)
                 {
@@ -569,7 +590,7 @@ public static partial class ApiEndpoints
             AuditTrail.Add(db, "Booking", booking.Id.ToString(), "Confirmada", UserId(current),
                 new { Status = BookingStatus.Pendente, ApprovedRoomId = (int?)null },
                 new { booking.Status, booking.ApprovedRoomId, ReservedCount = free.Count,
-                    ReplacedOccupationIds = replaced.ToArray() });
+                    ReplacedOccupationIds = replaced.ToArray(), AcceptedTechnicalReasons = technicalReasons });
             AuditTrail.Notify(db, booking.TeacherId, UserId(current), "Reserva confirmada",
                 $"Sua reserva foi confirmada em {room.Name} para {free.Count} data(s).",
                 "Booking", booking.Id);
@@ -620,7 +641,7 @@ public static partial class ApiEndpoints
         if (official == shiftId)
             return input.TurnExceptionConfirmed ? Error("A reserva já usa o turno oficial da turma") : null;
         if (!input.TurnExceptionConfirmed) return Error("Confirme explicitamente a exceção ao turno oficial da turma");
-        if (input.Recurrence != BookingRecurrence.Nenhuma)
+        if (input.Recurrence != BookingRecurrence.Nenhuma || input.RepeatUntil is not null || input.WeekdaysMask != 0)
             return Error("Exceção de turno permitida apenas para uma data, sem recorrência");
         return null;
     }

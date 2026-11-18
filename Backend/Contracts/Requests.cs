@@ -34,7 +34,7 @@ public record BookingCreate(int? ClassGroupId, DateTime StartsAt, DateTime EndsA
     bool TurnExceptionConfirmed = false);
 public record BookingUpdate(BookingCreate Booking, string Version);
 public record ConfirmBooking(int RoomId, bool ConfirmPartial = false, bool ReplaceOwnClassBooking = false,
-    List<DateOnly>? ExpectedAvailableDates = null);
+    List<DateOnly>? ExpectedAvailableDates = null, List<string>? AcceptedTechnicalReasons = null);
 public record DayStatusChange(ClassDayStatus Status);
 public record MoveOccupation(int RoomId, bool NotifyTeachers = true);
 public record LoanOffer(List<int> RoomOccupationIds, string BorrowerId, string Reason);

@@ -11,6 +11,16 @@ test("recorrência começa na data escolhida e propõe apenas os dias selecionad
     assert.equal(firstSelected("2026-11-04", [1, 3]), "2026-11-04");
     assert.deepEqual(actualDates("2026-11-04", "2026-11-11", [1, 3]), ["2026-11-04", "2026-11-09", "2026-11-11"]);
     assert.deepEqual(actualDates("2026-11-04", "2026-11-03", [3]), []);
+    const { toggleSpecificDate } = await server.ssrLoadModule("/src/components/BookingForm.tsx");
+    assert.deepEqual(toggleSpecificDate([], "2026-11-11"), ["2026-11-11"]);
+    assert.deepEqual(toggleSpecificDate(["2026-11-11"], "2026-11-12"), ["2026-11-11", "2026-11-12"]);
+    assert.deepEqual(toggleSpecificDate(["2026-11-11", "2026-11-12"], "2026-11-11"), ["2026-11-12"]);
+    assert.deepEqual(toggleSpecificDate(["2026-11-11"], "2026-11-11"), []);
+    assert.deepEqual(toggleSpecificDate(["2026-11-11"], "2026-11-18"), ["2026-11-18"]);
+    const multi = renderToStaticMarkup(createElement((await server.ssrLoadModule("/src/components/BookingCalendars.tsx")).WeeklyCalendar,
+      { date: "2026-11-11", today: "2026-11-11", weekdays: [3, 4], recurring: false, selectedDates: ["2026-11-11", "2026-11-12"], onSelect: () => {} }));
+    assert.equal((multi.match(/aria-pressed="true"/g) ?? []).length, 2);
+    assert.ok(multi.includes('disabled=""'));
     const { uniqueShift } = await server.ssrLoadModule("/src/components/BookingForm.tsx");
     assert.equal(uniqueShift([1, 1]), 1);
     assert.equal(uniqueShift([1, 2]), null);

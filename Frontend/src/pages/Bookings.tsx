@@ -9,7 +9,7 @@ import {
   AlertTriangle,
 } from "lucide-react";
 import { useData } from "../lib/data";
-import { post, read } from "../lib/api";
+import { ApiError, post, read } from "../lib/api";
 import { dateTimeBR, dateBR, resultMessage, roomKind } from "../lib/utils";
 import {
   Badge,
@@ -136,12 +136,7 @@ export function Bookings({
   async function confirm() {
     if (!booking || !selectedRoom || !availability) return;
     const chosen = suggestions.find((s) => s.id === Number(selectedRoom));
-    if (!chosen?.compatible) {
-      setError(
-        "A sala não atende aos requisitos. Escolha uma sala compatível ou negocie um empréstimo.",
-      );
-      return;
-    }
+    if (!chosen) return;
     const missing = availability.total - acceptedDates.length;
     const explanation = missing
       ? `${missing} de ${availability.total} datas estão indisponíveis. Confirmar somente as ${acceptedDates.length} datas válidas?`
@@ -150,11 +145,12 @@ export function Bookings({
     setBusy(true);
     setError("");
     try {
-      const result = await post<{
+      const send = (acceptedTechnicalReasons?: string[]) => post<{
         reservedCount: number;
         unavailableDates: unknown[];
         replacedOccupationIds: number[];
       }>(`/bookings/${booking.id}/confirm`, {
+        acceptedTechnicalReasons,
         roomId: Number(selectedRoom),
         confirmPartial: missing > 0,
         replaceOwnClassBooking: replace,
@@ -162,6 +158,16 @@ export function Bookings({
           ? acceptedDates
           : undefined,
       });
+      let result;
+      try { result = await send(); }
+      catch (error) {
+        const reasons = error instanceof ApiError ? (error.details as { technicalReasons?: string[] })?.technicalReasons : undefined;
+        if (!reasons?.length) throw error;
+        const accepted = await ask({ title: "Este ambiente não atende a todos os requisitos",
+          message: `A sala selecionada apresenta as seguintes incompatibilidades:\n${reasons.map(r => `\u2022 ${r}`).join("\n")}\nVocê deseja confirmar a reserva mesmo assim?`, confirmLabel: "Confirmar mesmo assim" });
+        if (!accepted) return;
+        result = await send(reasons);
+      }
       await reload();
       await reloadAgenda();
       setBooking(null);
@@ -275,7 +281,7 @@ export function Bookings({
                     <div className="flex gap-2 flex-wrap mt-2">
                       <span className="pill bg-slate-100">
                         {b.recurrence === "Nenhuma"
-                          ? "Data única"
+                          ? b.repeatUntil ? `Datas específicas até ${dateBR(b.repeatUntil)}` : "Data única"
                           : `Semanal até ${dateBR(b.repeatUntil)}`}
                       </span>
                       {b.classGroupId && (
@@ -475,7 +481,6 @@ export function Bookings({
                   <button
                     disabled={
                       busy ||
-                      !selected.compatible ||
                       !availability ||
                       possiblyAvailable === 0
                     }

@@ -9,13 +9,13 @@ const occupation = (id: number, changes: Partial<AgendaOccupation> = {}) => ({
   ...changes,
 }) as AgendaOccupation;
 
-test("semana começa na segunda, inclusive quando a âncora é domingo", () => {
-  assert.equal(weekStart("2027-03-07"), "2027-03-01");
-  assert.equal(weekStart("2027-03-01"), "2027-03-01");
+test("semana comeca no domingo", () => {
+  assert.equal(weekStart("2027-03-07"), "2027-03-07");
+  assert.equal(weekStart("2027-03-01"), "2027-02-28");
 });
 
 test("períodos usam limite exclusivo e respeitam as datas cadastradas do semestre", () => {
-  assert.deepEqual(period("week", "2027-02-04", semester), { from: "2027-02-03", to: "2027-02-08" });
+  assert.deepEqual(period("week", "2027-02-04", semester), { from: "2027-02-03", to: "2027-02-07" });
   assert.deepEqual(period("month", "2027-07-10", semester), { from: "2027-07-01", to: "2027-07-18" });
   assert.deepEqual(period("semester", "2027-01-01", semester), { from: "2027-02-03", to: "2027-07-18" });
   assert.equal(period("month", "2027-08-01", semester), null);

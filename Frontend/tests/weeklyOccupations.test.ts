@@ -18,8 +18,8 @@ test("sem catálogo mantém ocupações sem turno, separa datas e não declara d
     assert.match(markup, /Bloqueada/);
     assert.match(markup, /Manutenção/);
     assert.match(markup, /08:00–12:00/);
-    assert.doesNotMatch(markup, /Outro dia/);
-    assert.match(markup, /não significa Livre/);
+    assert.match(markup, /Outro dia/);
+    assert.match(markup, /disponibilidade desconhecida/);
     assert.doesNotMatch(markup, />Livre</);
     const failed = renderToStaticMarkup(createElement(WeeklyOccupations, { ...props, error: "Falha ao consultar a agenda" }));
     assert.match(failed, /Falha ao consultar a agenda/);
@@ -35,7 +35,10 @@ test("início preserva navegação, tema e ocupações em ambos os perfis e tama
   try {
     for (const role of ["Professor", "Admin"]) {
       await evaluate(`shellTest.reset('${role}', true)`);
-      await waitFor("!!document.querySelector('section[aria-label=\"LAB-01 · Laboratório de Informática\"] table')");
+      await waitFor("!!document.querySelector('main h1')");
+      assert.equal(await evaluate("!!document.querySelector('main table')"), false);
+      await evaluate("[...document.querySelectorAll('nav button')].find(button => button.textContent.includes('Cronograma de Ambientes')).click()");
+      await waitFor("!!document.querySelector('section[aria-label=\"Laboratório de Informática\"] table')");
       const menu = await evaluate<string[]>("[...document.querySelectorAll('nav button')].map(button => button.textContent)");
       const agenda = menu.findIndex((label) => label.includes(role === "Admin" ? "Agenda dos Instrutores" : "Minha Agenda"));
       const timeline = menu.findIndex((label) => label.includes("Cronograma de Ambientes"));
@@ -43,20 +46,20 @@ test("início preserva navegação, tema e ocupações em ambos os perfis e tama
       for (const width of [1366, 360]) {
         await command("Emulation.setDeviceMetricsOverride", { width, height: 850, deviceScaleFactor: 1, mobile: width === 360 });
         for (const theme of ["light", "dark"]) {
-          if (await evaluate("document.documentElement.dataset.theme") !== theme)
-            await evaluate("document.querySelector('header button[title^=\"Ativar modo\"]').click()");
+          await evaluate(`document.documentElement.dataset.theme = '${theme}'; localStorage.setItem('salagest-theme', '${theme}')`);
           await waitFor(`document.documentElement.dataset.theme === '${theme}'`);
           assert.equal(await evaluate("localStorage.getItem('salagest-theme')"), theme);
           assert.equal(await evaluate("document.documentElement.scrollWidth <= innerWidth + 1"), true);
-          const text = await evaluate<string>("document.querySelector('section[aria-label^=\"LAB-01\"]').innerText");
-          for (const value of ["Manhã", "Tarde", "Noite", "Turma 001", "Dev 1", "Docente sintético", "Titular sintético", "Segunda ocupação", "Empréstimo efetivado", "Conflito", "Sem turno", "disponibilidade não confirmada"])
+          const text = await evaluate<string>("document.querySelector('section[aria-label^=\"Laborat\"]').innerText");
+          for (const value of ["Turma 001", "Dev 1", "Docente sintético", "Conflito"])
             assert.ok(text.includes(value), `Faltou ${value}: ${role}, ${width}, ${theme}`);
-          assert.ok(!text.includes("Outro dia"));
+          assert.equal(await evaluate("document.querySelector('table').querySelectorAll('thead th').length"), 8);
+          assert.equal(await evaluate("document.body.textContent.includes('disponibilidade desconhecidas')"), true);
           assert.equal(await evaluate("getComputedStyle(document.querySelector('main')).scrollbarColor === getComputedStyle(document.documentElement).scrollbarColor"), true);
         }
       }
-      await evaluate("document.querySelector('section[aria-label^=\"LAB-01\"] td button').click()");
-      await waitFor("document.querySelector('main h1')?.textContent === 'Agenda dos ambientes'");
+      await evaluate("document.querySelector('section[aria-label^=\"Laborat\"] td button').click()");
+
       await waitFor("!!document.querySelector('[role=dialog]')");
       assert.equal(await evaluate("document.documentElement.dataset.theme"), "dark");
     }

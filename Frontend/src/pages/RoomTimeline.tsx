@@ -1,3 +1,4 @@
+import { WeeklyOccupations } from "../components/WeeklyOccupations";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { ApiError, downloadFile, post, read } from "../lib/api";
 import { useData } from "../lib/data";
@@ -26,10 +27,10 @@ function occupationLabel(item: AgendaOccupation) {
     [item.actualTeacherName, item.actualClassGroupName].filter(Boolean).join(" · ") || "Ocupação registrada";
 }
 
-function OccupationButton({ item, onSelect, onDragStart, onDragEnd, dragging }: {
+function OccupationButton({ item, onSelect, onDragStart, onDragEnd, dragging, compact = false }: {
   item: AgendaOccupation; onSelect: (item: AgendaOccupation) => void;
   onDragStart?: (item: AgendaOccupation, event: React.DragEvent<HTMLButtonElement>) => void;
-  onDragEnd?: () => void; dragging?: boolean;
+  onDragEnd?: () => void; dragging?: boolean; compact?: boolean;
 }) {
   return <button type="button" onClick={() => onSelect(item)} draggable={Boolean(onDragStart)}
     onDragStart={(event) => onDragStart?.(item, event)} onDragEnd={onDragEnd}
@@ -38,7 +39,7 @@ function OccupationButton({ item, onSelect, onDragStart, onDragEnd, dragging }: 
     {dragging && <span className="block font-semibold mb-1">Movendo esta ocupação</span>}
     <span className="font-semibold">{item.conflicts.length ? "Conflito · " : item.kind === "Bloqueio" ? "Bloqueio · " : "Ocupado · "}{occupationLabel(item)}</span>
     {(item.courseName || item.curricularUnitName) && <span className="block mt-1">{[item.courseName, item.curricularUnitName].filter(Boolean).join(" · ")}</span>}
-    <span className="block opacity-80">{item.roomName} · {item.shiftName ?? `${item.startsAt.slice(11, 16)}–${item.endsAt.slice(11, 16)}`}</span>
+    {!compact && <span className="block opacity-80">{item.roomName} · {item.shiftName ?? `${item.startsAt.slice(11, 16)}–${item.endsAt.slice(11, 16)}`}</span>}
     {item.calendarKind && item.calendarKind !== "Presential" && <span className="block mt-1 text-amber-800">Dia especial · {calendarLabels[item.calendarKind] ?? "Calendário"}</span>}
     {item.dayStatus && item.dayStatus !== "Letivo" && <span className="block mt-1 text-amber-800">{dayLabels[item.dayStatus] ?? "Situação especial"}</span>}
   </button>;
@@ -403,39 +404,13 @@ export function RoomTimeline({ user, openBookings, initialFilter }: { user: User
     {loading && <Busy />}
     {!loading && !error && items && loadedQuery === queryKey && !catalogError && <>
       {visibleItems.length === 0 && <div className="mb-4"><Notice type="info" message="Nenhuma ocupação registrada no período e filtros selecionados. Isso não confirma disponibilidade para novas reservas." /></div>}
-      {view === "week" && <Card className="mb-5 overflow-hidden"><div className="p-4 sm:p-5 border-b border-line"><SectionHeading title="Ocupações da semana" subtitle="Selecione uma ocupação para ver detalhes. Admin pode arrastar uma ocorrência na grade ou usar o botão de movimentação." /></div>
-        <div className="data-table-wrap">
-        <table className="hidden lg:table w-full min-w-[930px] text-sm border-collapse">
-          <thead><tr><th className="sticky left-0 z-10 bg-surface p-3 text-left border-b border-r border-line min-w-44">Ambiente / turno</th>
-            {visibleDates.map((date) => <th key={date} className="p-3 border-b border-slate-200 text-left min-w-36">{new Date(`${date}T12:00:00`).toLocaleDateString("pt-BR", { weekday: "short", day: "2-digit", month: "2-digit" })}</th>)}</tr></thead>
-          <tbody>{rooms.flatMap((room) => shifts.map((shift) => <tr key={`${room.id}-${shift.id}`}>
-            <th scope="row" className="sticky left-0 bg-surface p-3 border-b border-r border-line text-left align-top font-semibold">{room.code && <span className="block text-xs uppercase tracking-wide text-muted-ink">{room.code}</span>}{room.name}<span className="block text-xs font-normal text-muted-ink">{shift.name}</span></th>
-            {visibleDates.map((date) => {
-              const rows = bySlot.get(`${room.id}|${date}|${shift.id}`) ?? [];
-              const slotKey = `${room.id}|${date}|${shift.id}`;
-              return <td key={date} onDragOver={(event) => { if (admin && draggingId !== null && range && date >= range.from && date < range.to) { event.preventDefault(); setDragTarget(slotKey); } }}
-                onDragLeave={() => { if (dragTarget === slotKey) setDragTarget(""); }}
-                onDrop={(event) => { if (admin && range && date >= range.from && date < range.to) dropOn(room.id, date, shift.id, event); }}
-                className={`border-b border-line p-2 align-top ${dragTarget === slotKey ? "bg-sky-100 ring-2 ring-inset ring-sky-500" : ""}`}>
-                {range && date >= range.from && date < range.to ? rows.length ? <div className="space-y-1">{rows.length > 1 && <p className="text-xs font-bold text-rose-700">{rows.length} ocupações simultâneas</p>}{rows.map((item) => <OccupationButton key={item.id} item={item} onSelect={setSelected} onDragStart={admin && item.kind !== "Bloqueio" ? startDrag : undefined} onDragEnd={() => { setDraggingId(null); setDragTarget(""); }} dragging={draggingId === item.id} />)}</div> :
-                  <span className="text-xs text-slate-500">Sem registro · aplicabilidade do turno desconhecida</span> : <span className="text-xs text-slate-500">Fora do semestre</span>}
-              </td>;
-            })}</tr>))}</tbody>
-        </table></div>
-        <div className="lg:hidden divide-y divide-line">{visibleDates.map((date) => <section key={date} className="p-4 space-y-3">
-          <h2 className="font-semibold">{new Date(`${date}T12:00:00`).toLocaleDateString("pt-BR", { weekday: "long", day: "2-digit", month: "2-digit" })}</h2>
-          {range && date >= range.from && date < range.to ? <>
-            {(byDay.get(date) ?? []).length ? (byDay.get(date) ?? []).map((item) => <OccupationButton key={item.id} item={item} onSelect={setSelected} />)
-              : <p className="text-xs text-muted-ink">Sem registro para os ambientes e turnos filtrados · disponibilidade desconhecida</p>}
-          </> : <p className="muted">Fora do semestre</p>}
-        </section>)}</div>
-        {!rooms.length || !shifts.length ? <p className="p-4 text-sm text-slate-600">Cadastre ambientes e turnos para visualizar a grade.</p> : null}
-      </Card>}
-      {view === "week" && visibleItems.some((item) => item.shiftId === null || !rooms.some((room) => room.id === item.roomId) || !shifts.some((shift) => shift.id === item.shiftId)) && <Card className="p-4 mb-5 space-y-2"><h2 className="font-semibold">Ocupações fora da grade visível</h2>
-        {visibleItems.filter((item) => item.shiftId === null || !rooms.some((room) => room.id === item.roomId) || !shifts.some((shift) => shift.id === item.shiftId)).map((item) => <div key={item.id}><span className="text-xs text-slate-500">{dateBR(item.date)} · {item.roomName || "Ambiente não identificado"} · {item.startsAt.slice(11, 16)}–{item.endsAt.slice(11, 16)}</span><OccupationButton item={item} onSelect={setSelected} /></div>)}
+      {view === "week" && <WeeklyOccupations occupations={visibleItems} dates={visibleDates} rooms={rooms} shifts={shifts} range={range} onOpen={setSelected} onDropSlot={admin ? (roomId, date, shiftId, event) => dropOn(roomId, date, shiftId, event) : undefined}
+        renderActivity={item => <><p className="text-xs font-semibold text-ink">{data.classes.find(group => group.id === item.actualClassGroupId)?.code}{item.isBorrowed ? " - Empréstimo efetivado" : ""}</p><OccupationButton compact item={item} onSelect={setSelected} onDragStart={admin && item.kind !== "Bloqueio" ? startDrag : undefined} onDragEnd={() => { setDraggingId(null); setDragTarget(""); }} dragging={draggingId === item.id} /></>} />}
+      {view === "week" && visibleItems.some((item) => !rooms.some((room) => room.id === item.roomId)) && <Card className="p-4 mb-5 space-y-2"><h2 className="font-semibold">Ocupações fora da grade visível</h2>
+        {visibleItems.filter((item) => !rooms.some((room) => room.id === item.roomId)).map((item) => <div key={item.id}><span className="text-xs text-slate-500">{dateBR(item.date)} · {item.roomName || "Ambiente não identificado"} · {item.startsAt.slice(11, 16)}–{item.endsAt.slice(11, 16)}</span><OccupationButton item={item} onSelect={setSelected} /></div>)}
       </Card>}
       {view === "month" && <Card className="p-3 mb-5"><div className="grid grid-cols-7 text-xs sm:text-sm">
-        {["Seg", "Ter", "Qua", "Qui", "Sex", "Sáb", "Dom"].map((label) => <div key={label} className="p-2 font-semibold text-slate-600">{label}</div>)}
+        {["Dom", "Seg", "Ter", "Qua", "Qui", "Sex", "Sáb"].map((label) => <div key={label} className="p-2 font-semibold text-slate-600">{label}</div>)}
         {monthDates.map((date) => {
           const summary = daySummary(date);
           const inside = range && date >= range.from && date < range.to;

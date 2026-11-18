@@ -3,7 +3,7 @@ import { post, put, read } from "../lib/api";
 import { localDate, nextDate, resultMessage, dateBR } from "../lib/utils";
 import { useData } from "../lib/data";
 import { NeedFields, defaultNeed } from "./NeedFields";
-import { WeeklyCalendar, RepeatUntilCalendar, recurrenceLimit } from "./BookingCalendars";
+import { WeeklyCalendar, RepeatUntilCalendar, recurrenceLimit, weekStart } from "./BookingCalendars";
 import { Checkbox, Field, Notice, SearchableSelect, SubmitButton, useConfirmation } from "./UI";
 import type { Booking, Need, Shift, User } from "../types";
 
@@ -16,6 +16,10 @@ type PedagogicalOption = {
 
 const names = ["Dom", "Seg", "Ter", "Qua", "Qui", "Sex", "Sáb"];
 const asDay = (d: string) => new Date(`${d}T12:00:00`).getDay();
+export function toggleSpecificDate(dates: string[], selected: string) {
+  const sameWeek = dates.filter(d => weekStart(d) === weekStart(selected));
+  return sameWeek.includes(selected) ? sameWeek.filter(d => d !== selected) : [...sameWeek, selected].sort();
+}
 export function uniqueShift(ids: (number | null | undefined)[]) {
   const found = [...new Set(ids.filter((id): id is number => id != null))];
   return found.length === 1 ? found[0] : null;
@@ -40,6 +44,9 @@ export function BookingForm({ onCreated, onSaved, editing, user }: { onCreated: 
   const [teacherId, setTeacherId] = useState(editing?.teacherId ?? "");
   const today = localDate(new Date());
   const [date, setDate] = useState(editing?.startsAt.slice(0, 10) ?? today);
+  const [selectedDates, setSelectedDates] = useState<string[]>(editing && editing.recurrence === "Nenhuma" && editing.repeatUntil
+    ? actualDates(editing.startsAt.slice(0, 10), editing.repeatUntil, [0,1,2,3,4,5,6].filter(d => (editing.weekdaysMask & (1 << d)) !== 0))
+    : [editing?.startsAt.slice(0, 10) ?? today]);
   const [shiftId, setShiftId] = useState("");
   const [reason, setReason] = useState(editing?.reason ?? "");
   const [students, setStudents] = useState(editing?.students ?? 25);
@@ -81,7 +88,7 @@ export function BookingForm({ onCreated, onSaved, editing, user }: { onCreated: 
   async function chooseShift(next: string) {
     if (next === String(shift?.id)) return;
     if (officialShift != null && next !== String(officialShift)) {
-      if (recurring) { setError("Exceção de turno só é permitida para uma data. Desative a recorrência."); return; }
+      if (recurring || selectedDates.length !== 1) { setError("Exceção de turno só é permitida para uma data. Desative a recorrência."); return; }
       const group = data.classes.find((item) => item.id === Number(classGroupId));
       const oldName = data.shifts.find((item) => item.id === officialShift)?.name?.toLowerCase() ?? "identificado";
       const newName = data.shifts.find((item) => String(item.id) === next)?.name?.toLowerCase() ?? "selecionado";
@@ -107,10 +114,10 @@ export function BookingForm({ onCreated, onSaved, editing, user }: { onCreated: 
   const unitAssignments = classOptions.filter((x) => String(x.curricularUnitId) === unitId);
   const selectedUnitDay = uniqueShift(unitAssignments.map((x) => x.weekday));
   const start =
-    recurring && weekdays.length ? firstSelected(date, weekdays) : date;
+    recurring && weekdays.length ? firstSelected(date, weekdays) : selectedDates[0] ?? date;
   const dates = useMemo(
-    () => (recurring ? actualDates(start, repeatUntil, weekdays) : [date]),
-    [recurring, start, repeatUntil, weekdays, date],
+    () => (recurring ? actualDates(start, repeatUntil, weekdays) : selectedDates),
+    [recurring, start, repeatUntil, weekdays, selectedDates],
   );
   const shift: Shift | undefined =
     data.shifts.find((s) => String(s.id) === shiftId);
@@ -123,6 +130,7 @@ export function BookingForm({ onCreated, onSaved, editing, user }: { onCreated: 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
     setError("");
+    if (!dates.length || dates.some(d => d < today)) { setError("Selecione datas válidas a partir de hoje."); return; }
     if (!shift) {
       setError("Cadastre ao menos um turno para criar reservas.");
       return;
@@ -136,7 +144,7 @@ export function BookingForm({ onCreated, onSaved, editing, user }: { onCreated: 
       setError("Selecione turma, UC e capacidade para a reserva pedagógica.");
       return;
     }
-    if (officialShift != null && shift.id !== officialShift && (!exceptionConfirmed || recurring)) {
+    if (officialShift != null && shift.id !== officialShift && (!exceptionConfirmed || recurring || dates.length !== 1)) {
       setError("Confirme a exceção de turno para uma única data."); return;
     }
     setBusy(true);
@@ -152,8 +160,8 @@ export function BookingForm({ onCreated, onSaved, editing, user }: { onCreated: 
         recurrence: recurring ? "Semanal" : "Nenhuma",
         weekdaysMask: recurring
           ? weekdays.reduce((n, d) => n | (1 << d), 0)
-          : 0,
-        repeatUntil: recurring ? repeatUntil : null,
+          : selectedDates.length > 1 ? selectedDates.reduce((n, d) => n | (1 << asDay(d)), 0) : 0,
+        repeatUntil: recurring ? repeatUntil : selectedDates.length > 1 ? selectedDates[selectedDates.length - 1] : null,
         recurringEadWeekday: recurring && eadDay !== "" ? Number(eadDay) : null,
         studentsPerComputer: perComputer,
         reason,
@@ -223,7 +231,7 @@ export function BookingForm({ onCreated, onSaved, editing, user }: { onCreated: 
             if (officialShift == null && assignedShift != null && (!shiftId || shiftId === String(identifiedShift))) setShiftId(String(assignedShift));
             if (assignedDay != null) {
               const assignedDate = firstSelected(date, [assignedDay]);
-              setDate(assignedDate);
+              setDate(assignedDate); setSelectedDates([assignedDate]);
               setWeekdays([assignedDay]);
               if (repeatUntil < assignedDate) setRepeatUntil(assignedDate);
             }
@@ -269,7 +277,7 @@ export function BookingForm({ onCreated, onSaved, editing, user }: { onCreated: 
           </select>
         </Field>
         {classGroupId && <p className="text-xs text-muted-ink sm:col-span-2">{officialShift == null ? "Turno oficial não cadastrado para esta turma. Solicite regularização à administração." : `Turno oficial da turma: ${data.shifts.find((item) => item.id === officialShift)?.name ?? "não identificado"}.`}{exceptionConfirmed ? " Exceção confirmada somente para esta data." : ""}</p>}
-        <WeeklyCalendar date={date} weekdays={weekdays} recurring={recurring} today={today} onSelect={(selected) => {
+        <WeeklyCalendar selectedDates={selectedDates} date={date} weekdays={weekdays} recurring={recurring} today={today} onSelect={(selected) => {
           if (recurring) {
             const selectedDay = asDay(selected);
             const next = weekdays.includes(selectedDay) ? weekdays.filter((item) => item !== selectedDay) : [...weekdays, selectedDay];
@@ -277,15 +285,21 @@ export function BookingForm({ onCreated, onSaved, editing, user }: { onCreated: 
             if (!next.includes(asDay(date)) && next.length) setDate(firstSelected(date, next));
             if (selected < date && next.includes(selectedDay)) setDate(selected);
             if (eadDay === String(selectedDay) && !next.includes(selectedDay)) setEadDay("");
-          } else { setDate(selected); setWeekdays([asDay(selected)]); }
+          } else {
+            const next = toggleSpecificDate(selectedDates, selected);
+            if (exceptionConfirmed && next.length > 1) { setError("Exceção de turno permite somente uma data."); return; }
+            setSelectedDates(next); setDate(next[0] ?? selected);
+            setWeekdays(next.map(asDay));
+          }
           if (repeatUntil < selected) setRepeatUntil(selected);
           if (repeatUntil > recurrenceLimit(selected)) setRepeatUntil(recurrenceLimit(selected));
         }} />
       </div>
+      {!recurring && <p className="text-sm text-muted-ink" role="status">Datas selecionadas: {selectedDates.length ? selectedDates.map(dateBR).join(", ") : "Nenhuma"}. Ao selecionar uma data em outra semana, a seleção anterior é substituída.</p>}
       <Checkbox
         label="Repetir em outras semanas"
         checked={recurring}
-        onChange={(value) => { if (value && exceptionConfirmed) { setError("Exceção de turno não pode ser recorrente. Volte ao turno oficial para repetir."); return; } setRecurring(value); }}
+        onChange={(value) => { if (value && exceptionConfirmed) { setError("Exceção de turno não pode ser recorrente. Volte ao turno oficial para repetir."); return; } if (!value) setSelectedDates([date]); setRecurring(value); }}
       />
       {recurring && (
         <div className="bg-slate-50 rounded-xl border border-slate-200 p-4 space-y-3">

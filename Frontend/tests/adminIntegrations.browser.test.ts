@@ -193,13 +193,13 @@ test("integrações administrativas usam contratos existentes e preservam estado
       await reset("timeline"); await waitFor("document.body.innerText.includes('Filtros do cronograma')");
       await evaluate("adminTest.click('Semana')");
       await waitFor("document.querySelector('button[aria-pressed=true]')?.textContent.trim() === 'Semana'");
-      await waitFor("document.querySelector('[class~=\"lg:hidden\"]')?.innerText.includes('Turma sintética')");
+      await waitFor("document.querySelector('table')?.innerText.includes('Turma sintética')");
       await capture("cronograma-mobile");
       await evaluate("window.scrollTo(0, document.body.scrollHeight)");
       await capture("cronograma-mobile-grade");
       await evaluate("window.scrollTo(0, 0)");
       assert.equal(await evaluate("document.documentElement.scrollWidth <= window.innerWidth + 1"), true);
-      const mobileOccupations = "[...document.querySelectorAll('[class~=\"lg:hidden\"] button')].filter(b => b.textContent.includes('Turma sintética'))";
+      const mobileOccupations = "[...document.querySelectorAll('table button')].filter(b => b.textContent.includes('Turma sintética'))";
       assert.equal(await evaluate(`${mobileOccupations}.length`), 1);
       await evaluate(`${mobileOccupations}[0].click()`);
       await waitFor("document.querySelector('[role=dialog]')?.innerText.includes('Detalhes da ocupação')");
@@ -209,7 +209,7 @@ test("integrações administrativas usam contratos existentes e preservam estado
       await command("Emulation.setDeviceMetricsOverride", { width: 1440, height: 900, deviceScaleFactor: 1, mobile: false });
       await reset("timeline");
       await evaluate("adminTest.click('Semana')");
-      await waitFor("document.body.innerText.includes('Ocupações da semana')");
+      await waitFor("document.body.innerText.includes('Ocupações da Semana')");
       await waitFor("!!document.querySelector('table button[aria-label^=\"Detalhes:\"]')");
       await capture("cronograma-desktop-semana");
       await evaluate("window.scrollTo(0, document.body.scrollHeight)");
@@ -232,7 +232,7 @@ test("integrações administrativas usam contratos existentes e preservam estado
       assert.equal(await evaluate("document.documentElement.scrollWidth <= window.innerWidth + 1"), true);
       await command("Emulation.setDeviceMetricsOverride", { width: 1440, height: 900, deviceScaleFactor: 1, mobile: false });
       await evaluate("adminTest.click('Semana')");
-      await waitFor("document.body.innerText.includes('Ocupações da semana')");
+      await waitFor("document.body.innerText.includes('Ocupações da Semana')");
       await evaluate("document.querySelector('table button[aria-label^=\"Detalhes:\"]').click()");
       await waitFor("document.querySelector('[role=dialog]')?.innerText.includes('Mover ocupação')");
       await evaluate("adminTest.click('Mover ocupação')");
@@ -253,7 +253,7 @@ test("integrações administrativas usam contratos existentes e preservam estado
       await waitFor("document.body.innerText.includes('Ocupação remanejada')");
       await reset("timeline", "Professor");
       await evaluate("adminTest.click('Semana')");
-      await waitFor("document.body.innerText.includes('Ocupações da semana')");
+      await waitFor("document.body.innerText.includes('Ocupações da Semana')");
       await evaluate("document.querySelector('table button[aria-label^=\"Detalhes:\"]').click()");
       await waitFor("document.querySelector('[role=dialog]')?.innerText.includes('Detalhes da ocupação')");
       assert.equal(await evaluate("document.querySelector('[role=dialog]')?.innerText.includes('Mover ocupação')"), false);

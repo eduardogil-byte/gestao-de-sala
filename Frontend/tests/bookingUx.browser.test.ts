@@ -2,6 +2,29 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { chromePath, openAdminFixture } from "./helpers/browser.ts";
 
+test("datas específicas podem ser marcadas, desmarcadas e enviadas sem recorrência", { skip: !chromePath }, async () => {
+  const { evaluate, waitFor, close } = await openAdminFixture("bookingUx");
+  try {
+    await waitFor("document.querySelector('select')?.options.length > 1");
+    await evaluate("adminTest.select('Turma (opcional)', '20')");
+    await evaluate("document.querySelector('button[aria-label=\"Próxima semana\"]').click()");
+    await evaluate("document.querySelector('[aria-label=\"Calendário semanal\"] button[aria-pressed]').click()");
+    const freeDay = "document.querySelector('[aria-label=\"Calendário semanal\"] button[aria-pressed=false]:not([disabled])')";
+    await evaluate(`${freeDay}.click()`);
+    assert.equal(await evaluate("document.querySelectorAll('[aria-label=\"Calendário semanal\"] [aria-pressed=true]').length"), 2);
+    await evaluate("document.querySelectorAll('[aria-label=\"Calendário semanal\"] [aria-pressed=true]')[1].click()");
+    assert.equal(await evaluate("document.querySelectorAll('[aria-label=\"Calendário semanal\"] [aria-pressed=true]').length"), 1);
+    await evaluate(`${freeDay}.click()`);
+    await evaluate("const input = document.querySelector('input[maxlength=\"250\"]'); Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(input, 'Prática com datas específicas'); input.dispatchEvent(new Event('input', { bubbles: true }))");
+    await evaluate("document.querySelector('form').requestSubmit()");
+    await waitFor("adminTest.requests.length === 1");
+    const payload = await evaluate<{ recurrence: string; repeatUntil: string; weekdaysMask: number; startsAt: string }>("adminTest.requests[0]");
+    assert.equal(payload.recurrence, "Nenhuma");
+    assert.equal(payload.weekdaysMask.toString(2).replaceAll("0", "").length, 2);
+    assert.ok(payload.repeatUntil >= payload.startsAt.slice(0, 10));
+  } finally { await close(); }
+});
+
 test("reserva: turno, calendários, recursos e modal móvel", { skip: !chromePath }, async () => {
   const browser = await openAdminFixture("bookingUx");
   const { evaluate, waitFor, command } = browser;

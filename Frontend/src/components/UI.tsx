@@ -341,7 +341,7 @@ export function ConfirmationProvider({ children }: { children: ReactNode }) {
 export function ConfirmationDialog({ options, onAnswer }: { options: ConfirmationOptions; onAnswer: (confirmed: boolean) => void }) {
   const descriptionId = useId();
   return <Modal title={options.title} onClose={() => onAnswer(false)} width="max-w-md" descriptionId={descriptionId}>
-    <p id={descriptionId} className="text-sm leading-relaxed text-muted-ink">{options.message}</p>
+    <p id={descriptionId} className="whitespace-pre-line text-sm leading-relaxed text-muted-ink">{options.message}</p>
     <div className="mt-6 flex flex-wrap justify-end gap-2">
       <button type="button" className="btn-secondary" onClick={() => onAnswer(false)}>Cancelar</button>
       <button type="button" className={options.danger ? "btn-danger" : "btn-primary"} onClick={() => onAnswer(true)}>{options.confirmLabel}</button>

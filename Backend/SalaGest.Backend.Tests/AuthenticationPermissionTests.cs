@@ -78,7 +78,8 @@ public sealed class AuthenticationPermissionTests
         }
         var booking = new
         {
-            startsAt = "2026-11-04T08:00:00", endsAt = "2026-11-04T12:00:00",
+            startsAt = DateTime.Today.AddDays(7).AddHours(8).ToString("s"),
+            endsAt = DateTime.Today.AddDays(7).AddHours(12).ToString("s"),
             students = 20, studentsPerComputer = 1, minTier = 1, softwareIds = Array.Empty<int>(),
             reason = "Aula", needsProjector = false, needsTeacherComputer = false,
             needsStudentComputers = false

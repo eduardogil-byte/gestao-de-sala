@@ -8,7 +8,6 @@ import { useData } from "../lib/data";
 import { dateTimeBR, roomKind } from "../lib/utils";
 import { Card, Empty, Title, Badge, SectionHeading } from "../components/UI";
 import { ManagerDashboard } from "../components/ManagerDashboard";
-import { WeeklyOccupations } from "../components/WeeklyOccupations";
 import type { AgendaOccupation, User } from "../types";
 
 export function Dashboard({
@@ -36,8 +35,6 @@ export function Dashboard({
 }) {
   const { data } = useData();
   const admin = user.roles.includes("Admin");
-  const weeklyOccupations = <WeeklyOccupations occupations={occupations} loading={agendaLoading}
-    error={agendaError} onOpen={onOpenOccupation ?? (() => navigate("agenda"))} />;
   const soon = occupations
     .filter((o) => new Date(o.startsAt).getTime() >= Date.now())
     .sort((a, b) => a.startsAt.localeCompare(b.startsAt));
@@ -85,7 +82,6 @@ export function Dashboard({
           </Card>
         </div>
       </div>
-      {weeklyOccupations}
     </>;
   }
   return (
@@ -214,7 +210,6 @@ export function Dashboard({
           </Card>
         </div>
       </div>
-      {weeklyOccupations}
     </>
   );
 }

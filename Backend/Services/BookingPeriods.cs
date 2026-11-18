@@ -8,12 +8,11 @@ public static class BookingPeriods
     {
         var occurrences = new List<(DateTime Start, DateTime End)>();
         var initialDate = DateOnly.FromDateTime(booking.StartsAt);
-        var finalDate = booking.Recurrence == BookingRecurrence.Nenhuma
-            ? initialDate : booking.RepeatUntil ?? initialDate;
+        var finalDate = booking.RepeatUntil ?? initialDate;
         var duration = booking.EndsAt - booking.StartsAt;
         for (var day = initialDate; day <= finalDate; day = day.AddDays(1))
         {
-            if (booking.Recurrence == BookingRecurrence.Semanal)
+            if (booking.Recurrence == BookingRecurrence.Semanal || booking.WeekdaysMask != 0)
             {
                 var mask = booking.WeekdaysMask == 0 ? 1 << (int)initialDate.DayOfWeek : booking.WeekdaysMask;
                 if ((mask & (1 << (int)day.DayOfWeek)) == 0) continue;
@@ -35,7 +34,22 @@ public static class BookingPeriods
         if (!Enum.IsDefined(recurrence)) return "Recorrência desconhecida";
         if (weekdaysMask < 0 || weekdaysMask > 127) return "Seleção de dias da semana inválida";
         if (recurrence == BookingRecurrence.Nenhuma)
-            return repeatUntil is null && weekdaysMask == 0 ? null : "Sem recorrência, não envie repeatUntil nem weekdaysMask";
+        {
+            if (repeatUntil is null && weekdaysMask == 0) return null;
+            var first = DateOnly.FromDateTime(startsAt);
+            var last = first.AddDays(6 - (int)first.DayOfWeek);
+            var allowedMask = 0;
+            for (var day = first; day <= (repeatUntil ?? first); day = day.AddDays(1))
+            {
+                if (day > last) return "Datas específicas devem pertencer à mesma semana";
+                allowedMask |= 1 << (int)day.DayOfWeek;
+            }
+            return repeatUntil is not null && repeatUntil >= first && repeatUntil <= last &&
+                weekdaysMask > 0 && (weekdaysMask & ~allowedMask) == 0 &&
+                (weekdaysMask & (1 << (int)first.DayOfWeek)) != 0 &&
+                (weekdaysMask & (1 << (int)repeatUntil.Value.DayOfWeek)) != 0
+                ? null : "Seleção de datas específicas inválida";
+        }
         if (recurrence != BookingRecurrence.Semanal && weekdaysMask != 0)
             return "A seleção de dias só funciona com recorrência Semanal";
         if (repeatUntil is null) return "Para repetição informe repeatUntil";

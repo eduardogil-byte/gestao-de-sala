@@ -45,8 +45,8 @@ export function WeekPicker({ value, onChange, today }: { value: string; onChange
   </>;
 }
 
-export function WeeklyCalendar({ date, weekdays, recurring, onSelect, today }: {
-  date: string; weekdays: number[]; recurring: boolean; onSelect: (date: string) => void; today: string;
+export function WeeklyCalendar({ date, weekdays, recurring, onSelect, today, selectedDates }: {
+  selectedDates?: string[]; date: string; weekdays: number[]; recurring: boolean; onSelect: (date: string) => void; today: string;
 }) {
   const [view, setView] = useState(weekStart(date));
   useEffect(() => setView(weekStart(date)), [date]);
@@ -58,9 +58,9 @@ export function WeeklyCalendar({ date, weekdays, recurring, onSelect, today }: {
       <button type="button" className="btn-secondary !px-2" aria-label="Próxima semana" onClick={() => setView(nextDate(view, 7))}><ChevronRight size={18} aria-hidden="true" /></button>
     </div>
     <div className="grid grid-cols-7 gap-1 sm:gap-2">{days.map((item) => {
-      const selected = recurring ? weekdays.includes(day(item)) && item >= date : item === date;
-      return <button key={item} type="button" aria-label={`${names[day(item)]}, ${dateBR(item)}`} aria-pressed={selected} onClick={() => onSelect(item)}
-        className={`min-w-0 min-h-14 sm:min-h-16 rounded-control border text-center text-xs sm:text-sm focus-visible:outline focus-visible:outline-2 focus-visible:outline-skybrand-500 ${selected ? "border-skybrand-500 bg-sky-950 text-sky-100" : "border-line text-ink hover:border-skybrand-500"}`}>
+      const selected = recurring ? weekdays.includes(day(item)) && item >= date : (selectedDates ?? [date]).includes(item);
+      return <button key={item} type="button" aria-label={`${names[day(item)]}, ${dateBR(item)}`} aria-pressed={selected} disabled={item < today} onClick={() => onSelect(item)}
+        className={`disabled:opacity-40 min-w-0 min-h-14 sm:min-h-16 rounded-control border text-center text-xs sm:text-sm focus-visible:outline focus-visible:outline-2 focus-visible:outline-skybrand-500 ${selected ? "border-skybrand-500 bg-sky-950 text-sky-100" : "border-line text-ink hover:border-skybrand-500"}`}>
         <span className="block font-medium">{names[day(item)]}</span><span className="block text-base font-bold tabular-nums">{Number(item.slice(-2))}</span>
         {item === today && <span className="block text-[10px] font-semibold">Hoje</span>}
       </button>;
