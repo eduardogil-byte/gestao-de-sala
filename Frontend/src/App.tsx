@@ -49,7 +49,8 @@ import { post, read, tokenStore } from "./lib/api";
 import { localDate, nextDate, resultMessage } from "./lib/utils";
 import { getNavigationSections, type NavigationItem, type Page } from "./lib/navigation";
 import { Busy, Notice } from "./components/UI";
-import type { User, Occupation } from "./types";
+import { weekStart } from "./components/BookingCalendars";
+import type { User, AgendaOccupation } from "./types";
 
 const navIcons = {
   dashboard: LayoutDashboard,
@@ -90,7 +91,8 @@ function Workspace({ user, onLogout, onPasswordChanged, institutionalNotice = ""
   const menuRef = useRef<HTMLElement>(null);
   const accountAreaRef = useRef<HTMLDivElement>(null);
   const firstAccountActionRef = useRef<HTMLButtonElement>(null);
-  const [occupations, setOccupations] = useState<Occupation[]>([]);
+  const [occupations, setOccupations] = useState<AgendaOccupation[]>([]);
+  const [agendaLoading, setAgendaLoading] = useState(true);
   const [agendaError, setAgendaError] = useState("");
   const [unread, setUnread] = useState<number | null>(null);
   const [ssoEnabled, setSsoEnabled] = useState(false);
@@ -215,15 +217,18 @@ function Workspace({ user, onLogout, onPasswordChanged, institutionalNotice = ""
     };
   }, [accountOpen]);
   const reloadAgenda = useCallback(async () => {
+    setAgendaLoading(true);
     try {
       const from = localDate(new Date());
-      const rows = await read<Occupation[]>(
-        `/agenda?from=${from}T00:00:00&to=${nextDate(from, 30)}T00:00:00`,
+      const rows = await read<AgendaOccupation[]>(
+        `/agenda?from=${weekStart(from)}T00:00:00&to=${nextDate(from, 30)}T00:00:00`,
       );
       setOccupations(rows);
       setAgendaError("");
     } catch (e) {
       setAgendaError(resultMessage(e));
+    } finally {
+      setAgendaLoading(false);
     }
   }, []);
   useEffect(() => {
@@ -357,6 +362,15 @@ function Workspace({ user, onLogout, onPasswordChanged, institutionalNotice = ""
             </div>
           </div>
           <div className="flex items-center gap-3">
+            {page === "dashboard" && !accountOpen && <button
+              type="button"
+              aria-label={darkMode ? "Ativar modo claro" : "Ativar modo escuro"}
+              title={darkMode ? "Ativar modo claro" : "Ativar modo escuro"}
+              className="rounded-xl min-w-11 min-h-11 flex items-center justify-center text-slate-200 hover:bg-white/10"
+              onClick={() => setDarkMode((current) => !current)}
+            >
+              {darkMode ? <Sun size={19} aria-hidden="true" /> : <Moon size={19} aria-hidden="true" />}
+            </button>}
             <button
               aria-label="Atualizar dados"
               title="Atualizar"
@@ -445,7 +459,9 @@ function Workspace({ user, onLogout, onPasswordChanged, institutionalNotice = ""
           {loading ? (
             <Busy />
           ) : page === "dashboard" ? (
-            <Dashboard user={user} navigate={open} occupations={occupations} openTimeline={openTimeline} openOpportunity={openOpportunity} onExport={openDashboardExport} unread={unread} />
+            <Dashboard user={user} navigate={open} occupations={occupations} openTimeline={openTimeline} openOpportunity={openOpportunity} onExport={openDashboardExport} unread={unread}
+              agendaLoading={agendaLoading} agendaError={agendaError}
+              onOpenOccupation={(item) => { setAgendaFocus({ date: item.date, roomId: item.roomId, occupationId: item.id }); setPage("agenda"); }} />
           ) : page === "agenda" ? (
             <Agenda
               user={user}

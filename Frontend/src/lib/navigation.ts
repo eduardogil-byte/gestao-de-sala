@@ -74,9 +74,14 @@ const sections: NavigationSection[] = [
 
 export function getNavigationSections(isAdmin: boolean): NavigationSection[] {
   return sections
-    .map((section) => ({
-      ...section,
-      items: section.items.filter((item) => isAdmin || !item.adminOnly),
-    }))
+    .map((section) => {
+      const items = section.items.filter((item) => isAdmin || !item.adminOnly);
+      const agenda = items.findIndex((item) => item.page === "instructor-agenda");
+      const timeline = items.findIndex((item) => item.page === "room-timeline");
+      if (!isAdmin && agenda > timeline && timeline >= 0) {
+        [items[timeline], items[agenda]] = [items[agenda], items[timeline]];
+      }
+      return { ...section, items };
+    })
     .filter((section) => section.items.length > 0);
 }

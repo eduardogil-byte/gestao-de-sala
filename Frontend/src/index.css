@@ -36,6 +36,20 @@ body {
 }
 * {
   box-sizing: border-box;
+  scrollbar-width: thin;
+  scrollbar-color: var(--color-muted-ink) var(--color-canvas);
+}
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-track, ::-webkit-scrollbar-corner { background: var(--color-canvas); }
+::-webkit-scrollbar-thumb {
+  background: var(--color-muted-ink);
+  border: 2px solid var(--color-canvas);
+  border-radius: 999px;
+}
+::-webkit-scrollbar-thumb:hover { background: var(--color-ink); }
+@media (pointer: coarse) {
+  * { scrollbar-width: auto; }
+  ::-webkit-scrollbar { width: 14px; height: 14px; }
 }
 button,
 input,
@@ -143,10 +157,3 @@ button:disabled {
 :root:not([data-theme="light"]) .app-workspace :is(.bg-violet-50, .bg-violet-50\/60) { background-color: #282748; }
 :root:not([data-theme="light"]) .app-workspace :is(.bg-sky-50\/70, .bg-sky-50\/50) { background-color: #153857; }
 :root:not([data-theme="light"]) .app-workspace .bg-slate-50\/60 { background-color: var(--color-surface); }
-/* Barra lateral: trilho discreto sem ocultar a rolagem dos itens do menu. */
-.salagest-sidebar-scroll { scrollbar-width: thin; scrollbar-color: #425574 transparent; }
-.salagest-sidebar-scroll::-webkit-scrollbar { width: 5px; }
-.salagest-sidebar-scroll::-webkit-scrollbar-thumb { background: #425574; border-radius: 999px; }
-.modal-scroll { scrollbar-width: thin; scrollbar-color: #60758f transparent; }
-.modal-scroll::-webkit-scrollbar { width: 6px; }
-.modal-scroll::-webkit-scrollbar-thumb { background: #60758f; border-radius: 999px; }

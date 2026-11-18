@@ -13,7 +13,8 @@ import { dateTimeBR, roomKind } from "../lib/utils";
 import { Card, Empty, Title, Badge, MetricCard, SectionHeading } from "../components/UI";
 import { UsagePanel } from "../components/UsagePanel";
 import { ManagerDashboard } from "../components/ManagerDashboard";
-import type { Occupation, User } from "../types";
+import { WeeklyOccupations } from "../components/WeeklyOccupations";
+import type { AgendaOccupation, User } from "../types";
 
 export function Dashboard({
   user,
@@ -23,17 +24,25 @@ export function Dashboard({
   openOpportunity,
   onExport,
   unread,
+  agendaLoading,
+  agendaError,
+  onOpenOccupation,
 }: {
   user: User;
   navigate: (page: string) => void;
-  occupations: Occupation[];
+  occupations: AgendaOccupation[];
   openTimeline: (semesterId: number, roomId: number) => void;
   openOpportunity: (semesterId: number, roomId: number) => void;
   onExport: (semesterId: number, secondSemesterId: number | null, roomId: number | null) => void;
   unread: number | null;
+  agendaLoading?: boolean;
+  agendaError?: string;
+  onOpenOccupation?: (item: AgendaOccupation) => void;
 }) {
   const { data } = useData();
   const admin = user.roles.includes("Admin");
+  const weeklyOccupations = <WeeklyOccupations occupations={occupations} loading={agendaLoading}
+    error={agendaError} onOpen={onOpenOccupation ?? (() => navigate("agenda"))} />;
   const stats = [
     {
       title: "Ambientes cadastrados",
@@ -115,6 +124,7 @@ export function Dashboard({
           </Card>
         </div>
       </div>
+      {weeklyOccupations}
     </>;
   }
   return (
@@ -244,6 +254,7 @@ export function Dashboard({
           </Card>
         </div>
       </div>
+      {weeklyOccupations}
       {admin ? <ManagerDashboard admin={admin} onTimeline={openTimeline} onOpportunity={openOpportunity}
         onExport={onExport} /> : <UsagePanel />}
     </>
