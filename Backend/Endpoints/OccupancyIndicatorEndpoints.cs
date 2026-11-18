@@ -16,11 +16,12 @@ public static partial class ApiEndpoints
         api.MapGet("/semesters/{semesterId:int}", async (int semesterId, int? roomId,
             IConfiguration configuration, AppDbContext db) =>
         {
-            var thresholds = Thresholds(configuration);
+            var thresholds = OccupancyIndicators.Thresholds(configuration);
             if (thresholds is null) return Error("Limites de classificação inválidos na configuração");
             try
             {
-                var result = await OccupancyIndicators.ForSemester(db, semesterId, roomId, thresholds);
+                var result = await OccupancyIndicators.ForSemester(db, semesterId, roomId, thresholds,
+                    OccupancyIndicators.InstitutionDate(configuration));
                 return result is null ? Results.NotFound() : Results.Ok(result);
             }
             catch (InvalidOperationException error) when (error.Message.Contains("100000 ocupações"))
@@ -32,12 +33,13 @@ public static partial class ApiEndpoints
             IConfiguration configuration, AppDbContext db) =>
         {
             if (firstSemesterId == secondSemesterId) return Error("Selecione semestres distintos");
-            var thresholds = Thresholds(configuration);
+            var thresholds = OccupancyIndicators.Thresholds(configuration);
             if (thresholds is null) return Error("Limites de classificação inválidos na configuração");
             try
             {
-                var first = await OccupancyIndicators.ForSemester(db, firstSemesterId, roomId, thresholds);
-                var second = await OccupancyIndicators.ForSemester(db, secondSemesterId, roomId, thresholds);
+                var today = OccupancyIndicators.InstitutionDate(configuration);
+                var first = await OccupancyIndicators.ForSemester(db, firstSemesterId, roomId, thresholds, today);
+                var second = await OccupancyIndicators.ForSemester(db, secondSemesterId, roomId, thresholds, today);
                 return first is null || second is null ? Results.NotFound() : Results.Ok(new { First = first, Second = second });
             }
             catch (InvalidOperationException error) when (error.Message.Contains("100000 ocupações"))
@@ -101,11 +103,6 @@ public static partial class ApiEndpoints
         });
     }
 
-    private static IndicatorThresholds? Thresholds(IConfiguration configuration)
-    {
-        var bottleneck = configuration.GetValue<decimal?>("OccupancyIndicators:BottleneckPercent") ?? 85m;
-        var opportunity = configuration.GetValue<decimal?>("OccupancyIndicators:OpportunityPercent") ?? 40m;
-        return opportunity >= 0 && bottleneck <= 100 && opportunity < bottleneck
-            ? new IndicatorThresholds(bottleneck, opportunity) : null;
-    }
+    private static IndicatorThresholds? Thresholds(IConfiguration configuration) =>
+        OccupancyIndicators.Thresholds(configuration);
 }

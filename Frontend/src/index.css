@@ -9,6 +9,11 @@
   --color-muted-ink: #b5c5dc;
   --color-line: #344760;
   --color-focus: #69b5ff;
+  --color-shift-morning: #edaa65;
+  --color-shift-afternoon: #be987a;
+  --color-shift-night: #688cc7;
+  --color-shift-other: #b39cdd;
+  --color-shift-free: #273c56;
   --radius-panel: .875rem;
   --radius-control: .625rem;
   --shadow-soft: 0 8px 28px rgba(0, 6, 18, .16);
@@ -24,6 +29,11 @@
   --color-ink: #17243a;
   --color-muted-ink: #52647d;
   --color-line: #cbd6e5;
+  --color-shift-morning: #c17c3d;
+  --color-shift-afternoon: #936347;
+  --color-shift-night: #24466b;
+  --color-shift-other: #79619b;
+  --color-shift-free: #e3e9f1;
   --shadow-soft: 0 8px 28px rgba(14, 23, 42, .08);
   --shadow-raised: 0 14px 36px rgba(14, 23, 42, .12);
 }

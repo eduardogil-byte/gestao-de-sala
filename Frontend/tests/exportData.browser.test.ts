@@ -31,7 +31,7 @@ test("relatórios consultam dados oficiais e exportam apenas com filtros válido
 
     await evaluate("adminTest.select('Semestre da análise', '2')");
     await waitFor("document.body.innerText.includes('indicadores incompletos')");
-    assert.equal(await evaluate("document.body.innerText.includes('Ocupação por ambiente')"), false);
+    assert.equal(await evaluate("document.body.innerText.includes('Ocupação dos ambientes')"), false);
     await evaluate("adminTest.catalog['/api/occupancy-indicators/semesters/2?roomId=10'] = { ...structuredClone(adminTest.report), semesterId: 2, rooms: [] }; adminTest.select('Semestre da análise', '1')");
     await waitFor("adminTest.calls.filter(c => c.path === '/api/occupancy-indicators/semesters/1?roomId=10').length >= 2");
     await evaluate("adminTest.select('Semestre da análise', '2')");

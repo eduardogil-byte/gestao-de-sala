@@ -13,7 +13,7 @@ import { post, put, read } from "../lib/api";
 import { RoomInventoryFields } from "../components/RoomInventoryFields";
 import { ResourceCatalogManager } from "../components/ResourceCatalogManager";
 import { OperatingShiftEditor } from "../components/OperatingShiftEditor";
-import { indicatorPath, isSemesterIndicators, type SemesterIndicators } from "../lib/occupancyIndicators";
+import { indicatorPath, isBottleneck, isSemesterIndicators, type SemesterIndicators } from "../lib/occupancyIndicators";
 import { resultMessage, roomKind } from "../lib/utils";
 import {
   Busy,
@@ -239,6 +239,10 @@ export function Rooms({ user, onImport }: { user: User; onImport?: (kind: "Ambie
     {admin && <button type="button" className="btn-secondary" disabled={opening || detailLoading} onClick={() => void open(room)}><Settings2 size={15} /> Editar ambiente</button>}
     {admin && semesterId && <button type="button" className="btn-secondary" onClick={() => setShiftRoom(room)}>Configurar turnos</button>}
   </div>;
+  const bottleneckLabel = (room: Room) => {
+    const indicator = admin && indicatorState === "idle" ? indicators?.rooms.find((item) => item.roomId === room.id) : undefined;
+    return indicator && isBottleneck(indicator) ? <span className="pill bg-rose-50 text-rose-800 mt-1">{indicator.occupancyPercent}% · Gargalo</span> : null;
+  };
   return (
     <>
       <Title
@@ -308,7 +312,7 @@ export function Rooms({ user, onImport }: { user: User; onImport?: (kind: "Ambie
           <div className="hidden lg:block table-wrap"><table className="w-full text-sm"><thead><tr className="text-left text-muted-ink border-b border-line">
             <th scope="col" className="p-3">Ambiente</th><th scope="col" className="p-3">Tipo e localização</th><th scope="col" className="p-3">Alunos</th><th scope="col" className="p-3">Turnos configurados</th><th scope="col" className="p-3">Turnos com ocupação</th><th scope="col" className="p-3">Situação</th><th scope="col" className="p-3">Ações</th>
           </tr></thead><tbody>{list.map((room) => <tr key={room.id} className="border-b border-line last:border-0 align-top">
-            <td className="p-3"><strong className="text-ink">{room.code || `#${room.id}`}</strong><span className="block text-muted-ink">{room.name}</span></td>
+            <td className="p-3"><strong className="text-ink">{room.code || `#${room.id}`}</strong><span className="block text-muted-ink">{room.name}</span>{bottleneckLabel(room)}</td>
             <td className="p-3">{roomKind(room.kind)}<span className="block text-muted-ink">{room.location || "Localização não informada"}</span></td>
             <td className="p-3 tabular-nums">{room.seats}</td><td className="p-3 text-muted-ink">{shiftLabel(room)}</td><td className="p-3 text-muted-ink">{occupiedShiftLabel(room)}</td>
             <td className="p-3"><span className={`pill ${room.active ? "bg-emerald-50 text-emerald-700" : "bg-slate-100 text-slate-500"}`}>{room.active ? "Ativa" : "Inativa"}</span></td>
@@ -317,6 +321,7 @@ export function Rooms({ user, onImport }: { user: User; onImport?: (kind: "Ambie
           <div className="grid gap-3 sm:grid-cols-2 lg:hidden">{list.map((room) => <article key={room.id} className="rounded-panel border border-line p-4 space-y-3">
             <div className="flex items-start justify-between gap-2"><div><p className="text-xs font-semibold uppercase tracking-wide text-muted-ink">{room.code || `#${room.id}`}</p><h3 className="font-bold text-ink">{room.name}</h3></div><span className={`pill ${room.active ? "bg-emerald-50 text-emerald-700" : "bg-slate-100 text-slate-500"}`}>{room.active ? "Ativa" : "Inativa"}</span></div>
             <p className="muted">{roomKind(room.kind)} · {room.location || "Localização não informada"}</p>
+            {bottleneckLabel(room)}
             <dl className="grid grid-cols-2 gap-2 text-sm"><div><dt className="text-muted-ink">Capacidade</dt><dd>{room.seats} alunos</dd></div><div><dt className="text-muted-ink">Turnos configurados</dt><dd>{shiftLabel(room)}</dd></div><div className="col-span-2"><dt className="text-muted-ink">Turnos com ocupação</dt><dd>{occupiedShiftLabel(room)}</dd></div></dl>
             {roomAction(room)}
           </article>)}</div>

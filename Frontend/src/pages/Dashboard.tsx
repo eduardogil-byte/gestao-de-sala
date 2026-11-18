@@ -2,16 +2,11 @@ import {
   ArrowUpRight,
   CalendarDays,
   CheckCircle2,
-  Clock3,
-  DoorOpen,
-  GraduationCap,
-  Users,
   MoveRight,
 } from "lucide-react";
 import { useData } from "../lib/data";
 import { dateTimeBR, roomKind } from "../lib/utils";
-import { Card, Empty, Title, Badge, MetricCard, SectionHeading } from "../components/UI";
-import { UsagePanel } from "../components/UsagePanel";
+import { Card, Empty, Title, Badge, SectionHeading } from "../components/UI";
 import { ManagerDashboard } from "../components/ManagerDashboard";
 import { WeeklyOccupations } from "../components/WeeklyOccupations";
 import type { AgendaOccupation, User } from "../types";
@@ -43,40 +38,6 @@ export function Dashboard({
   const admin = user.roles.includes("Admin");
   const weeklyOccupations = <WeeklyOccupations occupations={occupations} loading={agendaLoading}
     error={agendaError} onOpen={onOpenOccupation ?? (() => navigate("agenda"))} />;
-  const stats = [
-    {
-      title: "Ambientes cadastrados",
-      value: data.rooms.length,
-      icon: DoorOpen,
-      tone: "blue" as const,
-      detail: "Recursos e capacidade física",
-      page: "rooms",
-    },
-    {
-      title: "Instrutores",
-      value: data.teachers.length,
-      icon: Users,
-      tone: "violet" as const,
-      detail: "Perfis pedagógicos cadastrados",
-      page: "teachers",
-    },
-    {
-      title: "Turmas",
-      value: data.classes.length,
-      icon: GraduationCap,
-      tone: "amber" as const,
-      detail: "Ofertas acadêmicas cadastradas",
-      page: "academic",
-    },
-    {
-      title: admin ? "Reservas registradas" : "Minhas reservas",
-      value: data.bookings.length,
-      icon: Clock3,
-      tone: "emerald" as const,
-      detail: admin ? "Todos os estados registrados" : "Solicitações vinculadas à sua conta",
-      page: "bookings",
-    },
-  ];
   const soon = occupations
     .filter((o) => new Date(o.startsAt).getTime() >= Date.now())
     .sort((a, b) => a.startsAt.localeCompare(b.startsAt));
@@ -133,6 +94,11 @@ export function Dashboard({
         title={`Olá, ${user.displayName.split(" ")[0]}!`}
         subtitle="Acompanhe salas, aulas e solicitações da instituição."
       />
+      <ManagerDashboard admin={admin} onTimeline={openTimeline} onOpportunity={openOpportunity} onExport={onExport} />
+      <div className="flex flex-wrap gap-2 my-6" aria-label="Atalhos administrativos">
+        {[["rooms", "Ambientes"], ["teachers", "Instrutores"], ["academic", "Turmas"], ["bookings", "Reservas"]].map(([page, label]) =>
+          <button key={page} type="button" className="btn-secondary" onClick={() => navigate(page)}>{label}</button>)}
+      </div>
       <div className="rounded-panel bg-navy-900 text-white p-6 md:p-8 mb-6 relative overflow-hidden shadow-soft border border-navy-700">
         <div className="absolute right-0 top-0 w-60 h-60 rounded-full border-[40px] border-white/5 translate-x-1/3 -translate-y-1/3" />
         <div className="relative z-10 max-w-xl">
@@ -154,12 +120,6 @@ export function Dashboard({
             <ArrowUpRight size={17} aria-hidden="true" />
           </button>
         </div>
-      </div>
-      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-3 md:gap-4 mb-6">
-        {stats.map((s) => (
-          <MetricCard key={s.title} label={s.title} value={s.value} detail={s.detail}
-            icon={s.icon} tone={s.tone} onClick={() => navigate(s.page)} />
-        ))}
       </div>
       <div className="grid xl:grid-cols-[1.6fr_1fr] gap-5">
         <Card className="overflow-hidden">
@@ -255,8 +215,6 @@ export function Dashboard({
         </div>
       </div>
       {weeklyOccupations}
-      {admin ? <ManagerDashboard admin={admin} onTimeline={openTimeline} onOpportunity={openOpportunity}
-        onExport={onExport} /> : <UsagePanel />}
     </>
   );
 }

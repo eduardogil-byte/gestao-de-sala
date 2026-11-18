@@ -68,7 +68,7 @@ test("integrações administrativas usam contratos existentes e preservam estado
     });
     await t.test("filtro visual de tipo mantém o escopo da API e preserva a seleção ao atualizar", async () => {
       await reset("dashboard");
-      await waitFor("document.body.innerText.includes('Ocupação por ambiente')");
+      await waitFor("document.body.innerText.includes('Ocupação dos ambientes')");
       await evaluate("adminTest.select('Tipo de ambiente (lista)', 'Laboratorio')");
       const before = await evaluate<number>("adminTest.calls.filter(r => r.path === '/api/occupancy-indicators/semesters/1').length");
       await evaluate("adminTest.click('Atualizar dados')");

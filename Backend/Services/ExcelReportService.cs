@@ -262,9 +262,8 @@ public sealed class ExcelReportService(AppDbContext db, IConfiguration configura
         return first.Rooms.Count > 0 || second.Rooms.Count > 0;
     }
 
-    private IndicatorThresholds Thresholds() => new(
-        configuration.GetValue<decimal?>("OccupancyIndicators:BottleneckPercent") ?? 85m,
-        configuration.GetValue<decimal?>("OccupancyIndicators:OpportunityPercent") ?? 40m);
+    private IndicatorThresholds Thresholds() => OccupancyIndicators.Thresholds(configuration)
+        ?? throw new ReportRequestException("Limites de classificação inválidos na configuração");
 
     private static (DateTime From, DateTime To) DateRange(ReportFilters filters)
     {
