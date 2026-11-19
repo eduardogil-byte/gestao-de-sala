@@ -125,6 +125,22 @@ public sealed class EnvironmentCompatibilityTests
     }
 
     [Fact]
+    public void UnitResourceRequiresConfirmedAvailabilityAndAcceptsLegacyNameMatch()
+    {
+        var catalog = new ResourceCatalogItem { Id = 7, Name = "Lousa digital", NormalizedName = "LOUSA DIGITAL", Category = "Equipamento" };
+        var required = new List<CurricularUnitResourceRequirement> { new()
+        { ResourceCatalogItemId = 7, ResourceCatalogItem = catalog, Quantity = 1 } };
+        var room = new Room { Id = 2, Name = "Sala", Resources = { new RoomResource
+        { Name = "Lousa digital", Type = "Equipamento", NormalizedName = "LOUSA DIGITAL",
+          NormalizedType = "EQUIPAMENTO", Quantity = 1, OperationalQuantity = null } } };
+        Assert.Equal("Partial", EnvironmentCompatibility.Evaluate(null, room, null, Today, unitResources: required).Classification);
+        room.Resources[0].OperationalQuantity = 1;
+        Assert.Equal("Compatible", EnvironmentCompatibility.Evaluate(null, room, null, Today, unitResources: required).Classification);
+        room.Resources[0].OperationalQuantity = 0;
+        Assert.Equal("Incompatible", EnvironmentCompatibility.Evaluate(null, room, null, Today, unitResources: required).Classification);
+    }
+
+    [Fact]
     public void ProjectorInventoryOperationalStateTakesPrecedenceOverLegacyFlag()
     {
         var requirement = new CapabilityEnvironmentRequirement { RequiresProjector = true };

@@ -259,6 +259,8 @@ public static partial class ApiEndpoints
             {
                 var calendar = await CalendarForBooking(db, booking);
                 var requirement = await RequirementQuery(db).FirstOrDefaultAsync(x => x.CurricularCapabilityId == capabilityId);
+                var unitResources = booking.CurricularUnitId is int unitId
+                    ? await UnitResourcesQuery(db, unitId).ToListAsync() : [];
                 var technicalRooms = await RoomQuery(db).ToListAsync();
                 var fromDate = periods.Min(p => p.Start);
                 var toDate = periods.Max(p => p.End);
@@ -271,7 +273,7 @@ public static partial class ApiEndpoints
                 var choices = technicalRooms.Select(room =>
                 {
                     var technical = EnvironmentCompatibility.Evaluate(requirement, room, booking.Students,
-                        DateOnly.FromDateTime(periods.Max(p => p.Start)));
+                        DateOnly.FromDateTime(periods.Max(p => p.Start)), unitResources: unitResources);
                     bool Blocks(RoomOccupation o, (DateTime Start, DateTime End) p)
                     {
                         if (!ScheduleGenerator.Overlap(o.StartsAt, o.EndsAt, p.Start, p.End)) return false;
@@ -477,8 +479,10 @@ public static partial class ApiEndpoints
                 if (shiftId == 0 || !await PedagogicalAssignmentValid(db, booking, shiftId))
                     return Results.Forbid();
                 var requirement = await RequirementQuery(db).FirstOrDefaultAsync(x => x.CurricularCapabilityId == capabilityId);
+                var unitResources = booking.CurricularUnitId is int unitId
+                    ? await UnitResourcesQuery(db, unitId).ToListAsync() : [];
                 var technical = EnvironmentCompatibility.Evaluate(requirement, room, booking.Students,
-                    DateOnly.FromDateTime(BookingPeriods.Expand(booking).Max(p => p.Start)));
+                    DateOnly.FromDateTime(BookingPeriods.Expand(booking).Max(p => p.Start)), unitResources: unitResources);
                 if (technical.Classification != "Compatible")
                 {
                     technicalReasons = BookingTechnicalException.Pedagogical(requirement, room, technical);

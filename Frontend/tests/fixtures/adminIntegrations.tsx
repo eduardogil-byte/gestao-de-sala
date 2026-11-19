@@ -75,6 +75,7 @@ const api = {
       "/api/courses/1/modules": [{ id: 2, courseId: 1, name: "Módulo sintético", order: 1 }],
       "/api/courses/1/modules/2/curricular-units": [{ id: 3, courseModuleId: 2, code: "UC", name: "UC sintética", plannedHours: 8 }],
       "/api/courses/1/modules/2/curricular-units/3/capabilities": [{ id: 4, curricularUnitId: 3, description: "Capacidade sintética", contents: "Conteúdo", requiredHours: 8, order: 1 }],
+      "/api/courses/1/modules/2/curricular-units/3/resources": [],
       "/api/courses/1/modules/2/curricular-units/3/capabilities/4/compatibility/rooms?students=1": [
         { roomId: 10, roomName: room.name, classification: "Compatible", findings: [{ requirement: "Software CAD", status: "Met", detail: "Recurso atendido" }] },
         { roomId: 11, roomName: "Laboratório B", classification: "Partial", findings: [{ requirement: "Licença", status: "Unknown", detail: "Validade não comprovada" }] },

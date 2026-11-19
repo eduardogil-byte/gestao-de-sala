@@ -901,6 +901,27 @@ namespace SalaGest.Api.Migrations
                         });
                 });
 
+            modelBuilder.Entity("SalaGest.Api.Models.CurricularUnitResourceRequirement", b =>
+                {
+                    b.Property<int>("CurricularUnitId")
+                        .HasColumnType("int");
+
+                    b.Property<int>("ResourceCatalogItemId")
+                        .HasColumnType("int");
+
+                    b.Property<int>("Quantity")
+                        .HasColumnType("int");
+
+                    b.HasKey("CurricularUnitId", "ResourceCatalogItemId");
+
+                    b.HasIndex("ResourceCatalogItemId");
+
+                    b.ToTable("CurricularUnitResourceRequirements", t =>
+                        {
+                            t.HasCheckConstraint("CK_CurricularUnitResourceRequirements_Quantity", "[Quantity] > 0 AND [Quantity] <= 100000");
+                        });
+                });
+
             modelBuilder.Entity("SalaGest.Api.Models.GroupSoftware", b =>
                 {
                     b.Property<int>("ComputerGroupId")
@@ -1983,6 +2004,25 @@ namespace SalaGest.Api.Migrations
                     b.Navigation("CourseModule");
                 });
 
+            modelBuilder.Entity("SalaGest.Api.Models.CurricularUnitResourceRequirement", b =>
+                {
+                    b.HasOne("SalaGest.Api.Models.CurricularUnit", "CurricularUnit")
+                        .WithMany("ResourceRequirements")
+                        .HasForeignKey("CurricularUnitId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("SalaGest.Api.Models.ResourceCatalogItem", "ResourceCatalogItem")
+                        .WithMany()
+                        .HasForeignKey("ResourceCatalogItemId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("CurricularUnit");
+
+                    b.Navigation("ResourceCatalogItem");
+                });
+
             modelBuilder.Entity("SalaGest.Api.Models.GroupSoftware", b =>
                 {
                     b.HasOne("SalaGest.Api.Models.ComputerGroup", "ComputerGroup")
@@ -2333,6 +2373,8 @@ namespace SalaGest.Api.Migrations
             modelBuilder.Entity("SalaGest.Api.Models.CurricularUnit", b =>
                 {
                     b.Navigation("Capabilities");
+
+                    b.Navigation("ResourceRequirements");
                 });
 
             modelBuilder.Entity("SalaGest.Api.Models.Room", b =>

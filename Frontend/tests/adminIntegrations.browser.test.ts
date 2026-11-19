@@ -127,6 +127,30 @@ test("integrações administrativas usam contratos existentes e preservam estado
       await waitFor("document.body.innerText.includes('Dashboard gerencial')");
       assert.equal(await evaluate("document.body.innerText.includes('Configurar turnos oferecidos')"), false);
     });
+    await t.test("recursos da UC usam o catálogo e somente Admin pode salvar", async () => {
+      const path = "/api/courses/1/modules/2/curricular-units/3/resources";
+      await reset("catalog", "Professor");
+      await waitFor("document.body.innerText.includes('Curso sintético')");
+      await evaluate("adminTest.click('Ver módulos')"); await waitFor("document.body.innerText.includes('Módulo sintético')");
+      await evaluate("adminTest.click('Ver UCs')"); await waitFor("document.body.innerText.includes('UC sintética')");
+      await evaluate("adminTest.click('Ver capacidades')");
+      await waitFor("document.body.innerText.includes('Recursos necessários da UC')");
+      await evaluate("adminTest.click('Recursos necessários da UC')");
+      await waitFor("document.querySelector('[role=dialog]')?.innerText.includes('Nenhum recurso configurado')");
+      assert.equal(await evaluate("document.querySelector('[role=dialog]')?.innerText.includes('Salvar recursos da UC')"), false);
+      await reset("catalog", "Admin");
+      await waitFor("document.body.innerText.includes('Curso sintético')");
+      await evaluate("adminTest.click('Ver módulos')"); await waitFor("document.body.innerText.includes('Módulo sintético')");
+      await evaluate("adminTest.click('Ver UCs')"); await waitFor("document.body.innerText.includes('UC sintética')");
+      await evaluate("adminTest.click('Ver capacidades')");
+      await evaluate("adminTest.click('Recursos necessários da UC')");
+      await waitFor("document.querySelector('[role=dialog]')?.innerText.includes('Adicionar recurso do catálogo')");
+      await evaluate("adminTest.select('Adicionar recurso do catálogo', '9'); adminTest.click('Salvar recursos da UC')");
+      await waitFor(`adminTest.pending.some(r => r.path === ${JSON.stringify(path)})`);
+      assert.deepEqual(await evaluate(`adminTest.pending.find(r => r.path === ${JSON.stringify(path)}).body`),
+        [{ resourceCatalogItemId: 9, quantity: 1 }]);
+      await reply(path, null, 204);
+    });
     await t.test("Admin cadastra capacidade no contexto da UC e consulta fechamento de carga", async () => {
       await reset("catalog", "Admin");
       await waitFor("document.body.innerText.includes('Curso sintético')");

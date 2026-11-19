@@ -19,12 +19,12 @@ test("Admin gerencia catálogo e associa recurso ao ambiente sem campos fixos", 
     await waitFor("!!document.querySelector('[role=dialog]')");
     await evaluate("adminTest.input('Nome da sala', 'Sala nova'); adminTest.select('Adicionar recurso do catálogo', '5')");
     await waitFor("document.querySelector('[role=dialog]')?.textContent.includes('Projetor · Audiovisual')");
-    await evaluate("adminTest.input('Quantidade cadastrada', '2'); adminTest.input('Quantidade operacional (opcional)', '1'); adminTest.click('Cadastrar sala')");
+    await evaluate("adminTest.select('Disponibilidade de Projetor', 'quantity'); adminTest.input('Quantidade disponível', '2'); adminTest.click('Cadastrar sala')");
     await waitFor("adminTest.pending.some(r => r.path === '/api/rooms')");
     const body = await evaluate<any>("adminTest.pending.find(r => r.path === '/api/rooms').body");
     assert.equal(body.inventory.resources[0].details.resourceCatalogItemId, 5);
     assert.equal(body.inventory.resources[0].details.quantity, 2);
-    assert.equal(body.inventory.resources[0].details.operationalQuantity, 1);
+    assert.equal(body.inventory.resources[0].details.operationalQuantity, 2);
     assert.equal(body.active, true);
     await evaluate("adminTest.reply('/api/rooms', { id: 20, name: 'Sala nova' }, 201)");
     await waitFor("!document.querySelector('[role=dialog]')");

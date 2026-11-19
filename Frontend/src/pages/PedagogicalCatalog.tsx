@@ -8,6 +8,7 @@ import {
 } from "../lib/pedagogicalCatalog";
 import { Badge, Busy, Card, Empty, Field, MetricCard, Modal, Notice, SectionHeading, SubmitButton, Title } from "../components/UI";
 import { CapabilityRequirements } from "../components/CapabilityRequirements";
+import { UnitResourceRequirements } from "../components/UnitResourceRequirements";
 import type {
   Course, CourseModule, CurricularCapability, CurricularUnit, User, WorkloadSummary,
 } from "../types";
@@ -39,6 +40,7 @@ export function PedagogicalCatalog({ user }: { user: User }) {
   const [courseId, setCourseId] = useState<number | null>(null);
   const [moduleId, setModuleId] = useState<number | null>(null);
   const [unitId, setUnitId] = useState<number | null>(null);
+  const [showUnitResources, setShowUnitResources] = useState(false);
   const [revision, setRevision] = useState(0);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState("");
@@ -346,6 +348,10 @@ export function PedagogicalCatalog({ user }: { user: User }) {
         </div>}
       </Card>}
 
+      {unitPath && <div className="flex flex-wrap items-center gap-3">
+        <button type="button" className="btn-secondary" onClick={() => setShowUnitResources(true)}>Recursos necessários da UC</button>
+        <span className="muted text-sm">Critérios compartilhados com o inventário dos ambientes.</span>
+      </div>}
       <Card className="overflow-hidden">
         <div className="px-5 py-4 border-b border-line flex items-center justify-between gap-3">
           <h2 className="section-title">{level === "course" ? "Cursos" : level === "module" ? "Módulos" :
@@ -409,6 +415,9 @@ export function PedagogicalCatalog({ user }: { user: User }) {
       </Card>
       {requirementsCapability && unitPath && <Modal title={`Requisitos técnicos · ${requirementsCapability.description}`} onClose={() => setRequirementsCapability(null)} width="max-w-3xl">
         <CapabilityRequirements key={`${unitPath}|${requirementsCapability.id}`} path={`${unitPath}/capabilities/${requirementsCapability.id}`} admin={admin} />
+      </Modal>}
+      {showUnitResources && unitPath && <Modal title={`Recursos da UC · ${unit?.name ?? ""}`} onClose={() => setShowUnitResources(false)} width="max-w-3xl">
+        <UnitResourceRequirements key={unitPath} path={unitPath} admin={admin} />
       </Modal>}
     </>
   );

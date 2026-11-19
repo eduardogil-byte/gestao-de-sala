@@ -36,6 +36,7 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : Ident
     public DbSet<CurricularCapability> CurricularCapabilities => Set<CurricularCapability>();
     public DbSet<CapabilityEnvironmentRequirement> CapabilityEnvironmentRequirements => Set<CapabilityEnvironmentRequirement>();
     public DbSet<CapabilityResourceRequirement> CapabilityResourceRequirements => Set<CapabilityResourceRequirement>();
+    public DbSet<CurricularUnitResourceRequirement> CurricularUnitResourceRequirements => Set<CurricularUnitResourceRequirement>();
     public DbSet<CapabilitySoftwareRequirement> CapabilitySoftwareRequirements => Set<CapabilitySoftwareRequirement>();
     public DbSet<TeacherCourseQualification> TeacherCourseQualifications => Set<TeacherCourseQualification>();
     public DbSet<TeacherUnitQualification> TeacherUnitQualifications => Set<TeacherUnitQualification>();
@@ -218,6 +219,13 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : Ident
         });
 
         b.Entity<CapabilityEnvironmentRequirement>().HasKey(x => x.CurricularCapabilityId);
+        b.Entity<CurricularUnitResourceRequirement>().HasKey(x => new { x.CurricularUnitId, x.ResourceCatalogItemId });
+        b.Entity<CurricularUnitResourceRequirement>().HasOne(x => x.CurricularUnit).WithMany(x => x.ResourceRequirements)
+            .HasForeignKey(x => x.CurricularUnitId).OnDelete(DeleteBehavior.Restrict);
+        b.Entity<CurricularUnitResourceRequirement>().HasOne(x => x.ResourceCatalogItem).WithMany()
+            .HasForeignKey(x => x.ResourceCatalogItemId).OnDelete(DeleteBehavior.Restrict);
+        b.Entity<CurricularUnitResourceRequirement>().ToTable(t => t.HasCheckConstraint(
+            "CK_CurricularUnitResourceRequirements_Quantity", "[Quantity] > 0 AND [Quantity] <= 100000"));
         b.Entity<CapabilityEnvironmentRequirement>().HasOne(x => x.CurricularCapability)
             .WithOne(x => x.EnvironmentRequirement).HasForeignKey<CapabilityEnvironmentRequirement>(x => x.CurricularCapabilityId)
             .OnDelete(DeleteBehavior.Restrict);

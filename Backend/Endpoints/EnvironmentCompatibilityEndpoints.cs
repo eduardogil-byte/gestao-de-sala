@@ -73,7 +73,9 @@ public static partial class ApiEndpoints
             var room = await RoomQuery(db).FirstOrDefaultAsync(x => x.Id == roomId);
             if (room is null) return Results.NotFound();
             var requirement = await RequirementQuery(db).FirstOrDefaultAsync(x => x.CurricularCapabilityId == capabilityId);
-            return Results.Ok(EnvironmentCompatibility.Evaluate(requirement, room, students, DateOnly.FromDateTime(DateTime.UtcNow)));
+            var unitResources = await UnitResourcesQuery(db, unitId).ToListAsync();
+            return Results.Ok(EnvironmentCompatibility.Evaluate(requirement, room, students, DateOnly.FromDateTime(DateTime.UtcNow),
+                unitResources: unitResources));
         });
 
         api.MapGet("/compatibility/rooms", async (int courseId, int moduleId,
@@ -82,9 +84,10 @@ public static partial class ApiEndpoints
             if (!ValidStudents(students)) return Error("Quantidade de alunos inválida");
             if (!await CapabilityExists(db, courseId, moduleId, unitId, capabilityId)) return Results.NotFound();
             var requirement = await RequirementQuery(db).FirstOrDefaultAsync(x => x.CurricularCapabilityId == capabilityId);
+            var unitResources = await UnitResourcesQuery(db, unitId).ToListAsync();
             var rooms = await RoomQuery(db).ToListAsync();
             var results = rooms.Select(room => EnvironmentCompatibility.Evaluate(requirement, room, students,
-                DateOnly.FromDateTime(DateTime.UtcNow))).OrderBy(x => x.Classification switch
+                DateOnly.FromDateTime(DateTime.UtcNow), unitResources: unitResources)).OrderBy(x => x.Classification switch
                 { "Compatible" => 0, "Partial" => 1, _ => 2 }).ThenBy(x => x.RoomName).ThenBy(x => x.RoomId);
             return Results.Ok(results);
         });
@@ -104,6 +107,10 @@ public static partial class ApiEndpoints
     private static IQueryable<Room> RoomQuery(AppDbContext db)
         => db.Rooms.AsNoTracking().AsSplitQuery().Include(x => x.Resources)
             .Include(x => x.ComputerGroups).ThenInclude(x => x.Software).ThenInclude(x => x.Software);
+
+    private static IQueryable<CurricularUnitResourceRequirement> UnitResourcesQuery(AppDbContext db, int unitId)
+        => db.CurricularUnitResourceRequirements.AsNoTracking().Include(x => x.ResourceCatalogItem)
+            .Where(x => x.CurricularUnitId == unitId);
 
     private static async Task<string?> ValidateRequirements(AppDbContext db, CapabilityEnvironmentInput input,
         IReadOnlySet<int>? allowedExistingCatalogIds = null)

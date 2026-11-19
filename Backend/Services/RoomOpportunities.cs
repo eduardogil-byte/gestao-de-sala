@@ -16,6 +16,7 @@ public static class RoomOpportunities
         if (room is null) return null;
         var capabilities = await db.CurricularCapabilities.AsNoTracking().AsSplitQuery()
             .Include(x => x.CurricularUnit).ThenInclude(x => x.CourseModule).ThenInclude(x => x.Course)
+            .Include(x => x.CurricularUnit).ThenInclude(x => x.ResourceRequirements).ThenInclude(x => x.ResourceCatalogItem)
             .Include(x => x.EnvironmentRequirement).ThenInclude(x => x!.Resources)
             .Include(x => x.EnvironmentRequirement).ThenInclude(x => x!.Software).ThenInclude(x => x.Software)
             .Where(x => courseId == null || x.CurricularUnit.CourseModule.CourseId == courseId)
@@ -25,7 +26,8 @@ public static class RoomOpportunities
         return capabilities.Select(capability =>
         {
             var result = EnvironmentCompatibility.Evaluate(capability.EnvironmentRequirement,
-                room, students, semester.EndDate, oneComputerPerStudent: true);
+                room, students, semester.EndDate, oneComputerPerStudent: true,
+                unitResources: capability.CurricularUnit.ResourceRequirements);
             return new CapabilityOpportunity(capability.Id,
                 capability.CurricularUnit.CourseModule.CourseId,
                 capability.CurricularUnit.CourseModule.Course.Name,
@@ -48,6 +50,7 @@ public static class RoomOpportunities
         var room = await RoomQuery(db).FirstOrDefaultAsync(x => x.Id == roomId);
         var shift = await db.Shifts.AsNoTracking().FirstOrDefaultAsync(x => x.Id == shiftId);
         var capability = await db.CurricularCapabilities.AsNoTracking().AsSplitQuery()
+            .Include(x => x.CurricularUnit).ThenInclude(x => x.ResourceRequirements).ThenInclude(x => x.ResourceCatalogItem)
             .Include(x => x.EnvironmentRequirement).ThenInclude(x => x!.Resources)
             .Include(x => x.EnvironmentRequirement).ThenInclude(x => x!.Software).ThenInclude(x => x.Software)
             .FirstOrDefaultAsync(x => x.Id == capabilityId);
@@ -81,7 +84,8 @@ public static class RoomOpportunities
         int weekdaysMask)
     {
         var compatibility = EnvironmentCompatibility.Evaluate(capability.EnvironmentRequirement,
-            room, students, to, oneComputerPerStudent: true);
+            room, students, to, oneComputerPerStudent: true,
+            unitResources: capability.CurricularUnit.ResourceRequirements);
         var durationTicks = shift.EndsAt.Ticks - shift.StartsAt.Ticks;
         var duration = decimal.Round(durationTicks / (decimal)TimeSpan.TicksPerHour, 4);
         var estimated = Math.Ceiling(capability.RequiredHours * TimeSpan.TicksPerHour / durationTicks);

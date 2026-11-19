@@ -1,3 +1,4 @@
+import { useState } from "react";
 import type { ComputerGroup, ResourceCatalogItem, RoomResource, Software } from "../types";
 import { Checkbox, Field, SectionHeading } from "./UI";
 
@@ -18,12 +19,18 @@ export function RoomInventoryFields({ groups, resources, software, catalog, onGr
   onGroups: (groups: ComputerGroup[]) => void; onResources: (resources: RoomResource[]) => void;
   onRemoveGroup: (index: number) => void; onRemoveSoftware: (index: number, softwareId: number) => void;
 }) {
+  const [quantityMode, setQuantityMode] = useState<Record<string, boolean>>({});
+  const usesQuantity = (resource: RoomResource, index: number) =>
+    quantityMode[String(resource.id ?? `new-${index}`)] ?? !(resource.quantity === 1 && resource.operationalQuantity === 1);
   const changeGroup = (index: number, patch: Partial<ComputerGroup>) =>
     onGroups(groups.map((group, i) => i === index ? { ...group, ...patch } : group));
   const changeResource = (index: number, patch: Partial<RoomResource>) =>
     onResources(resources.map((resource, i) => i === index ? { ...resource, ...patch } : resource));
   return <section aria-label="Inventário técnico" className="border-t border-line pt-5 space-y-6">
-    <div className="flex flex-wrap justify-between gap-3 items-center">
+    <details className="rounded-panel border border-line p-4">
+    <summary className="cursor-pointer font-semibold text-ink">Inventário técnico legado (opcional)</summary>
+    <p className="muted mt-2">Dados existentes são preservados. Use esta seção apenas para manutenção de grupos de computadores já cadastrados.</p>
+    <div className="flex flex-wrap justify-between gap-3 items-center mt-4">
       <SectionHeading title="Grupos de computadores" subtitle="Equipamentos cadastrados, condições operacionais e especificações técnicas." />
       <button type="button" className="btn-secondary" onClick={() => onGroups([...groups, {
         description: "", quantity: 1, operationalQuantity: null, ramGb: 0, tier: "Basico", dedicatedGpu: false, software: [],
@@ -84,12 +91,13 @@ export function RoomInventoryFields({ groups, resources, software, catalog, onGr
       </div>
       <button type="button" className="btn-danger" onClick={() => onRemoveGroup(index)}>Remover grupo {index + 1}</button>
     </fieldset>)}
+    </details>
     <div className="flex flex-wrap justify-between gap-3 items-center border-t border-line pt-5">
       <SectionHeading title="Equipamentos e recursos" subtitle="Máquinas, ferramentas, mobiliário e demais recursos do ambiente." />
       <Field label="Adicionar recurso do catálogo"><select className="field" value="" onChange={(event) => {
         const selected = catalog.find((item) => item.id === Number(event.target.value));
         if (selected) onResources([...resources, { resourceCatalogItemId: selected.id,
-          name: selected.name, type: selected.category, quantity: 1, operationalQuantity: null,
+          name: selected.name, type: selected.category, quantity: 1, operationalQuantity: 1,
           description: null, condition: null, technicalDetails: null, voltage: null,
           warrantyExpiresOn: null, licenseExpiresOn: null }]);
       }}><option value="">Selecione um recurso</option>{catalog.filter((item) => item.active &&
@@ -100,25 +108,23 @@ export function RoomInventoryFields({ groups, resources, software, catalog, onGr
     </div>
     {resources.length === 0 && <p className="rounded-control border border-dashed border-line p-4 muted">Nenhum equipamento ou recurso cadastrado.</p>}
     {resources.map((resource, index) => <fieldset key={resource.id ?? `new-${index}`} className="border border-line rounded-panel p-4 sm:p-5">
-      <legend className="font-semibold px-1">Equipamento {index + 1}{resource.id ? ` · ID ${resource.id}` : " · Novo"}</legend>
-      <div className="grid sm:grid-cols-2 gap-3">
-        {resource.resourceCatalogItemId && <p className="sm:col-span-2 text-sm text-muted-ink">{resource.name} · {resource.type} — identidade do catálogo preservada.</p>}
-        {([["name", "Nome", 120], ["type", "Tipo", 80], ["description", "Descrição", 500],
-          ["condition", "Condição", 80], ["technicalDetails", "Detalhes técnicos", 2000]] as const).filter(([key]) =>
-            !resource.resourceCatalogItemId || (key !== "name" && key !== "type")).map(([key, label, maxLength]) =>
-          <Field key={key} label={label}><input className="field" required={key === "name" || key === "type"} maxLength={maxLength}
-            value={resource[key] ?? ""} onChange={(e) => changeResource(index, { [key]: e.target.value })} /></Field>)}
-        <Field label="Quantidade cadastrada"><input className="field" required type="number" min={0} max={100000} value={resource.quantity}
-          onChange={(e) => changeResource(index, { quantity: Number(e.target.value) })} /></Field>
-        <Field label="Quantidade operacional (opcional)"><input className="field" type="number" min={0} max={resource.quantity}
-          value={resource.operationalQuantity ?? ""} onChange={(e) => changeResource(index, { operationalQuantity: optionalNumber(e.target.value) })} /></Field>
-        <Field label="Voltagem (opcional)"><input className="field" type="number" min={1} max={1000} value={resource.voltage ?? ""}
-          onChange={(e) => changeResource(index, { voltage: optionalNumber(e.target.value) })} /></Field>
-        <Field label="Garantia até (opcional)"><input className="field" type="date" value={resource.warrantyExpiresOn ?? ""}
-          onChange={(e) => changeResource(index, { warrantyExpiresOn: e.target.value || null })} /></Field>
-        <Field label="Licença até (opcional)"><input className="field" type="date" value={resource.licenseExpiresOn ?? ""}
-          onChange={(e) => changeResource(index, { licenseExpiresOn: e.target.value || null })} /></Field>
-      </div>
+      <legend className="font-semibold px-1">{resource.name} · {resource.type}{resource.id ? ` · ID ${resource.id}` : ""}</legend>
+      {resource.resourceCatalogItemId ? <div className="grid sm:grid-cols-2 gap-3">
+        <Field label={`Disponibilidade de ${resource.name}`}><select className="field"
+          value={usesQuantity(resource, index) ? "quantity" : "presence"}
+          onChange={(event) => { const counted = event.target.value === "quantity";
+            setQuantityMode((current) => ({ ...current, [String(resource.id ?? `new-${index}`)]: counted }));
+            if (!counted) changeResource(index, { quantity: 1, operationalQuantity: 1 });
+            else changeResource(index, { quantity: Math.max(1, resource.quantity), operationalQuantity: resource.operationalQuantity ?? 0 }); }}>
+          <option value="presence">Presente (sem contagem)</option><option value="quantity">Quantidade disponível</option>
+        </select></Field>
+        {usesQuantity(resource, index) &&
+          <Field label="Quantidade disponível"><input className="field" type="number" min={0} max={100000}
+            value={resource.operationalQuantity ?? ""} onChange={(event) => {
+              const value = optionalNumber(event.target.value);
+              changeResource(index, { quantity: Math.max(resource.quantity, value ?? 0), operationalQuantity: value });
+            }} /></Field>}
+      </div> : <p className="muted">Recurso legado preservado: {resource.quantity} cadastrado(s), {resource.operationalQuantity ?? "disponibilidade não informada"} disponível(is).</p>}
       {!resource.id && <button type="button" className="btn-secondary mt-3" onClick={() => onResources(resources.filter((_, i) => i !== index))}>Descartar equipamento novo</button>}
     </fieldset>)}
   </section>;
