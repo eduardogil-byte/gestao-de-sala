@@ -23,7 +23,8 @@ public static partial class ApiEndpoints
                     s.Status,
                     s.UnallocatedMeetings,
                     s.CreatedAtUtc,
-                    AllocatedMeetings = s.WeeklyClasses.Count
+                    AllocatedMeetings = s.WeeklyClasses.Count + s.UnitPlans.SelectMany(p => p.Meetings).Count(),
+                    UnitPlanCount = s.UnitPlans.Count
                 }).ToListAsync()));
 
         api.MapGet("/schedules/{id:int}", async (int id, AppDbContext db) =>
@@ -31,7 +32,15 @@ public static partial class ApiEndpoints
             var schedule = await db.Schedules.AsNoTracking().Include(s => s.WeeklyClasses)
                 .ThenInclude(w => w.Shift).Include(s => s.WeeklyClasses)
                 .ThenInclude(w => w.Assignment).Include(s => s.WeeklyClasses)
-                .ThenInclude(w => w.Room).FirstOrDefaultAsync(s => s.Id == id);
+                .ThenInclude(w => w.Room).Include(s => s.UnitPlans)
+                .ThenInclude(p => p.Offering).ThenInclude(o => o.CurricularUnit)
+                .Include(s => s.UnitPlans).ThenInclude(p => p.Offering).ThenInclude(o => o.ClassGroup)
+                    .ThenInclude(c => c.Course)
+                .Include(s => s.UnitPlans).ThenInclude(p => p.Offering).ThenInclude(o => o.ClassGroup)
+                    .ThenInclude(c => c.CourseModule)
+                .Include(s => s.UnitPlans).ThenInclude(p => p.Meetings).ThenInclude(m => m.Shift)
+                .Include(s => s.UnitPlans).ThenInclude(p => p.Meetings).ThenInclude(m => m.Room)
+                .AsSplitQuery().FirstOrDefaultAsync(s => s.Id == id);
             if (schedule is null) return Results.NotFound();
             return Results.Ok(new
             {
@@ -40,6 +49,22 @@ public static partial class ApiEndpoints
                 schedule.Status,
                 schedule.UnallocatedMeetings,
                 schedule.CreatedAtUtc,
+                UnitPlans = schedule.UnitPlans.Select(p => new
+                {
+                    p.Id, p.ClassGroupId, ClassName = p.Offering.ClassGroup.Name,
+                    CourseName = p.Offering.ClassGroup.Course?.Name,
+                    ModuleName = p.Offering.ClassGroup.CourseModule?.Name,
+                    p.CurricularUnitId, UnitName = p.Offering.CurricularUnit.Name,
+                    p.TeacherId, p.PlannedHours, p.AllocatedHours,
+                    UnallocatedHours = p.PlannedHours is decimal total ? Math.Max(0, total - p.AllocatedHours) : (decimal?)null,
+                    p.PendingReason, p.Offering.DeliveryMode, p.Offering.EadScheduleMode,
+                    Meetings = p.Meetings.OrderBy(m => m.Date).Select(m => new
+                    {
+                        m.Id, m.Date, m.ShiftId, ShiftName = m.Shift?.Name,
+                        Start = m.Shift?.StartsAt, End = m.Shift?.EndsAt,
+                        m.RoomId, Room = m.Room?.Name, m.PlannedHours
+                    })
+                }),
                 Lessons = schedule.WeeklyClasses.Select(w => new
                 {
                     w.Id,
@@ -71,7 +96,8 @@ public static partial class ApiEndpoints
                     schedule.Id,
                     schedule.Status,
                     schedule.UnallocatedMeetings,
-                    AllocatedMeetings = schedule.WeeklyClasses.Count,
+                    AllocatedMeetings = schedule.WeeklyClasses.Count + schedule.UnitPlans.Sum(p => p.Meetings.Count),
+                    UnitPlanCount = schedule.UnitPlans.Count,
                     Note = schedule.UnallocatedMeetings > 0 ? "Grade parcial: ajuste os cadastros e gere novamente" : "Grade pronta para revisão"
                 });
         }).RequireAuthorization("Admin");
@@ -82,10 +108,19 @@ public static partial class ApiEndpoints
             var schedule = await db.Schedules.Include(s => s.Semester)
                 .Include(s => s.WeeklyClasses).ThenInclude(w => w.Shift)
                 .Include(s => s.WeeklyClasses).ThenInclude(w => w.Assignment)
+                .Include(s => s.UnitPlans).ThenInclude(p => p.Offering)
+                    .ThenInclude(o => o.CurricularUnit).ThenInclude(u => u.ResourceRequirements)
+                    .ThenInclude(r => r.ResourceCatalogItem)
+                .Include(s => s.UnitPlans).ThenInclude(p => p.Offering).ThenInclude(o => o.ClassGroup)
+                .Include(s => s.UnitPlans).ThenInclude(p => p.Meetings).ThenInclude(m => m.Shift)
+                .AsSplitQuery()
                 .FirstOrDefaultAsync(s => s.Id == id);
             if (schedule is null) return Results.NotFound();
             if (schedule.Status != ScheduleStatus.Rascunho) return Error("A grade não está em rascunho");
-            if (schedule.UnallocatedMeetings > 0 || schedule.WeeklyClasses.Count == 0)
+            if (schedule.UnallocatedMeetings > 0 ||
+                schedule.UnitPlans.Any(p => p.PendingReason != null || p.PlannedHours is null ||
+                    p.AllocatedHours != p.PlannedHours || p.Meetings.Count == 0) ||
+                schedule.WeeklyClasses.Count == 0 && schedule.UnitPlans.Count == 0)
                 return Error("Não é possível publicar uma grade incompleta");
             if (await db.Schedules.AnyAsync(s => s.Id != id && s.SemesterId == schedule.SemesterId
                 && s.Status == ScheduleStatus.Publicada))
@@ -135,7 +170,76 @@ public static partial class ApiEndpoints
                     });
                 }
             }
-            if (pendingOccupations.Count == 0)
+            var pendingUnitSlots = new List<(DateTime Start, DateTime End, string TeacherId, int ClassId, int? RoomId)>();
+            foreach (var plan in schedule.UnitPlans)
+            {
+                if (plan.TeacherId != plan.Offering.TeacherId || string.IsNullOrWhiteSpace(plan.TeacherId))
+                    return Results.Conflict(new ApiError("Instrutor da oferta mudou após a geração"));
+                if (!await db.TeacherCourseQualifications.AnyAsync(x => x.TeacherId == plan.TeacherId &&
+                    x.CourseId == plan.Offering.ClassGroup.CourseId) ||
+                    !await db.TeacherUnitQualifications.AnyAsync(x => x.TeacherId == plan.TeacherId &&
+                    x.CurricularUnitId == plan.CurricularUnitId))
+                    return Results.Conflict(new ApiError("Habilitação docente mudou após a geração"));
+                var offer = plan.Offering;
+                if (offer.ClassGroup.SemesterId != schedule.SemesterId ||
+                    offer.ClassGroup.CourseModuleId != offer.CurricularUnit.CourseModuleId ||
+                    plan.PlannedHours != offer.CurricularUnit.PlannedHours)
+                    return Results.Conflict(new ApiError("Oferta não corresponde mais à turma e ao semestre"));
+                foreach (var meeting in plan.Meetings)
+                {
+                    if (meeting.Date is null)
+                    {
+                        if (offer.DeliveryMode != UnitDeliveryMode.Ead ||
+                            offer.EadScheduleMode != EadScheduleMode.SemHorarioFixo ||
+                            meeting.ShiftId is not null || meeting.RoomId is not null)
+                            return Results.Conflict(new ApiError("Encontro EAD sem horário inválido"));
+                        continue;
+                    }
+                    if (meeting.Shift is null || meeting.Date < schedule.Semester.StartDate ||
+                        meeting.Date > schedule.Semester.EndDate || meeting.Shift.PedagogicalHours < meeting.PlannedHours ||
+                        offer.ClassGroup.ShiftId != meeting.ShiftId ||
+                        (offer.DeliveryMode == UnitDeliveryMode.Presencial) != (meeting.RoomId is not null) ||
+                        offer.DeliveryMode == UnitDeliveryMode.Ead && offer.EadScheduleMode != EadScheduleMode.HorarioDefinido)
+                        return Results.Conflict(new ApiError("Data, turno ou modalidade da oferta mudou"));
+                    var day = AcademicCalendarRules.Preview(schedule.Semester, meeting.Date.Value,
+                        meeting.Date.Value, 1 << (int)meeting.Date.Value.DayOfWeek, offer.ClassGroup,
+                        events, await ExceptionsFor(db, plan.ClassGroupId, meeting.Date.Value, meeting.Date.Value))
+                        .Dates.Single();
+                    if (offer.DeliveryMode == UnitDeliveryMode.Presencial ? !day.CountsAsPresential :
+                        day.Kind is AcademicDayKind.Holiday or AcademicDayKind.Recess or AcademicDayKind.Planning or AcademicDayKind.NonTeaching)
+                        return Results.Conflict(new ApiError($"Calendário não permite encontro em {meeting.Date:dd/MM/yyyy}"));
+                    if (!await db.Availabilities.AnyAsync(x => x.TeacherId == plan.TeacherId &&
+                        x.Weekday == (int)meeting.Date.Value.DayOfWeek && x.ShiftId == meeting.ShiftId))
+                        return Results.Conflict(new ApiError("Disponibilidade do instrutor mudou"));
+                    var start = meeting.Date.Value.ToDateTime(meeting.Shift.StartsAt);
+                    var end = meeting.Date.Value.ToDateTime(meeting.Shift.EndsAt);
+                    if (await ReservationRules.ConflictAsync(db, meeting.RoomId ?? 0, start, end,
+                        plan.TeacherId, plan.ClassGroupId) is string conflict)
+                        return Results.Conflict(new ApiError(conflict));
+                    if (pendingOccupations.Any(x => ScheduleGenerator.Overlap(x.StartsAt, x.EndsAt, start, end) &&
+                        (x.TeacherId == plan.TeacherId || x.ClassGroupId == plan.ClassGroupId ||
+                         meeting.RoomId is int roomId && x.RoomId == roomId)) ||
+                        pendingUnitSlots.Any(x => ScheduleGenerator.Overlap(x.Start, x.End, start, end) &&
+                            (x.TeacherId == plan.TeacherId || x.ClassId == plan.ClassGroupId ||
+                             meeting.RoomId is int roomId && x.RoomId == roomId)))
+                        return Results.Conflict(new ApiError("A própria grade possui horários conflitantes"));
+                    if (meeting.RoomId is int physicalRoomId)
+                    {
+                        var room = await db.Rooms.Include(x => x.Resources).FirstOrDefaultAsync(x => x.Id == physicalRoomId);
+                        if (room is null || !room.Active || room.Seats < offer.ClassGroup.Students ||
+                            offer.CurricularUnit.ResourceRequirements.Count > 0 &&
+                            EnvironmentCompatibility.Evaluate(null, room, offer.ClassGroup.Students,
+                                meeting.Date.Value, false, offer.CurricularUnit.ResourceRequirements).Classification != "Compatible")
+                            return Results.Conflict(new ApiError("Ambiente deixou de atender aos requisitos da UC"));
+                        pendingOccupations.Add(new RoomOccupation { RoomId = physicalRoomId,
+                            StartsAt = start, EndsAt = end, TeacherId = plan.TeacherId,
+                            ClassGroupId = plan.ClassGroupId, Kind = OccupationKind.Aula,
+                            ScheduleUnitMeetingId = meeting.Id, Description = offer.CurricularUnit.Name });
+                    }
+                    pendingUnitSlots.Add((start, end, plan.TeacherId!, plan.ClassGroupId, meeting.RoomId));
+                }
+            }
+            if (pendingOccupations.Count == 0 && schedule.UnitPlans.Count == 0)
                 return Results.Conflict(new ApiError("A grade não possui encontros presenciais elegíveis no calendário das turmas"));
             db.Occupations.AddRange(pendingOccupations);
             schedule.Status = ScheduleStatus.Publicada;
@@ -149,6 +253,7 @@ public static partial class ApiEndpoints
             });
         }).RequireAuthorization("Admin");
 
+        MapScheduleReview(api);
         MapPeriodAgenda(api);
 
         api.MapPost("/rooms/block", async (BlockRoom input, AppDbContext db) =>

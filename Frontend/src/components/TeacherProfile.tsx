@@ -1,7 +1,8 @@
 import { useEffect, useState, type FormEvent } from "react";
-import { put, read } from "../lib/api";
+import { post, put, read, remove } from "../lib/api";
 import { resultMessage } from "../lib/utils";
 import { Busy, Card, Field, Notice, SectionHeading, SubmitButton } from "./UI";
+import type { Course, CourseModule, CurricularUnit } from "../types";
 
 type Profile = {
   teacherId: string; displayName: string; education: string; technicalSkills: string; professionalKnowledge: string;
@@ -18,6 +19,11 @@ export function TeacherProfile({ teacherId, admin }: { teacherId: string; admin:
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
+  const [courses, setCourses] = useState<Course[]>([]);
+  const [courseId, setCourseId] = useState("");
+  const [modules, setModules] = useState<CourseModule[]>([]);
+  const [moduleId, setModuleId] = useState("");
+  const [units, setUnits] = useState<CurricularUnit[]>([]);
   useEffect(() => {
     let current = true;
     setLoading(true); setProfile(null); setError(""); setSuccess("");
@@ -34,6 +40,43 @@ export function TeacherProfile({ teacherId, admin }: { teacherId: string; admin:
       .finally(() => { if (current) setLoading(false); });
     return () => { current = false; };
   }, [teacherId]);
+  useEffect(() => {
+    if (!admin) return;
+    let active = true;
+    read<Course[]>("/courses").then((rows) => { if (active) setCourses(rows); })
+      .catch((cause) => { if (active) setError(resultMessage(cause)); });
+    return () => { active = false; };
+  }, [admin]);
+  useEffect(() => {
+    setModules([]); setModuleId(""); setUnits([]);
+    if (!courseId) return;
+    let active = true;
+    read<CourseModule[]>(`/courses/${courseId}/modules`)
+      .then((rows) => { if (active) setModules(rows); })
+      .catch((cause) => { if (active) setError(resultMessage(cause)); });
+    return () => { active = false; };
+  }, [courseId]);
+  useEffect(() => {
+    setUnits([]);
+    if (!courseId || !moduleId) return;
+    let active = true;
+    read<CurricularUnit[]>(`/courses/${courseId}/modules/${moduleId}/curricular-units`)
+      .then((rows) => { if (active) setUnits(rows); })
+      .catch((cause) => { if (active) setError(resultMessage(cause)); });
+    return () => { active = false; };
+  }, [courseId, moduleId]);
+  async function changeQualification(kind: "course" | "unit", id: number, enabled: boolean) {
+    if (!profile || busy || !courseId) return;
+    setBusy(true); setError(""); setSuccess("");
+    const base = `${path(teacherId)}/courses/${courseId}`;
+    try {
+      await (enabled ? post : remove)<unknown>(kind === "course" ? base : `${base}/curricular-units/${id}`);
+      const updated = await read<Profile>(path(teacherId));
+      setProfile(updated);
+      setSuccess("Habilitações atualizadas.");
+    } catch (cause) { setError(resultMessage(cause)); }
+    finally { setBusy(false); }
+  }
   async function save(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!admin || busy || !profile) return;
@@ -73,6 +116,29 @@ export function TeacherProfile({ teacherId, admin }: { teacherId: string; admin:
             <li key={item.curricularCapabilityId}>{item.description}</li>)}</ul> : <p className="muted mt-2">Nenhuma capacidade registrada.</p>}</div>
       </div>
       <p className="muted">Habilitação pedagógica não é atribuição de turma nem disponibilidade confirmada.</p>
+      {admin && <section className="rounded-xl border border-line p-4 space-y-3" aria-label="Gerenciar habilitações">
+        <h3 className="font-semibold text-ink">Habilitações por curso e UC</h3>
+        <div className="grid gap-3 sm:grid-cols-2">
+          <Field label="Curso para habilitação"><select className="field" value={courseId} onChange={(event) => setCourseId(event.target.value)}>
+            <option value="">Selecione um curso</option>{courses.map((course) =>
+              <option key={course.id} value={course.id}>{course.code} · {course.name}</option>)}</select></Field>
+          <Field label="Módulo para habilitação"><select className="field" value={moduleId} disabled={!courseId}
+            onChange={(event) => setModuleId(event.target.value)}><option value="">Selecione um módulo</option>
+            {modules.map((module) => <option key={module.id} value={module.id}>{module.name}</option>)}</select></Field>
+        </div>
+        {courseId && <label className="flex items-center gap-2 text-sm text-ink"><input type="checkbox" disabled={busy ||
+          (profile.courses.some((item) => item.courseId === Number(courseId)) &&
+            profile.curricularUnits.some((item) => item.courseId === Number(courseId)))}
+          checked={profile.courses.some((item) => item.courseId === Number(courseId))}
+          onChange={(event) => void changeQualification("course", Number(courseId), event.target.checked)} />
+          Habilitado para o curso</label>}
+        {moduleId && <div className="space-y-2">{units.map((unit) => <label key={unit.id} className="flex items-center gap-2 text-sm text-ink">
+          <input type="checkbox" disabled={busy || !profile.courses.some((item) => item.courseId === Number(courseId))}
+            checked={profile.curricularUnits.some((item) => item.curricularUnitId === unit.id)}
+            onChange={(event) => void changeQualification("unit", unit.id, event.target.checked)} />
+          {unit.code} · {unit.name}</label>)}</div>}
+        {moduleId && units.length === 0 && <p className="muted">Nenhuma UC cadastrada neste módulo.</p>}
+      </section>}
     </>}
   </Card>;
 }

@@ -16,8 +16,11 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : Ident
     public DbSet<Semester> Semesters => Set<Semester>();
     public DbSet<SchoolShift> Shifts => Set<SchoolShift>();
     public DbSet<ClassGroup> Classes => Set<ClassGroup>();
+    public DbSet<ClassUnitOffering> ClassUnitOfferings => Set<ClassUnitOffering>();
     public DbSet<TeacherAvailability> Availabilities => Set<TeacherAvailability>();
     public DbSet<TeachingAssignment> Assignments => Set<TeachingAssignment>();
+    public DbSet<ScheduleUnitPlan> ScheduleUnitPlans => Set<ScheduleUnitPlan>();
+    public DbSet<ScheduleUnitMeeting> ScheduleUnitMeetings => Set<ScheduleUnitMeeting>();
     public DbSet<AssignmentSoftware> AssignmentSoftware => Set<AssignmentSoftware>();
     public DbSet<Schedule> Schedules => Set<Schedule>();
     public DbSet<WeeklyClass> WeeklyClasses => Set<WeeklyClass>();
@@ -118,11 +121,44 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : Ident
             .HasFilter("[NormalizedCode] IS NOT NULL");
         b.Entity<ClassGroup>().HasOne(x => x.Course).WithMany()
             .HasForeignKey(x => x.CourseId).OnDelete(DeleteBehavior.Restrict);
+        b.Entity<ClassGroup>().HasOne(x => x.CourseModule).WithMany()
+            .HasForeignKey(x => x.CourseModuleId).OnDelete(DeleteBehavior.Restrict);
+        b.Entity<ClassUnitOffering>().HasKey(x => new { x.ClassGroupId, x.CurricularUnitId });
+        b.Entity<ClassUnitOffering>().HasOne(x => x.ClassGroup).WithMany(x => x.UnitOfferings)
+            .HasForeignKey(x => x.ClassGroupId).OnDelete(DeleteBehavior.Restrict);
+        b.Entity<ClassUnitOffering>().HasOne(x => x.CurricularUnit).WithMany()
+            .HasForeignKey(x => x.CurricularUnitId).OnDelete(DeleteBehavior.Restrict);
+        b.Entity<ClassUnitOffering>().HasOne(x => x.Teacher).WithMany()
+            .HasForeignKey(x => x.TeacherId).OnDelete(DeleteBehavior.Restrict);
+        b.Entity<ClassUnitOffering>().ToTable(t => t.HasCheckConstraint("CK_ClassUnitOfferings_Delivery",
+            "([DeliveryMode] = 1 AND [EadScheduleMode] IS NULL) OR ([DeliveryMode] = 2 AND [EadScheduleMode] IN (1, 2))"));
         b.Entity<ClassGroup>().ToTable(t => t.HasCheckConstraint("CK_Classes_EadPattern",
             "([EadWeekday] IS NULL AND [EadStartDate] IS NULL AND [EadEndDate] IS NULL) OR " +
             "([EadWeekday] IS NOT NULL AND [EadWeekday] BETWEEN 1 AND 5 AND [EadStartDate] IS NOT NULL AND " +
             "[EadEndDate] IS NOT NULL AND [EadStartDate] <= [EadEndDate])"));
         b.Entity<TeachingAssignment>().Property(x => x.DisciplineName).HasMaxLength(140);
+        b.Entity<SchoolShift>().Property(x => x.PedagogicalHours).HasColumnType("decimal(9,2)");
+        b.Entity<SchoolShift>().ToTable(t => t.HasCheckConstraint("CK_Shifts_PedagogicalHours",
+            "[PedagogicalHours] IS NULL OR ([PedagogicalHours] > 0 AND [PedagogicalHours] <= 24)"));
+        b.Entity<ScheduleUnitPlan>().HasOne(x => x.Schedule).WithMany(x => x.UnitPlans)
+            .HasForeignKey(x => x.ScheduleId).OnDelete(DeleteBehavior.Restrict);
+        b.Entity<ScheduleUnitPlan>().HasOne(x => x.Offering).WithMany()
+            .HasForeignKey(x => new { x.ClassGroupId, x.CurricularUnitId }).OnDelete(DeleteBehavior.Restrict);
+        b.Entity<ScheduleUnitPlan>().HasIndex(x => new { x.ScheduleId, x.ClassGroupId, x.CurricularUnitId }).IsUnique();
+        b.Entity<ScheduleUnitPlan>().Property(x => x.PlannedHours).HasColumnType("decimal(9,2)");
+        b.Entity<ScheduleUnitPlan>().Property(x => x.AllocatedHours).HasColumnType("decimal(9,2)");
+        b.Entity<ScheduleUnitPlan>().Property(x => x.PendingReason).HasMaxLength(1000);
+        b.Entity<ScheduleUnitMeeting>().HasOne(x => x.Plan).WithMany(x => x.Meetings)
+            .HasForeignKey(x => x.ScheduleUnitPlanId).OnDelete(DeleteBehavior.Restrict);
+        b.Entity<ScheduleUnitMeeting>().HasOne(x => x.Shift).WithMany()
+            .HasForeignKey(x => x.ShiftId).OnDelete(DeleteBehavior.Restrict);
+        b.Entity<ScheduleUnitMeeting>().HasOne(x => x.Room).WithMany()
+            .HasForeignKey(x => x.RoomId).OnDelete(DeleteBehavior.Restrict);
+        b.Entity<ScheduleUnitMeeting>().Property(x => x.PlannedHours).HasColumnType("decimal(9,2)");
+        b.Entity<ScheduleUnitMeeting>().HasIndex(x => new { x.Date, x.ShiftId, x.RoomId });
+        b.Entity<ScheduleUnitMeeting>().ToTable(t => t.HasCheckConstraint("CK_ScheduleUnitMeetings_Mode",
+            "([Date] IS NULL AND [ShiftId] IS NULL AND [RoomId] IS NULL) OR " +
+            "([Date] IS NOT NULL AND [ShiftId] IS NOT NULL)"));
         b.Entity<TeachingAssignment>().HasOne(x => x.CurricularUnit).WithMany()
             .HasForeignKey(x => x.CurricularUnitId).OnDelete(DeleteBehavior.Restrict);
         b.Entity<TeachingAssignment>().HasIndex(x => new
@@ -142,6 +178,10 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : Ident
         b.Entity<BookingSoftware>().HasKey(x => new { x.BookingRequestId, x.SoftwareId });
         b.Entity<TeacherAvailability>().HasIndex(x => new { x.TeacherId, x.Weekday, x.ShiftId }).IsUnique();
         b.Entity<RoomOccupation>().HasIndex(x => new { x.RoomId, x.StartsAt, x.EndsAt });
+        b.Entity<RoomOccupation>().HasOne(x => x.ScheduleUnitMeeting).WithMany()
+            .HasForeignKey(x => x.ScheduleUnitMeetingId).OnDelete(DeleteBehavior.Restrict);
+        b.Entity<RoomOccupation>().HasIndex(x => x.ScheduleUnitMeetingId).IsUnique()
+            .HasFilter("[ScheduleUnitMeetingId] IS NOT NULL");
         b.Entity<RoomOccupation>().HasOne<PlanProposal>().WithMany().HasForeignKey(x => x.PlanProposalId)
             .OnDelete(DeleteBehavior.Restrict);
         b.Entity<RoomOccupation>().HasIndex(x => new { x.PlanProposalId, x.StartsAt }).IsUnique()

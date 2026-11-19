@@ -4,6 +4,7 @@ import { useData } from "../lib/data";
 import { dateBR, resultMessage } from "../lib/utils";
 import { Badge, Card, Field, FilterBar, Notice, SectionHeading, Title } from "../components/UI";
 import type { User } from "../types";
+import { Schedules } from "./Schedules";
 
 type Proposal = {
   id: number; assignmentId: number; teacherId: string; classGroupId: number;
@@ -35,6 +36,8 @@ export function SemesterPlanning({ user, reloadAgenda }: { user: User; reloadAge
     </select></Field></FilterBar>
     {semester && <p className="text-sm text-muted-ink">Semestre selecionado: <strong className="text-ink">{semester.name}</strong> · {dateBR(semester.startDate)} a {dateBR(semester.endDate)}</p>}
     {semesterId && <SemesterPlan key={semesterId} semesterId={semesterId} user={user} reloadAgenda={reloadAgenda} />}
+    {semesterId && user.roles.includes("Admin") && <Schedules key={`grade-${semesterId}`}
+      user={user} reloadAgenda={reloadAgenda} initialSemesterId={semesterId} embedded />}
   </div>;
 }
 

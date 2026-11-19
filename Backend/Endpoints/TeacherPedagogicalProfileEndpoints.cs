@@ -112,6 +112,8 @@ public static partial class ApiEndpoints
             var item = await db.TeacherUnitQualifications.FirstOrDefaultAsync(x => x.TeacherId == teacherId &&
                 x.CurricularUnitId == unitId && x.CurricularUnit.CourseModule.CourseId == courseId);
             if (item is null) return Results.NotFound();
+            if (await db.ClassUnitOfferings.AnyAsync(x => x.TeacherId == teacherId && x.CurricularUnitId == unitId))
+                return CatalogConflict("Reatribua as ofertas desta UC antes de remover a habilitação do instrutor");
             db.TeacherUnitQualifications.Remove(item);
             AuditTrail.Add(db, "TeacherQualification", $"{teacherId}:unit:{unitId}", "Removida", UserId(current),
                 new { TeacherId = teacherId, CurricularUnitId = unitId }, null);

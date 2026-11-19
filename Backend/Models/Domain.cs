@@ -18,6 +18,8 @@ public enum BookingStatus { Pendente = 1, Aprovada = 2, Rejeitada = 3 }
 public enum BookingRecurrence { Nenhuma = 0, Diaria = 1, Semanal = 2 }
 public enum LoanStatus { PendenteDono = 1, PendenteAdmin = 2, Aprovado = 3, Rejeitado = 4, AguardandoDestinatario = 5, AguardandoSituacaoTitular = 6 }
 public enum ClassDayStatus { Letivo = 1, Ead = 2, NaoLetivo = 3 }
+public enum UnitDeliveryMode { Presencial = 1, Ead = 2 }
+public enum EadScheduleMode { SemHorarioFixo = 1, HorarioDefinido = 2 }
 public enum OwnerClassDisposition { Ead = 1, NaoLetivo = 2, OutraSala = 3 }
 public enum OccupationKind { Aula = 1, Avulsa = 2, Bloqueio = 3 }
 
@@ -127,6 +129,7 @@ public sealed class SchoolShift
     public string Name { get; set; } = "";
     public TimeOnly StartsAt { get; set; }
     public TimeOnly EndsAt { get; set; }
+    public decimal? PedagogicalHours { get; set; }
 }
 
 public sealed class ClassGroup
@@ -140,11 +143,26 @@ public sealed class ClassGroup
     public Semester Semester { get; set; } = null!;
     public int? CourseId { get; set; }
     public Course? Course { get; set; }
+    public int? CourseModuleId { get; set; } // Nulo para turmas anteriores à vinculação por módulo.
+    public CourseModule? CourseModule { get; set; }
+    public List<ClassUnitOffering> UnitOfferings { get; set; } = new();
     public int? EadWeekday { get; set; }
     public DateOnly? EadStartDate { get; set; }
     public DateOnly? EadEndDate { get; set; }
     public string Name { get; set; } = "";
     public int Students { get; set; }
+}
+
+public sealed class ClassUnitOffering
+{
+    public int ClassGroupId { get; set; }
+    public ClassGroup ClassGroup { get; set; } = null!;
+    public int CurricularUnitId { get; set; }
+    public CurricularUnit CurricularUnit { get; set; } = null!;
+    public UnitDeliveryMode DeliveryMode { get; set; }
+    public EadScheduleMode? EadScheduleMode { get; set; }
+    public string? TeacherId { get; set; }
+    public AppUser? Teacher { get; set; }
 }
 
 public sealed class TeacherAvailability
@@ -199,6 +217,35 @@ public sealed class Schedule
     public int UnallocatedMeetings { get; set; }
     public DateTime CreatedAtUtc { get; set; } = DateTime.UtcNow;
     public List<WeeklyClass> WeeklyClasses { get; set; } = new();
+    public List<ScheduleUnitPlan> UnitPlans { get; set; } = new();
+}
+
+public sealed class ScheduleUnitPlan
+{
+    public int Id { get; set; }
+    public int ScheduleId { get; set; }
+    public Schedule Schedule { get; set; } = null!;
+    public int ClassGroupId { get; set; }
+    public int CurricularUnitId { get; set; }
+    public ClassUnitOffering Offering { get; set; } = null!;
+    public string? TeacherId { get; set; }
+    public decimal? PlannedHours { get; set; }
+    public decimal AllocatedHours { get; set; }
+    public string? PendingReason { get; set; }
+    public List<ScheduleUnitMeeting> Meetings { get; set; } = new();
+}
+
+public sealed class ScheduleUnitMeeting
+{
+    public int Id { get; set; }
+    public int ScheduleUnitPlanId { get; set; }
+    public ScheduleUnitPlan Plan { get; set; } = null!;
+    public DateOnly? Date { get; set; }
+    public int? ShiftId { get; set; }
+    public SchoolShift? Shift { get; set; }
+    public int? RoomId { get; set; }
+    public Room? Room { get; set; }
+    public decimal PlannedHours { get; set; }
 }
 
 public sealed class WeeklyClass
@@ -272,6 +319,8 @@ public sealed class RoomOccupation
     public string? TeacherId { get; set; } // professor originalmente alocado
     public int? ClassGroupId { get; set; }
     public int? WeeklyClassId { get; set; }
+    public int? ScheduleUnitMeetingId { get; set; }
+    public ScheduleUnitMeeting? ScheduleUnitMeeting { get; set; }
     public int? BookingRequestId { get; set; }
     public int? PlanProposalId { get; set; }
     public string? Description { get; set; }

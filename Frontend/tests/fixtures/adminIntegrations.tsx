@@ -13,6 +13,8 @@ import { InstructorAgenda } from "../../src/pages/InstructorAgenda";
 import { Teachers } from "../../src/pages/Teachers";
 import { InstitutionalImport } from "../../src/pages/InstitutionalImport";
 import { ExportData } from "../../src/pages/ExportData";
+import { Academic } from "../../src/pages/Academic";
+import { Schedules } from "../../src/pages/Schedules";
 import "../../src/index.css";
 
 const root = createRoot(document.getElementById("root")!);
@@ -38,6 +40,8 @@ function Content({ mode, role }: { mode: string; role: string }) {
       mode === "bookings" ? <Bookings user={user} reloadAgenda={async () => {}} /> :
       mode === "requirements" ? <CapabilityRequirements path="/courses/1/modules/2/curricular-units/3/capabilities/4" admin={role === "Admin"} /> :
       mode === "catalog" ? <PedagogicalCatalog user={user} /> :
+      mode === "academic" ? <Academic user={user} /> :
+      mode === "schedules" ? <Schedules user={user} reloadAgenda={async () => {}} /> :
       mode === "teachers" ? <Teachers user={user} /> :
       mode === "timeline" ? <RoomTimeline user={user} openBookings={() => {}} initialFilter={{ semesterId: 1, roomId: 10, anchor: "2027-03-01" }} /> :
       mode === "opportunities" ? <RoomOpportunities initial={{ semesterId: 1, roomId: 10 }} onTimeline={() => {}} /> :

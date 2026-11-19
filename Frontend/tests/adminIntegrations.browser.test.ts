@@ -151,6 +151,119 @@ test("integrações administrativas usam contratos existentes e preservam estado
         [{ resourceCatalogItemId: 9, quantity: 1 }]);
       await reply(path, null, 204);
     });
+    await t.test("turma carrega módulo, UC, CH e recursos e registra EAD sem duplicar o plano", async () => {
+      await reset("academic", "Admin");
+      await evaluate(`adminTest.catalog['/api/courses/1/modules/2/curricular-units/3/resources'] =
+        [{ resourceCatalogItemId: 9, name: 'Bancada', category: 'Equipamento', quantity: 1 }]`);
+      await evaluate("adminTest.select('Semestre', '1'); adminTest.select('Curso do Plano de Curso', '1')");
+      await waitFor("document.body.innerText.includes('Módulo sintético')");
+      await evaluate("adminTest.select('Módulo do curso', '2')");
+      await waitFor("document.body.innerText.includes('UC sintética · CH 8 h')");
+      assert.equal(await evaluate("document.body.innerText.includes('Bancada (1)')"), true);
+      await command("Emulation.setDeviceMetricsOverride", { width: 390, height: 844, deviceScaleFactor: 1, mobile: true });
+      for (const theme of ["light", "dark"]) {
+        await evaluate(`document.documentElement.dataset.theme = ${JSON.stringify(theme)}`);
+        assert.equal(await evaluate("document.documentElement.scrollWidth <= innerWidth + 1"), true);
+      }
+      await command("Emulation.setDeviceMetricsOverride", { width: 1440, height: 900, deviceScaleFactor: 1, mobile: false });
+      await evaluate("adminTest.select('Turno da turma', '1'); adminTest.input('Turma', 'Turma EAD'); adminTest.select('Oferta de UC sintética', 'Ead')");
+      await evaluate("adminTest.select('Horário on-line de UC sintética', 'HorarioDefinido'); adminTest.click('Adicionar turma')");
+      await waitFor("adminTest.pending.some(r => r.path === '/api/classes')");
+      const body = await evaluate<any>("adminTest.pending.find(r => r.path === '/api/classes').body");
+      assert.equal(body.courseId, 1); assert.equal(body.courseModuleId, 2);
+      assert.deepEqual(body.unitOfferings, [{ curricularUnitId: 3, deliveryMode: "Ead", eadScheduleMode: "HorarioDefinido" }]);
+      assert.equal(Object.hasOwn(body.unitOfferings[0], "plannedHours"), false);
+      await reply("/api/classes", { id: 42, name: "Turma EAD" }, 201);
+      await reset("academic", "Professor");
+      await evaluate(`adminTest.catalog['/api/classes'] = [{ id: 7, semesterId: 1, name: 'Turma anterior', students: 20, shiftId: 1,
+        courseId: null, courseModuleId: null }];
+        adminTest.catalog['/api/classes/7/units'] = { legacyWithoutModule: true, units: [], presentialHours: 0, eadHours: 0, unitsWithoutHours: 0 };
+        adminTest.click('Atualizar dados')`);
+      await waitFor("document.body.innerText.includes('Turma anterior')");
+      await evaluate("adminTest.click('Ver UCs da turma')");
+      await waitFor("document.body.innerText.includes('Turma anterior sem módulo vinculado')");
+      assert.equal(await evaluate("document.body.innerText.includes('Adicionar turma')"), false);
+    });
+    await t.test("atribuição usa apenas UCs ofertadas e instrutores habilitados, sem horário nem sala", async () => {
+      await reset("academic", "Admin");
+      await evaluate(`adminTest.catalog['/api/classes'] = [{ id: 7, semesterId: 1, courseId: 1,
+        courseModuleId: 2, name: 'Turma EAD', students: 20, shiftId: 1 }];
+        adminTest.catalog['/api/classes/7/units'] = { legacyWithoutModule: false, presentialHours: 0,
+        eadHours: 8, unitsWithoutHours: 0, units: [{ curricularUnitId: 3, code: 'UC', name: 'UC sintética',
+        plannedHours: 8, deliveryMode: 'Ead', eadScheduleMode: 'SemHorarioFixo', teacherId: null, resources: [] }] };
+        adminTest.catalog['/api/classes/7/units/3/eligible-teachers'] = [{ teacherId: 't0', displayName: 'Docente 0' }];
+        adminTest.click('Atualizar dados')`);
+      await waitFor("document.body.innerText.includes('Turma EAD')");
+      await evaluate("adminTest.select('Semestre da atribuição', '1'); adminTest.select('Turma da atribuição', '7')");
+      await waitFor("document.body.innerText.includes('UC · UC sintética · EAD')");
+      await evaluate("adminTest.select('UC ofertada', '3')");
+      await waitFor("document.body.innerText.includes('Docente 0')");
+      await evaluate("adminTest.select('Instrutor habilitado', 't0'); adminTest.click('Salvar instrutor responsável')");
+      const path = '/api/classes/7/units/3/teacher';
+      await waitFor(`adminTest.pending.some(r => r.path === ${JSON.stringify(path)})`);
+      assert.deepEqual(await evaluate<any>(`adminTest.pending.find(r => r.path === ${JSON.stringify(path)}).body`),
+        { teacherId: 't0' });
+      await reply(path, null, 204);
+      await waitFor("document.body.innerText.includes('Instrutor responsável registrado')");
+      await reset("academic", "Professor");
+      assert.equal(await evaluate("document.body.innerText.includes('Salvar instrutor responsável')"), false);
+    });
+    await t.test("grade semestral mostra CH, EAD sem sala e pendências sem liberar publicação", async () => {
+      await reset("schedules", "Admin");
+      await evaluate(`adminTest.catalog['/api/schedules'] = [{ id: 5, semesterId: 1, status: 'Rascunho',
+        unallocatedMeetings: 1, allocatedMeetings: 2, createdAtUtc: '2027-03-01T00:00:00' }];
+        adminTest.catalog['/api/schedules/5'] = { id: 5, semesterId: 1, status: 'Rascunho',
+        unallocatedMeetings: 1, createdAtUtc: '2027-03-01T00:00:00', lessons: [],
+        unitPlans: [{ id: 11, classGroupId: 7, className: 'Turma sintética', courseName: 'Curso sintético',
+          moduleName: 'Módulo sintético', curricularUnitId: 3, unitName: 'UC presencial', teacherId: 't0',
+          plannedHours: 8, allocatedHours: 4, unallocatedHours: 4, pendingReason: 'Ambiente ocupado',
+          deliveryMode: 'Presencial', eadScheduleMode: null, meetings: [{ id: 1, date: '2027-03-03',
+          shiftId: 1, shiftName: 'Manhã', start: '08:00:00', end: '12:00:00', roomId: 10,
+          room: 'Laboratório sintético', plannedHours: 4 }] },
+        { id: 12, classGroupId: 7, className: 'Turma sintética', courseName: 'Curso sintético',
+          moduleName: 'Módulo sintético', curricularUnitId: 4, unitName: 'UC EAD', teacherId: 't0',
+          plannedHours: 8, allocatedHours: 8, unallocatedHours: 0, pendingReason: null,
+          deliveryMode: 'Ead', eadScheduleMode: 'SemHorarioFixo', meetings: [{ id: 2, date: null,
+          shiftId: null, shiftName: null, start: null, end: null, roomId: null, room: null,
+          plannedHours: 8 }] }] };
+        adminTest.click('Atualizar dados')`);
+      await waitFor("document.body.innerText.includes('Grade #5')");
+      await evaluate("adminTest.select('Semestre', '1'); [...document.querySelectorAll('button')].find(b => b.textContent.includes('Grade #5')).click()");
+      await waitFor("document.body.innerText.includes('UC EAD')");
+      assert.equal(await evaluate("document.body.innerText.includes('EAD sem horário fixo') && document.body.innerText.includes('sem sala física')"), true);
+      assert.equal(await evaluate("document.body.innerText.includes('Ambiente ocupado') && document.body.innerText.includes('não alocada: 4 h')"), true);
+      assert.equal(await evaluate("document.body.innerText.includes('Curso sintético') && document.body.innerText.includes('Módulo sintético')"), true);
+      assert.equal(await evaluate("[...document.querySelectorAll('button')].find(b => b.textContent.includes('Publicar grade'))?.disabled"), true);
+      const alternativesPath = '/api/schedules/5/unit-plans/11/alternatives?meetingId=1&from=2027-03-03';
+      await evaluate(`adminTest.deferred.push(${JSON.stringify(alternativesPath)})`);
+      await evaluate("adminTest.click('Ajustar')");
+      await waitFor(`adminTest.pending.some(r => r.path === ${JSON.stringify(alternativesPath)})`);
+      await reply(alternativesPath, [{ date: '2027-03-05', shiftId: 1, roomId: 10,
+        roomName: 'Laboratório sintético', hours: 4 }]);
+      await waitFor("document.body.innerText.includes('2027-03-05')");
+      await evaluate("[...document.querySelectorAll('button')].find(b => b.textContent.includes('2027-03-05'))?.click()");
+      await evaluate("adminTest.click('Validar e salvar')");
+      const previewPath = '/api/schedules/5/unit-plans/11/meeting-preview';
+      await waitFor(`adminTest.pending.some(r => r.path === ${JSON.stringify(previewPath)})`);
+      assert.deepEqual(await evaluate<any>(`adminTest.pending.find(r => r.path === ${JSON.stringify(previewPath)}).body`),
+        { meetingId: 1, date: '2027-03-05', shiftId: 1, roomId: 10 });
+      await reply(previewPath, { allowed: false, blocks: ['Instrutor indisponível'], hours: 4 });
+      await waitFor("document.body.innerText.includes('Instrutor indisponível')");
+      assert.equal(await evaluate("adminTest.calls.some(r => r.path === '/api/schedules/5/unit-plans/11/meeting' && r.method === 'PUT')"), false);
+      await command("Emulation.setDeviceMetricsOverride", { width: 390, height: 844, deviceScaleFactor: 1, mobile: true });
+      for (const theme of ["light", "dark"]) {
+        await evaluate(`document.documentElement.dataset.theme = ${JSON.stringify(theme)}`);
+        assert.equal(await evaluate("document.documentElement.scrollWidth <= innerWidth + 1"), true);
+      }
+      await command("Emulation.setDeviceMetricsOverride", { width: 1440, height: 900, deviceScaleFactor: 1, mobile: false });
+      await evaluate("adminTest.input('Manhã: horas pedagógicas por encontro', '4'); adminTest.click('Salvar CH do turno')");
+      const path = '/api/shifts/1/pedagogical-hours';
+      await waitFor(`adminTest.pending.some(r => r.path === ${JSON.stringify(path)})`);
+      assert.deepEqual(await evaluate<any>(`adminTest.pending.find(r => r.path === ${JSON.stringify(path)}).body`), { hours: 4 });
+      await reply(path, null, 204);
+      await reset("schedules", "Professor");
+      assert.equal(await evaluate("document.body.innerText.includes('Carga pedagógica por turno') || document.body.innerText.includes('Gerar nova grade')"), false);
+    });
     await t.test("Admin cadastra capacidade no contexto da UC e consulta fechamento de carga", async () => {
       await reset("catalog", "Admin");
       await waitFor("document.body.innerText.includes('Curso sintético')");
@@ -211,6 +324,51 @@ test("integrações administrativas usam contratos existentes e preservam estado
       assert.equal(await evaluate("document.body.innerText.includes('Cadastrar instrutor') || document.body.innerText.includes('Salvar perfil') || document.body.innerText.includes('Buscar docente')"), false);
       assert.equal(await evaluate("[...document.querySelectorAll('textarea')].every(t => t.readOnly)"), true);
       assert.equal(await evaluate("adminTest.calls.some(r => r.path.includes('/pedagogical-profile') && !r.path.includes('/t0/'))"), false);
+    });
+    await t.test("habilitações carregam curso, módulo e UCs do catálogo institucional", async () => {
+      await reset("teachers", "Admin");
+      await waitFor("document.body.innerText.includes('Habilitações por curso e UC')");
+      await evaluate("adminTest.select('Curso para habilitação', '1')");
+      await waitFor("document.body.innerText.includes('Módulo sintético')");
+      await evaluate("adminTest.select('Módulo para habilitação', '2')");
+      await waitFor("document.body.innerText.includes('UC · UC sintética')");
+      await command("Emulation.setDeviceMetricsOverride", { width: 390, height: 844, deviceScaleFactor: 1, mobile: true });
+      for (const theme of ["light", "dark"]) {
+        await evaluate(`document.documentElement.dataset.theme = ${JSON.stringify(theme)}`);
+        assert.equal(await evaluate("document.documentElement.scrollWidth <= innerWidth + 1"), true);
+      }
+      await command("Emulation.setDeviceMetricsOverride", { width: 1440, height: 900, deviceScaleFactor: 1, mobile: false });
+      assert.equal(await evaluate("[...document.querySelectorAll('input[type=checkbox]')].some(i => i.checked)"), true);
+      await evaluate(`adminTest.catalog['/api/teachers/t0/pedagogical-profile'].curricularUnits = [];
+        [...document.querySelectorAll('label')].find(l => l.textContent.includes('UC · UC sintética')).querySelector('input').click()`);
+      const path = '/api/teachers/t0/pedagogical-profile/courses/1/curricular-units/3';
+      await waitFor(`adminTest.pending.some(r => r.path === ${JSON.stringify(path)})`);
+      assert.equal(await evaluate(`adminTest.pending.find(r => r.path === ${JSON.stringify(path)}).method`), "DELETE");
+      await reply(path, null, 204);
+      await waitFor("[...document.querySelectorAll('label')].find(l => l.textContent.includes('UC · UC sintética')).querySelector('input').checked === false");
+      await evaluate(`adminTest.reset('teachers', 'Admin');
+        adminTest.catalog['/api/courses'].push({ id: 5, code: 'X', name: 'Outro curso', active: true });
+        adminTest.catalog['/api/courses/5/modules'] = [{ id: 6, courseId: 5, name: 'Módulo de outro curso', order: 1 }];
+        adminTest.catalog['/api/courses/5/modules/6/curricular-units'] = [{ id: 7, courseModuleId: 6,
+          code: 'UC-X', name: 'UC de outro curso', plannedHours: 12 }]`);
+      await waitFor("document.body.innerText.includes('Habilitações por curso e UC')");
+      await evaluate("adminTest.select('Curso para habilitação', '5')");
+      await waitFor("document.body.innerText.includes('Módulo de outro curso')");
+      await evaluate("[...document.querySelectorAll('label')].find(l => l.textContent.includes('Habilitado para o curso')).querySelector('input').click()");
+      const coursePath = '/api/teachers/t0/pedagogical-profile/courses/5';
+      await waitFor(`adminTest.pending.some(r => r.path === ${JSON.stringify(coursePath)})`);
+      assert.equal(await evaluate(`adminTest.pending.find(r => r.path === ${JSON.stringify(coursePath)}).method`), 'POST');
+      await evaluate("adminTest.catalog['/api/teachers/t0/pedagogical-profile'].courses.push({ courseId: 5, courseName: 'Outro curso' })");
+      await reply(coursePath, { courseId: 5 }, 201);
+      await evaluate("adminTest.select('Módulo para habilitação', '6')");
+      await waitFor("document.body.innerText.includes('UC-X · UC de outro curso')");
+      await evaluate("[...document.querySelectorAll('label')].find(l => l.textContent.includes('UC-X · UC de outro curso')).querySelector('input').click()");
+      const unitPath = '/api/teachers/t0/pedagogical-profile/courses/5/curricular-units/7';
+      await waitFor(`adminTest.pending.some(r => r.path === ${JSON.stringify(unitPath)})`);
+      assert.equal(await evaluate(`adminTest.pending.find(r => r.path === ${JSON.stringify(unitPath)}).method`), 'POST');
+      await reply(unitPath, { curricularUnitId: 7 }, 201);
+      await reset("teachers", "Professor");
+      assert.equal(await evaluate("document.body.innerText.includes('Habilitações por curso e UC')"), false);
     });
     await t.test("cronograma móvel mantém ocupações, filtros e detalhes sem rolagem da página", async () => {
       await command("Emulation.setDeviceMetricsOverride", { width: 390, height: 844, deviceScaleFactor: 1, mobile: true });

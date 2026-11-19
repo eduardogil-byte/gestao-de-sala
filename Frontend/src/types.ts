@@ -10,6 +10,7 @@ export type Shift = {
   name: string;
   startsAt: string;
   endsAt: string;
+  pedagogicalHours?: number | null;
 };
 export type Course = { id: number; code: string; name: string; active: boolean };
 export type CourseModule = { id: number; courseId: number; name: string; order: number };
@@ -98,6 +99,8 @@ export type Semester = {
 export type ClassGroup = {
   id: number;
   semesterId: number;
+  courseId?: number | null;
+  courseModuleId?: number | null;
   shiftId?: number | null;
   code?: string | null;
   name: string;
@@ -153,6 +156,16 @@ export type ScheduleDetails = {
   unallocatedMeetings: number;
   createdAtUtc: string;
   lessons: Lesson[];
+  unitPlans?: {
+    id: number; classGroupId: number; className: string; courseName: string | null;
+    moduleName: string | null; curricularUnitId: number; unitName: string; teacherId: string | null;
+    plannedHours: number | null; allocatedHours: number; unallocatedHours: number | null;
+    pendingReason: string | null; deliveryMode: "Presencial" | "Ead";
+    eadScheduleMode: "SemHorarioFixo" | "HorarioDefinido" | null;
+    meetings: { id: number; date: string | null; shiftId: number | null; shiftName: string | null;
+      start: string | null; end: string | null; roomId: number | null; room: string | null;
+      plannedHours: number }[];
+  }[];
 };
 export type Occupation = {
   id: number;

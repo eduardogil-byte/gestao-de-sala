@@ -10,6 +10,15 @@ namespace SalaGest.Api.Endpoints;
 
 public static partial class ApiEndpoints
 {
+    private static Task<ScheduleUnitMeeting?> LoadScheduleUnitMeeting(AppDbContext db, int meetingId)
+        => db.ScheduleUnitMeetings
+            .Include(m => m.Plan).ThenInclude(p => p.Schedule)
+            .Include(m => m.Plan).ThenInclude(p => p.Offering)
+                .ThenInclude(o => o.ClassGroup)
+            .Include(m => m.Plan).ThenInclude(p => p.Offering)
+                .ThenInclude(o => o.CurricularUnit).ThenInclude(u => u.ResourceRequirements)
+                .ThenInclude(r => r.ResourceCatalogItem)
+            .FirstOrDefaultAsync(m => m.Id == meetingId);
     private static void MapOccupationManagement(IEndpointRouteBuilder app)
     {
         var api = app.MapGroup("/api/occupations").RequireAuthorization(policy => policy.RequireRole("Admin", "Professor")).WithTags("Gerenciar alocações");
@@ -161,6 +170,38 @@ public static partial class ApiEndpoints
                 if (weekly is null) return Error("Atribuição original não encontrada");
                 need = Need(weekly.Assignment);
             }
+            else if (occ.ScheduleUnitMeetingId is int meetingId)
+            {
+                var meeting = await LoadScheduleUnitMeeting(db, meetingId);
+                if (meeting is null) return Error("Aula da grade publicada não encontrada");
+                var candidateRooms = await AllRooms(db);
+                var currentOverlaps = await db.Occupations.AsNoTracking().Where(o =>
+                    o.Id != id && o.CancelledAtUtc == null &&
+                    o.StartsAt < occ.EndsAt && occ.StartsAt < o.EndsAt).ToListAsync();
+                return Results.Ok(candidateRooms.Select(candidate =>
+                {
+                    var evaluation = EnvironmentCompatibility.Evaluate(null, candidate,
+                        meeting.Plan.Offering.ClassGroup.Students, DateOnly.FromDateTime(occ.StartsAt), false,
+                        meeting.Plan.Offering.CurricularUnit.ResourceRequirements);
+                    var compatible = candidate.Active &&
+                        candidate.Seats >= meeting.Plan.Offering.ClassGroup.Students &&
+                        (meeting.Plan.Offering.CurricularUnit.ResourceRequirements.Count == 0 ||
+                         evaluation.Classification == "Compatible");
+                    var occupiedBy = currentOverlaps.Where(o => o.RoomId == candidate.Id)
+                        .Select(o => new { o.Id, o.TeacherId, o.ClassGroupId }).ToList();
+                    return new
+                    {
+                        candidate.Id, candidate.Name, candidate.Location, candidate.Purpose,
+                        candidate.Kind, candidate.Seats,
+                        Computers = candidate.ComputerGroups.Sum(g => g.Quantity),
+                        Compatible = compatible,
+                        Incompatibility = compatible ? null :
+                            string.Join("; ", evaluation.Findings.Where(f => f.Status != "Met").Select(f => f.Detail)),
+                        Available = occupiedBy.Count == 0, OccupiedBy = occupiedBy,
+                        Score = compatible ? 1 : 0
+                    };
+                }).OrderByDescending(x => x.Compatible).ThenByDescending(x => x.Available).ToList());
+            }
             else
             {
                 var count = occ.ClassGroupId is int classId
@@ -225,6 +266,38 @@ public static partial class ApiEndpoints
                     .ThenInclude(a => a.Software).FirstOrDefaultAsync(w => w.Id == weeklyId);
                 if (weekly is null) return Error("Atribuição original não encontrada");
                 need = Need(weekly.Assignment);
+            }
+            else if (occ.ScheduleUnitMeetingId is int meetingId)
+            {
+                var meeting = await LoadScheduleUnitMeeting(db, meetingId);
+                if (meeting is null || meeting.Plan.Schedule.Status != ScheduleStatus.Publicada)
+                    return Error("Aula da grade publicada não encontrada");
+                var evaluation = EnvironmentCompatibility.Evaluate(null, room,
+                    meeting.Plan.Offering.ClassGroup.Students, DateOnly.FromDateTime(occ.StartsAt), false,
+                    meeting.Plan.Offering.CurricularUnit.ResourceRequirements);
+                if (!room.Active || room.Seats < meeting.Plan.Offering.ClassGroup.Students ||
+                    meeting.Plan.Offering.CurricularUnit.ResourceRequirements.Count > 0 &&
+                    evaluation.Classification != "Compatible")
+                    return Error("Compatibilidade técnica do ambiente de destino não comprovada");
+                var scheduleConflict = await ReservationRules.ConflictAsync(db, room.Id,
+                    occ.StartsAt, occ.EndsAt, occ.TeacherId, occ.ClassGroupId, exceptOccupationId: occ.Id);
+                if (scheduleConflict is not null) return Results.Conflict(new ApiError(scheduleConflict));
+                var previousRoomId = occ.RoomId;
+                occ.RoomId = room.Id;
+                meeting.RoomId = room.Id;
+                occ.ChangedById = UserId(current);
+                db.OccupationChanges.Add(new OccupationChange
+                {
+                    RoomOccupationId = id, ChangedById = UserId(current), Action = "Transferida",
+                    Details = $"Sala {previousRoomId} -> sala {room.Id}"
+                });
+                if (occ.TeacherId is string scheduleTeacherId)
+                    AuditTrail.Notify(db, scheduleTeacherId, UserId(current), "Ambiente alterado",
+                        $"Sua aula em {occ.StartsAt:dd/MM/yyyy HH:mm} foi transferida da sala {previousRoomId} para {room.Name}.",
+                        "Occupation", occ.Id);
+                await db.SaveChangesAsync();
+                await tx.CommitAsync();
+                return Results.Ok(new { occ.Id, OldRoomId = previousRoomId, occ.RoomId });
             }
             else
             {

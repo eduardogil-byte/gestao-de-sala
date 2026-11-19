@@ -23,6 +23,7 @@ public static partial class ApiEndpoints
         MapEnvironmentCompatibility(app);
         MapPedagogicalCatalog(app);
         MapCurricularUnitResources(app);
+        MapClassUnitOfferings(app);
         MapCurricularWorkload(app);
         MapTeacherPedagogicalProfiles(app);
         MapAssignments(app);
@@ -173,9 +174,28 @@ public static partial class ApiEndpoints
             var item = await db.Shifts.FindAsync(id);
             if (item is null) return Results.NotFound();
             if (await db.WeeklyClasses.AnyAsync(w => w.ShiftId == id &&
-                w.Schedule.Status == ScheduleStatus.Publicada))
+                w.Schedule.Status == ScheduleStatus.Publicada) ||
+                await db.ScheduleUnitMeetings.AnyAsync(m => m.ShiftId == id &&
+                    m.Plan.Schedule.Status == ScheduleStatus.Publicada))
                 return Results.Conflict(new ApiError("Não altere turnos utilizados por uma grade publicada"));
             item.Name = input.Name.Trim(); item.StartsAt = input.StartsAt; item.EndsAt = input.EndsAt;
+            await db.SaveChangesAsync();
+            return Results.NoContent();
+        }).RequireAuthorization("Admin");
+        api.MapPut("/shifts/{id:int}/pedagogical-hours", async (int id,
+            ShiftPedagogicalHoursInput input, AppDbContext db, ClaimsPrincipal current) =>
+        {
+            if (!PedagogicalCatalogRules.ValidHoursPerShift(input.Hours))
+                return Error("Carga pedagógica por turno deve ser positiva e ter até duas casas decimais");
+            var shift = await db.Shifts.FindAsync(id);
+            if (shift is null) return Results.NotFound();
+            if (await db.ScheduleUnitMeetings.AnyAsync(x => x.ShiftId == id &&
+                x.Plan.Schedule.Status == ScheduleStatus.Publicada))
+                return CatalogConflict("Turno utilizado por uma grade publicada não pode mudar de carga pedagógica");
+            var previous = shift.PedagogicalHours;
+            shift.PedagogicalHours = input.Hours;
+            AuditTrail.Add(db, "SchoolShift", id.ToString(), "Carga pedagógica alterada", UserId(current),
+                new { PedagogicalHours = previous }, new { shift.PedagogicalHours });
             await db.SaveChangesAsync();
             return Results.NoContent();
         }).RequireAuthorization("Admin");
@@ -316,6 +336,26 @@ public static partial class ApiEndpoints
                 return Error("Selecione um turno cadastrado para a turma");
             if (input.CourseId is int courseId && !await db.Courses.AnyAsync(c => c.Id == courseId))
                 return Error("Curso não encontrado");
+            if (input.CourseModuleId is null && input.UnitOfferings is { Count: > 0 })
+                return Error("Selecione um módulo para ofertar UCs na turma.");
+            List<CurricularUnit> moduleUnits = [];
+            if (input.CourseModuleId is int moduleId)
+            {
+                if (input.CourseId is not int selectedCourseId || !await db.CourseModules.AnyAsync(m =>
+                    m.Id == moduleId && m.CourseId == selectedCourseId))
+                    return Error("O módulo deve pertencer ao curso selecionado.");
+                moduleUnits = await db.CurricularUnits.Where(u => u.CourseModuleId == moduleId).ToListAsync();
+            }
+            var offered = input.UnitOfferings ?? moduleUnits.Select(u =>
+                new ClassUnitOfferingInput(u.Id, UnitDeliveryMode.Presencial)).ToList();
+            if (offered.Any(x => x is null) || offered.Count != moduleUnits.Count ||
+                offered.Select(x => x.CurricularUnitId).Distinct().Count() != offered.Count ||
+                offered.Any(x => !moduleUnits.Any(u => u.Id == x.CurricularUnitId) ||
+                    !Enum.IsDefined(x.DeliveryMode) ||
+                    x.DeliveryMode == UnitDeliveryMode.Presencial && x.EadScheduleMode is not null ||
+                    x.DeliveryMode == UnitDeliveryMode.Ead && x.EadScheduleMode is not
+                        (EadScheduleMode.SemHorarioFixo or EadScheduleMode.HorarioDefinido)))
+                return Error("As UCs da turma devem corresponder ao módulo e ter modalidade válida.");
             var normalizedCode = string.IsNullOrWhiteSpace(input.Code) ? null : input.Code.Trim().ToUpperInvariant();
             if (!string.IsNullOrEmpty(normalizedCode) && await db.Classes.AnyAsync(c => c.SemesterId == input.SemesterId && c.NormalizedCode == normalizedCode))
                 return Results.Conflict(new ApiError("Já existe uma turma com este código no semestre."));
@@ -324,13 +364,19 @@ public static partial class ApiEndpoints
                 SemesterId = input.SemesterId,
                 ShiftId = shiftId,
                 CourseId = input.CourseId,
+                CourseModuleId = input.CourseModuleId,
+                UnitOfferings = offered.Select(x => new ClassUnitOffering
+                { CurricularUnitId = x.CurricularUnitId, DeliveryMode = x.DeliveryMode,
+                    EadScheduleMode = x.EadScheduleMode }).ToList(),
                 Code = string.IsNullOrWhiteSpace(input.Code) ? null : input.Code.Trim(),
                 NormalizedCode = normalizedCode,
                 Name = input.Name.Trim(),
                 Students = input.Students
             };
             db.Classes.Add(item); await db.SaveChangesAsync();
-            return Results.Created($"/api/classes/{item.Id}", item);
+            return Results.Created($"/api/classes/{item.Id}", new
+            { item.Id, item.SemesterId, item.CourseId, item.CourseModuleId, item.ShiftId,
+                item.Code, item.Name, item.Students });
         }).RequireAuthorization("Admin");
         api.MapPut("/classes/{id:int}", async (int id, ClassUpdate input, AppDbContext db,
             ClaimsPrincipal current) =>
@@ -348,6 +394,8 @@ public static partial class ApiEndpoints
                 if (await db.Assignments.AnyAsync(a => a.ClassGroupId == id) ||
                     await db.Bookings.AnyAsync(b => b.ClassGroupId == id) ||
                     await db.Occupations.AnyAsync(o => o.ClassGroupId == id) ||
+                    await db.ScheduleUnitPlans.AnyAsync(p => p.ClassGroupId == id &&
+                        p.Schedule.Status == ScheduleStatus.Publicada) ||
                     await db.PlanProposals.AnyAsync(p => p.Assignment.ClassGroupId == id))
                     return Results.Conflict(new ApiError("A turma possui vínculos; regularize atribuições, reservas e planejamento antes de alterar o turno oficial."));
                 item.ShiftId = newShiftId;

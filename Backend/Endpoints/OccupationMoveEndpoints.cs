@@ -529,6 +529,8 @@ public static partial class ApiEndpoints
         if (!allowUnchanged && occupation.RoomId == input.RoomId && occupation.StartsAt == startsAt && occupation.EndsAt == endsAt)
             blocks.Add("A origem e o destino são iguais");
         var changesTime = occupation.StartsAt != startsAt || occupation.EndsAt != endsAt;
+        if (occupation.ScheduleUnitMeetingId is not null)
+            blocks.Add("Esta aula pertence à grade semestral publicada; altere apenas o ambiente pelo fluxo de transferência da sala");
         if (await db.Loans.AsNoTracking().AnyAsync(l => l.RoomOccupationId == occupation.Id &&
             l.Status != LoanStatus.Rejeitado))
             blocks.Add("A ocupação possui empréstimo ativo ou pendente; resolva o empréstimo antes do remanejamento");

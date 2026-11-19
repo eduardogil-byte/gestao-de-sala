@@ -29,6 +29,24 @@ public static class ReservationRules
             if (classId is not null && actualClassId == classId)
                 return "A turma já possui uma aula ou reserva nesse horário";
         }
+        if (teacherId is not null || classId is not null)
+        {
+            var online = await db.ScheduleUnitMeetings.AsNoTracking()
+                .Where(x => x.RoomId == null && x.Date != null &&
+                    x.Plan.Schedule.Status == ScheduleStatus.Publicada &&
+                    (x.Plan.TeacherId == teacherId || x.Plan.ClassGroupId == classId) &&
+                    x.Date == DateOnly.FromDateTime(start))
+                .Select(x => new { x.Plan.TeacherId, x.Plan.ClassGroupId,
+                    x.Shift!.StartsAt, x.Shift.EndsAt }).ToListAsync();
+            foreach (var item in online)
+            {
+                if (ScheduleGenerator.Intersects(item.StartsAt, item.EndsAt,
+                    TimeOnly.FromDateTime(start), TimeOnly.FromDateTime(end)))
+                    return item.TeacherId == teacherId
+                        ? "O instrutor já possui encontro on-line nesse horário"
+                        : "A turma já possui encontro on-line nesse horário";
+            }
+        }
         return null;
     }
 

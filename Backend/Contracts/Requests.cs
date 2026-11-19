@@ -13,8 +13,14 @@ public record RoomInput(string Name, string Location, RoomKind Kind, int Seats, 
     List<ComputerGroupInput> ComputerGroups, string? Purpose = null, string? Code = null,
     RoomInventoryInput? Inventory = null);
 public record ShiftInput(string Name, TimeOnly StartsAt, TimeOnly EndsAt);
+public record ShiftPedagogicalHoursInput(decimal Hours);
+public record ScheduleMeetingAdjustmentInput(int? MeetingId, DateOnly Date, int ShiftId, int? RoomId);
 public record SemesterCreate(string Name, DateOnly StartDate, DateOnly EndDate);
-public record ClassCreate(int SemesterId, string Name, int Students, int? CourseId = null, string? Code = null, int? ShiftId = null);
+public record ClassCreate(int SemesterId, string Name, int Students, int? CourseId = null, string? Code = null,
+    int? ShiftId = null, int? CourseModuleId = null, List<ClassUnitOfferingInput>? UnitOfferings = null);
+public record ClassUnitOfferingInput(int CurricularUnitId, UnitDeliveryMode DeliveryMode,
+    EadScheduleMode? EadScheduleMode = null);
+public record ClassUnitTeacherInput(string TeacherId);
 public record ClassUpdate(string Name, string? Code, int? ShiftId = null);
 public record ClassCourseInput(int CourseId);
 public record AvailabilityInput(int Weekday, int ShiftId);
