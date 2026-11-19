@@ -4,7 +4,7 @@ import { api } from "../lib/api";
 import { useData } from "../lib/data";
 import { agendaErrorMessage, assignmentConflicts, loadSemesterAgenda, teacherActivities, teacherWorkload } from "../lib/instructorAgenda";
 import { movePeriod, type TimelineView } from "../lib/roomTimeline";
-import { dateBR, localDate, nextDate, statusText } from "../lib/utils";
+import { dateBR, formatMonthWeek, localDate, nextDate, statusText } from "../lib/utils";
 import { Busy, Card, Field, FilterBar, MetricCard, Modal, Notice, SearchableSelect, SectionHeading, Title } from "../components/UI";
 import type { AgendaOccupation, User } from "../types";
 
@@ -155,10 +155,13 @@ export function InstructorAgenda({ user, onOpenRelated, onManage }: { user: User
         <div className="flex flex-wrap gap-2" role="group" aria-label="Visualização da agenda">{(["week", "month", "semester"] as TimelineView[]).map((choice) => <button key={choice} type="button"
           aria-pressed={view === choice} onClick={() => changeView(choice)} className={view === choice ? "btn-primary" : "btn-secondary"}>{viewNames[choice]}</button>)}
         </div>
-        <div className="flex items-center gap-2 min-w-0 rounded-xl border border-line bg-canvas/40 p-1" aria-label="Navegação entre períodos">
+        <div className="min-w-0 space-y-2">
+          {view === "week" && <p className="text-sm font-semibold text-ink text-center" aria-live="polite">{formatMonthWeek(anchor)}</p>}
+          <div className="flex items-center gap-2 min-w-0 rounded-xl border border-line bg-canvas/40 p-1" aria-label="Navegação entre períodos">
           <button type="button" className="btn-secondary shrink-0" onClick={() => navigate(-1)} aria-label="Período anterior">‹</button>
           <span className="text-sm font-semibold text-ink flex-1 min-w-0 px-1 text-center capitalize" aria-live="polite">{periodLabel}</span>
           <button type="button" className="btn-secondary shrink-0" onClick={() => navigate(1)} aria-label="Próximo período">›</button>
+          </div>
         </div>
       </div>
       <FilterBar embedded>

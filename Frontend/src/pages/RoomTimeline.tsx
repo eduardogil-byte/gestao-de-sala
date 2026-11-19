@@ -1,9 +1,10 @@
 import { WeeklyOccupations } from "../components/WeeklyOccupations";
 import { useEffect, useMemo, useRef, useState } from "react";
+import { ChevronDown, ChevronUp } from "lucide-react";
 import { ApiError, downloadFile, post, read } from "../lib/api";
 import { useData } from "../lib/data";
 import { agendaPath, datesBetween, indexOccupations, isAgendaOccupation, movePeriod, period, summarize, weekStart, type TimelineView } from "../lib/roomTimeline";
-import { dateBR, localDate, nextDate, resultMessage } from "../lib/utils";
+import { dateBR, formatMonthWeek, localDate, nextDate, resultMessage } from "../lib/utils";
 import { Busy, Card, Field, FilterBar, MetricCard, Modal, Notice, SectionHeading, Title } from "../components/UI";
 import { AuditHistory } from "../components/AuditHistory";
 import type { AgendaOccupation, OccupationBlockMovePreview, OccupationMovePreview, User } from "../types";
@@ -57,6 +58,7 @@ export function RoomTimeline({ user, openBookings, initialFilter }: { user: User
   const [classGroupId, setClassGroupId] = useState("");
   const [shiftId, setShiftId] = useState(initialFilter?.shiftId ? String(initialFilter.shiftId) : "");
   const [kind, setKind] = useState("");
+  const [filtersExpanded, setFiltersExpanded] = useState(true);
   const [items, setItems] = useState<AgendaOccupation[] | null>(null);
   const [loadedQuery, setLoadedQuery] = useState("");
   const [loading, setLoading] = useState(false);
@@ -355,13 +357,20 @@ export function RoomTimeline({ user, openBookings, initialFilter }: { user: User
           className={view === choice ? "btn-primary" : "btn-secondary"}>
           {{ week: "Semana", month: "Mês", semester: "Semestre" }[choice]}
         </button>)}</div>
-        <div className="flex items-center gap-2 min-w-0 rounded-xl border border-line bg-canvas/40 p-1" aria-label="Navegação entre períodos">
+        <div className="min-w-0 space-y-2">
+          {view === "week" && <p className="text-sm font-semibold text-ink text-center" aria-live="polite">{formatMonthWeek(anchor)}</p>}
+          <div className="flex items-center gap-2 min-w-0 rounded-xl border border-line bg-canvas/40 p-1" aria-label="Navegação entre períodos">
           <button type="button" className="btn-secondary shrink-0" onClick={() => navigate(-1)} aria-label="Período anterior">‹</button>
           <span className="text-sm font-semibold text-ink flex-1 min-w-0 text-center capitalize px-1" aria-live="polite">{periodName}</span>
           <button type="button" className="btn-secondary shrink-0" onClick={() => navigate(1)} aria-label="Próximo período">›</button>
+          </div>
         </div>
       </div>
-      <SectionHeading title="Filtros do cronograma" subtitle="Combine somente os critérios necessários para manter a grade legível." />
+      <SectionHeading title="Filtros do cronograma" action={<button type="button" className="btn-secondary min-h-11" aria-expanded={filtersExpanded} aria-controls="timeline-filters" onClick={() => setFiltersExpanded((expanded) => !expanded)}>
+        {filtersExpanded ? <ChevronUp size={18} aria-hidden="true" /> : <ChevronDown size={18} aria-hidden="true" />}
+        {filtersExpanded ? "Recolher filtros" : "Expandir filtros"}
+      </button>} />
+      <div id="timeline-filters" hidden={!filtersExpanded}>
       <FilterBar embedded actions={<button type="button" className="btn-quiet" onClick={clearFilters}>Limpar filtros</button>}>
         <Field label="Semestre"><select className="field" value={semesterId} onChange={(e) => { setSemesterId(e.target.value); setClassGroupId(""); }}>
           <option value="">Todos</option>{data.semesters.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
@@ -385,9 +394,10 @@ export function RoomTimeline({ user, openBookings, initialFilter }: { user: User
           <option value="">Todos</option><option value="Aula">Aula</option><option value="Avulsa">Avulsa</option><option value="Bloqueio">Bloqueio</option>
         </select></Field>
       </FilterBar>
+      </div>
     </Card>
     <Card className="mb-5 p-4 sm:p-5 space-y-4">
-      <SectionHeading title="Resumo do período" subtitle={`${periodName} · somente registros do período e filtros selecionados. Ocupações não representam carga horária pedagógica.`} />
+      <SectionHeading title="Resumo do período" subtitle={`${periodName}${view === "week" ? ` · ${formatMonthWeek(anchor)}` : ""}`} />
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
         <MetricCard label="Ocupações registradas" value={items && loadedQuery === queryKey ? summary.count : "—"} detail="Registros, não horas de aula" />
         <MetricCard label="Conflitos sinalizados" value={items && loadedQuery === queryKey ? summary.conflicts : "—"} tone="rose" detail="Conforme análise da API" />

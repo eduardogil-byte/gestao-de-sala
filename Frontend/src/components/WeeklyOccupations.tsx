@@ -49,7 +49,6 @@ export function WeeklyOccupations({ occupations, loading = false, error = "", on
   return <Card className="mb-5 overflow-hidden">
     <div className="p-4 border-b border-line">
       <SectionHeading title="Ocupações da Semana" subtitle={`${dateBR(dates[0])} a ${dateBR(dates[6])}`} />
-      <p className="text-xs text-muted-ink mt-2">{"\u2014"} Sem ocupação registrada; oferta e disponibilidade desconhecidas. Esta consulta não comprova turno livre ou não ofertado.</p>
     </div>
     {loading ? <Busy /> : failure ? <div className="p-4"><Notice message={failure} /></div> : <div className="p-4 space-y-5">
       {!rooms.length ? <Empty text="Nenhum ambiente para os filtros selecionados." /> : rooms.map(room => <section key={room.id} className="border border-line rounded-lg overflow-hidden" aria-label={room.name}>

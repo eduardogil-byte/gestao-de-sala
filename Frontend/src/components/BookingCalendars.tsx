@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { ChevronLeft, ChevronRight } from "lucide-react";
-import { localDate, nextDate, dateBR } from "../lib/utils";
+import { localDate, nextDate, dateBR, formatMonthWeek } from "../lib/utils";
 import { Modal } from "./UI";
 
 const names = ["Dom", "Seg", "Ter", "Qua", "Qui", "Sex", "Sáb"];
@@ -52,6 +52,7 @@ export function WeeklyCalendar({ date, weekdays, recurring, onSelect, today, sel
   useEffect(() => setView(weekStart(date)), [date]);
   const days = weekDates(view);
   return <section className="col-span-full rounded-panel border border-line bg-surface p-3 sm:p-4" aria-label="Calendário semanal">
+    <p className="text-sm font-semibold text-ink text-center mb-2" aria-live="polite">{formatMonthWeek(view)}</p>
     <div className="flex items-center justify-between gap-2 mb-3">
       <button type="button" className="btn-secondary !px-2" aria-label="Semana anterior" onClick={() => setView(nextDate(view, -7))}><ChevronLeft size={18} aria-hidden="true" /></button>
       <h3 className="text-sm font-semibold text-ink text-center">{monthLabel(days[0])}{days[0].slice(0, 7) !== days[6].slice(0, 7) ? ` – ${monthLabel(days[6])}` : ""}</h3>

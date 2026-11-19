@@ -54,7 +54,7 @@ test("início preserva navegação, tema e ocupações em ambos os perfis e tama
           for (const value of ["Turma 001", "Dev 1", "Docente sintético", "Conflito"])
             assert.ok(text.includes(value), `Faltou ${value}: ${role}, ${width}, ${theme}`);
           assert.equal(await evaluate("document.querySelector('table').querySelectorAll('thead th').length"), 8);
-          assert.equal(await evaluate("document.body.textContent.includes('disponibilidade desconhecidas')"), true);
+          assert.equal(await evaluate("!!document.querySelector('td span[aria-label=\"Sem ocupação registrada; disponibilidade desconhecida\"]')"), true);
           assert.equal(await evaluate("getComputedStyle(document.querySelector('main')).scrollbarColor === getComputedStyle(document.documentElement).scrollbarColor"), true);
         }
       }

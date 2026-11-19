@@ -8,7 +8,7 @@ import {
 } from "lucide-react";
 import { read, post, remove } from "../lib/api";
 import { useData } from "../lib/data";
-import { dateBR, hour, localDate, nextDate, resultMessage } from "../lib/utils";
+import { dateBR, formatMonthWeek, hour, localDate, nextDate, resultMessage } from "../lib/utils";
 import {
   Card,
   Field,
@@ -151,7 +151,9 @@ export function Agenda({
       )}
       <Card className="p-4 mb-5">
         <div className="flex flex-wrap items-end gap-3">
-          <div className="flex items-end gap-1">
+          <div className="min-w-0 space-y-2">
+            <p className="text-sm font-semibold text-ink" aria-live="polite">{formatMonthWeek(from)}</p>
+            <div className="flex items-end gap-1">
             <button
               className="btn-secondary !px-3"
               title="Semana anterior"
@@ -170,6 +172,7 @@ export function Agenda({
             >
               <ChevronRight size={18} />
             </button>
+            </div>
           </div>
           <Field label="Filtrar por sala">
             <select
