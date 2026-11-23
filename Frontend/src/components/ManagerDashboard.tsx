@@ -253,7 +253,6 @@ export function ManagerDashboard({ onTimeline, onOpportunity, onExport, admin = 
     {admin && configuring && semesterId && <Modal title="Turnos oferecidos por ambiente" onClose={() => setConfiguring(false)}>
       <OperatingShiftEditor key={semesterId} semesterId={Number(semesterId)} roomId={roomId} onSaved={() => setIndicatorRevision((value) => value + 1)} />
     </Modal>}
-    {!data.semesters.length && <Notice message="Nenhum semestre cadastrado para consultar." />}
     {error && <Notice type="error" message={error} />}
     {loading && <Busy />}
     {report && loadedKey === key && !loading && !error && <OccupancyView report={report} roomType={roomType}

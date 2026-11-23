@@ -312,8 +312,14 @@ public static partial class ApiEndpoints
             return Results.NoContent();
         }).RequireAuthorization("Admin");
 
-        api.MapGet("/semesters", async (AppDbContext db) =>
-            Results.Ok(await db.Semesters.OrderByDescending(s => s.StartDate).ToListAsync()));
+        api.MapGet("/semesters", async (AppDbContext db, ILoggerFactory loggerFactory) =>
+        {
+            var semesters = await db.Semesters.OrderByDescending(s => s.StartDate).ToListAsync();
+            if (semesters.Count == 0)
+                loggerFactory.CreateLogger("SalaGest.Academic").LogWarning(
+                    "Nenhum semestre cadastrado para consultar. Acesse Turmas e disciplinas > Novo semestre para cadastrar.");
+            return Results.Ok(semesters);
+        });
         api.MapPost("/semesters", async (SemesterCreate input, AppDbContext db) =>
         {
             if (string.IsNullOrWhiteSpace(input.Name) || input.StartDate > input.EndDate ||
