@@ -132,7 +132,7 @@ test("painel mostra resumo, classificação, distribuição, limiares e limitaç
     assert.match(markup, /94 h/);
     assert.match(markup, /100 h/);
     assert.match(markup, /10 h/);
-    assert.match(markup, /percentual geral está indeterminado/);
+    assert.doesNotMatch(markup, /percentual geral está indeterminado/);
     assert.doesNotMatch(markup, /45%/);
     assert.match(markup, /Laboratório A/);
     assert.match(markup, /90% · Gargalo/);
@@ -211,8 +211,9 @@ test("indicadores gerenciais aparecem só para Admin; visão do professor perman
     const teacher = renderToStaticMarkup(createElement(Dashboard, {
       ...props, user: { id: "p", displayName: "Professor", email: "", roles: ["Professor"] },
     }));
-    assert.match(admin, /Dashboard gerencial de ocupação/);
-    assert.doesNotMatch(teacher, /Dashboard gerencial de ocupação/);
+    assert.match(admin, /<h1[^>]*>Visão Geral<\/h1>/);
+    assert.doesNotMatch(admin, /Mais organização|Comece por aqui|Ambientes por tipo/);
+    assert.doesNotMatch(teacher, /<h1[^>]*>Visão Geral<\/h1>/);
     assert.doesNotMatch(teacher, /Utilização dos ambientes|Ambientes cadastrados|Instrutores<\/span>/);
     assert.match(teacher, /Próximas aulas e reservas/);
     assert.match(teacher, /2 aviso\(s\) não lido\(s\)/);

@@ -1,12 +1,9 @@
 import {
   ArrowUpRight,
-  CalendarDays,
-  CheckCircle2,
-  MoveRight,
 } from "lucide-react";
 import { useData } from "../lib/data";
-import { dateTimeBR, roomKind } from "../lib/utils";
-import { Card, Empty, Title, Badge, SectionHeading } from "../components/UI";
+import { dateTimeBR } from "../lib/utils";
+import { Card, Empty, Title } from "../components/UI";
 import { ManagerDashboard } from "../components/ManagerDashboard";
 import type { AgendaOccupation, User } from "../types";
 
@@ -84,132 +81,5 @@ export function Dashboard({
       </div>
     </>;
   }
-  return (
-    <>
-      <Title
-        title={`Olá, ${user.displayName.split(" ")[0]}!`}
-        subtitle="Acompanhe salas, aulas e solicitações da instituição."
-      />
-      <ManagerDashboard admin={admin} onTimeline={openTimeline} onOpportunity={openOpportunity} onExport={onExport} />
-      <div className="flex flex-wrap gap-2 my-6" aria-label="Atalhos administrativos">
-        {[["rooms", "Ambientes"], ["teachers", "Instrutores"], ["academic", "Turmas"], ["bookings", "Reservas"]].map(([page, label]) =>
-          <button key={page} type="button" className="btn-secondary" onClick={() => navigate(page)}>{label}</button>)}
-      </div>
-      <div className="rounded-panel bg-navy-900 text-white p-6 md:p-8 mb-6 relative overflow-hidden shadow-soft border border-navy-700">
-        <div className="absolute right-0 top-0 w-60 h-60 rounded-full border-[40px] border-white/5 translate-x-1/3 -translate-y-1/3" />
-        <div className="relative z-10 max-w-xl">
-          <span className="uppercase tracking-wider text-xs font-semibold text-blue-200">
-            Planejamento de ambientes
-          </span>
-          <h2 className="text-xl md:text-[27px] font-bold tracking-tight mt-3">
-            Mais organização. Menos conflitos.
-          </h2>
-          <p className="text-blue-100/85 text-sm mt-2 leading-relaxed">
-            Reserve por turno, visualize conflitos e encontre a sala mais
-            adequada para cada aula.
-          </p>
-          <button
-            className="btn-primary mt-5"
-            onClick={() => navigate("bookings")}
-          >
-            Reservar uma sala
-            <ArrowUpRight size={17} aria-hidden="true" />
-          </button>
-        </div>
-      </div>
-      <div className="grid xl:grid-cols-[1.6fr_1fr] gap-5">
-        <Card className="overflow-hidden">
-          <div className="px-5 py-4 border-b border-line">
-            <SectionHeading title="Próximas ocupações" subtitle="Aulas, reservas e bloqueios"
-              action={<button
-              className="text-sm font-semibold text-skybrand-700 flex gap-1 items-center"
-              onClick={() => navigate("agenda")}
-            >
-              Ver agenda <MoveRight size={15} />
-            </button>} />
-          </div>
-          {soon.length === 0 ? (
-            <Empty text="Nenhuma ocupação encontrada nos próximos dias. Consulte a agenda para outro período." />
-          ) : (
-            <div>
-              {soon.slice(0, 5).map((o) => (
-                <div
-                  key={o.id}
-                  className="px-5 py-3.5 border-b border-slate-100 last:border-b-0 flex items-center gap-3"
-                >
-                  <div className="h-10 w-10 shrink-0 bg-sky-50 text-skybrand-700 flex items-center justify-center rounded-xl">
-                    <CalendarDays size={18} />
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm font-semibold truncate">
-                      {o.description || "Ocupação de sala"}
-                    </p>
-                    <p className="text-xs text-slate-500 mt-0.5">
-                      {dateTimeBR(o.startsAt)} ·{" "}
-                      {data.rooms.find((r) => r.id === o.roomId)?.name ||
-                        `Sala ${o.roomId}`}
-                    </p>
-                  </div>
-                  {o.isBorrowed ? (
-                    <span className="pill bg-blue-50 text-blue-700">
-                      Emprestada
-                    </span>
-                  ) : (
-                    <Badge
-                      status={o.kind === "Aula" ? "Publicada" : "Aprovada"}
-                    />
-                  )}
-                </div>
-              ))}
-            </div>
-          )}
-        </Card>
-        <div className="space-y-5">
-          <Card className="p-5">
-            <h3 className="section-title">Ambientes por tipo</h3>
-            <p className="text-xs text-slate-500 mt-1 mb-5">
-              Distribuição dos espaços cadastrados
-            </p>
-            {["Comum", "Laboratorio", "Hibrida"].map((k) => {
-              const count = data.rooms.filter((r) => r.kind === k).length;
-              return (
-                <div key={k} className="mb-4 last:mb-0">
-                  <div className="flex justify-between text-sm mb-2">
-                    <span className="text-slate-600">{roomKind(k)}</span>
-                    <b className="text-slate-700">{count}</b>
-                  </div>
-                  <div className="h-2 rounded-full bg-slate-100 overflow-hidden">
-                    <div
-                      className="h-2 bg-skybrand-500 rounded-full"
-                      style={{
-                        width: `${data.rooms.length ? (100 * count) / data.rooms.length : 0}%`,
-                      }}
-                    />
-                  </div>
-                </div>
-              );
-            })}
-          </Card>
-          <Card className="p-5">
-            <div className="flex gap-2 items-center mb-3">
-              <CheckCircle2 size={19} className="text-emerald-600" />
-              <h3 className="section-title">Comece por aqui</h3>
-            </div>
-            <p className="text-sm text-slate-500 mb-4">
-              {admin
-                ? "Cadastre salas, softwares e turmas para começar a receber alocações."
-                : "Escolha uma turma, os dias e o turno para reservar um ambiente."}
-            </p>
-            <button
-              onClick={() => navigate(admin ? "rooms" : "bookings")}
-              className="btn-secondary w-full"
-            >
-              {admin ? "Configurar ambientes" : "Criar reserva"}
-              <MoveRight size={15} />
-            </button>
-          </Card>
-        </div>
-      </div>
-    </>
-  );
+  return <ManagerDashboard admin={admin} onTimeline={openTimeline} onOpportunity={openOpportunity} onExport={onExport} />;
 }

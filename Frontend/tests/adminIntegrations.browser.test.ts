@@ -23,7 +23,7 @@ test("integrações administrativas usam contratos existentes e preservam estado
   };
   try {
     await t.test("turnos e indicadores: atualizar preserva filtros, comparação e oferta não enviada", async () => {
-      await waitFor("document.body.innerText.includes('Pendências gerenciais')");
+      await waitFor("document.body.textContent.includes('Pendências gerenciais')");
       await capture("dashboard-desktop");
       await evaluate("adminTest.select('Ambiente', '10'); adminTest.select('Comparar com outro semestre', '2')");
       await waitFor(`adminTest.calls.some(r => r.path === ${JSON.stringify(comparePath)})`);
@@ -38,7 +38,7 @@ test("integrações administrativas usam contratos existentes e preservam estado
         adminTest.catalog['/api/rooms'][0].computerGroups = [{quantity: 10, operationalQuantity: null}]; adminTest.click('Atualizar dados')`);
       await waitFor(`adminTest.calls.filter(r => r.path === ${JSON.stringify(reportPath)}).length > ${before}`);
       await waitFor(`adminTest.calls.filter(r => r.path === ${JSON.stringify(comparePath)}).length > ${compareBefore}`);
-      assert.equal(await evaluate("document.body.innerText.includes('Quantidade operacional de computadores não informada em: Laboratório sintético')"), true);
+      assert.equal(await evaluate("document.body.innerText.includes('Quantidade operacional de computadores não informada em: Laboratório sintético')"), false);
       assert.equal(await evaluate("[...document.querySelectorAll('[role=dialog] label')].find(l => l.textContent.trim() === 'Quarta').querySelector('input').checked"), true);
       assert.equal(await evaluate("[...document.querySelectorAll('label')].find(l => l.querySelector('span')?.textContent === 'Ambiente').querySelector('select').value"), "10");
       assert.equal(await evaluate("[...document.querySelectorAll('label')].find(l => l.querySelector('span')?.textContent === 'Comparar com outro semestre').querySelector('select').value"), "2");
@@ -124,7 +124,7 @@ test("integrações administrativas usam contratos existentes e preservam estado
       assert.equal(await evaluate(`adminTest.calls.some(r => r.path === ${JSON.stringify(requirement)} && r.method === 'GET')`), true);
       assert.equal(await evaluate("adminTest.calls.some(r => r.method !== 'GET')"), false);
       await reset("dashboard", "Professor");
-      await waitFor("document.body.innerText.includes('Dashboard gerencial')");
+      await waitFor("document.querySelector('h1')?.textContent === 'Visão Geral'");
       assert.equal(await evaluate("document.body.innerText.includes('Configurar turnos oferecidos')"), false);
     });
     await t.test("recursos da UC usam o catálogo e somente Admin pode salvar", async () => {

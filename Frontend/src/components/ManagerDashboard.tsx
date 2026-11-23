@@ -19,26 +19,28 @@ function Summary({ report, semesterName }: { report: SemesterIndicators; semeste
   const knownRooms = report.rooms.filter((room) => room.capacityHours !== null && room.availableHours !== null);
   const knownCapacity = knownRooms.length ? hours(knownRooms.reduce((sum, room) => sum + room.capacityHours!, 0)) : "Não comprovada";
   const knownAvailable = knownRooms.length ? hours(knownRooms.reduce((sum, room) => sum + room.availableHours!, 0)) : "Não comprovadas";
+  const capacityWarning = report.roomsWithUnknownCapacity > 0
+    ? `${report.roomsWithUnknownCapacity} ambiente(s) sem capacidade comprovada; o percentual geral está indeterminado. Base parcial de ${knownRooms.length} ambiente(s): ${knownCapacity} de capacidade e ${knownAvailable} disponíveis. As horas físicas permanecem visíveis.` : "";
+  useEffect(() => {
+    if (capacityWarning) console.warn(capacityWarning);
+  }, [capacityWarning]);
   const days = report.occupiedRoomDays ?? (report.rooms.every((room) => room.daysWithOccupations !== undefined)
     ? report.rooms.reduce((sum, room) => sum + room.daysWithOccupations!, 0) : undefined);
   const within = report.occupiedWithinCapacityHours ?? (report.capacityHours !== null && report.availableHours !== null ? report.capacityHours - report.availableHours : null);
   const cards: { label: string; value: string; detail?: string; tone: "blue" | "violet" | "amber" | "emerald" | "rose" | "slate" }[] = [
-    { label: "Ocupação do semestre", value: provenPercent(report.capacityHours, report.occupancyPercent), detail: "Soma das horas dentro da capacidade ÷ capacidade total", tone: "blue" },
+    { label: "Ocupação do semestre", value: provenPercent(report.capacityHours, report.occupancyPercent), detail: "Utilização da capacidade comprovada", tone: "blue" },
     { label: "Horas ocupadas", value: hours(report.capacityHours === null ? report.physicalOccupiedHours : within), detail: report.capacityHours === null ? "Registros físicos; capacidade não configurada" : `De ${hours(report.capacityHours)} possíveis · Registros físicos: ${hours(report.physicalOccupiedHours)}`, tone: "violet" },
-    { label: "Dias-ambiente ocupados", value: days === undefined ? "Não informado" : String(days), detail: report.eligibleRoomDays == null ? "Datas elegíveis não comprovadas" : `De ${report.eligibleRoomDays} dias-ambiente possíveis · ${report.occupiedEligibleRoomDays ?? "Não informado"} ocupados em datas elegíveis`, tone: "slate" },
-    { label: "Horas disponíveis sem ocupação", value: report.availableHours === null ? "Capacidade não configurada" : hours(report.availableHours), detail: "Capacidade não reservada; não significa desperdício", tone: "emerald" },
-    { label: "Capacidade total", value: report.capacityHours === null ? "Capacidade não configurada" : hours(report.capacityHours), detail: "Calendário e turnos efetivamente oferecidos", tone: "blue" },
+    { label: "Horas ociosas", value: report.capacityHours === null || report.availableHours === null ? "Não comprovadas" : hours(report.availableHours), detail: "Capacidade sem ocupação; não significa desperdício", tone: "blue" },
+    { label: "Dias-ambiente ocupados", value: days === undefined ? "Não informado" : String(days), detail: report.eligibleRoomDays == null ? "Datas elegíveis não comprovadas" : `De ${report.eligibleRoomDays} dias-ambiente possíveis · ${report.occupiedEligibleRoomDays ?? "Não informado"} ocupados em datas elegíveis`, tone: "blue" },
   ];
   return <section aria-label="Resumo do semestre" className="space-y-3">
-    <SectionHeading title={`Ocupação do semestre${semesterName ? ` · ${semesterName}` : ""}`} subtitle="Ocupação física dos ambientes, separada da carga horária pedagógica." />
-    <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-3">
-      {cards.map((card) => <MetricCard key={card.label} {...card} />)}
+    <h2 className="sr-only">{`Ocupação do semestre${semesterName ? ` · ${semesterName}` : ""}`}</h2>
+    <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-3">
+      {cards.map((card) => <MetricCard key={card.label} {...card} tone="blue" />)}
     </div>
     <p className="muted">{report.rooms.length} ambientes analisados · {report.rooms.filter(isBottleneck).length} gargalos · {report.rooms.filter((room) => room.capacityHours !== null && room.classification === "Opportunity").length} oportunidades · {report.conflictPairs} pares de conflitos.</p>
-    {report.roomsWithUnknownCapacity > 0 && <Notice message={`${report.roomsWithUnknownCapacity} ambiente(s) sem capacidade comprovada; o percentual geral está indeterminado. Base parcial de ${knownRooms.length} ambiente(s): ${knownCapacity} de capacidade e ${knownAvailable} disponíveis. As horas físicas permanecem visíveis.`} />}
     {report.rooms.length === 0 && <Notice message="Nenhum ambiente cadastrado para este filtro." />}
     {report.rooms.length > 0 && report.physicalOccupiedHours === 0 && <p className="text-sm text-slate-600">Sem ocupações registradas neste semestre. Zero horas registradas não comprova disponibilidade quando falta configuração.</p>}
-    <p className="muted">Dias-ambiente somam datas distintas por ambiente. Dias livres consideram somente datas elegíveis sem registro de ocupação.</p>
     {report.outsideCapacityHours !== null && report.outsideCapacityHours > 0 && <p className="text-sm text-amber-800">Uso físico fora da capacidade letiva: {hours(report.outsideCapacityHours)}. Essas horas não entram no percentual.</p>}
     {report.warnings.map((warning) => <p key={warning} className="text-sm text-amber-800">{warning}</p>)}
   </section>;
@@ -46,31 +48,38 @@ function Summary({ report, semesterName }: { report: SemesterIndicators; semeste
 
 function RoomLine({ room, code, onTimeline }: { room: RoomIndicator; code?: string | null; onTimeline: (roomId: number) => void }) {
   const within = room.occupiedWithinCapacityHours ?? (room.capacityHours !== null && room.availableHours !== null ? room.capacityHours - room.availableHours : null);
-  return <div className="rounded-panel border border-line bg-surface p-4 space-y-3">
+  return <div className="border-b border-line py-4 space-y-2 last:border-b-0">
     <div className="flex flex-wrap items-center justify-between gap-2 text-sm">
       <div><b className="text-ink">{code ? `${code} · ` : ""}{room.roomName}</b><span className="ml-2 text-muted-ink">{roomKind(room.kind)}</span></div>
       <span className={`pill ${isBottleneck(room) ? "bg-rose-50 text-rose-800" : "bg-canvas text-ink"}`}>{provenPercent(room.capacityHours, room.occupancyPercent)} · {room.capacityHours === null || room.capacityHours <= 0 || room.occupancyPercent === null ? status.Unknown : status[room.classification]}</span>
     </div>
     <OccupancyBar room={room} />
     {room.capacityHours === null && <p className="mt-2 text-xs text-amber-800">Capacidade não configurada ou não comprovada.</p>}
-    <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-muted-ink">
-      <span>Horas ocupadas na capacidade: {hours(room.capacityHours === null ? null : within)} / {hours(room.capacityHours)}</span>
-      <span>Registros físicos: {hours(room.physicalOccupiedHours)}</span><span>Disponíveis: {hours(room.availableHours)}</span>
-      {room.daysWithOccupations !== undefined && <span>Dias com ocupações: {room.daysWithOccupations}</span>}
-      <span>Dias possíveis: {room.eligibleDays ?? "Não comprovados"}</span>
-      <span>Dias livres: {room.unoccupiedDays ?? "Não comprovados"}</span>
-      {room.occupiedEligibleDays != null && <span>Dias ocupados elegíveis: {room.occupiedEligibleDays}</span>}
-      {room.unoccupiedSlots !== undefined && room.unoccupiedSlots !== null && <span>Turnos livres: {room.unoccupiedSlots}</span>}
-      {room.outsideCapacityHours !== null && room.outsideCapacityHours > 0 && <span>Fora da capacidade letiva: {hours(room.outsideCapacityHours)}</span>}
-      {room.unclassifiedOccupations > 0 && <span>{room.unclassifiedOccupations} ocupação(ões) sem turno classificável</span>}
-      <button type="button" className="text-skybrand-700 font-semibold underline focus-visible:outline focus-visible:outline-2" onClick={() => onTimeline(room.roomId)}>Ver cronograma</button>
+    <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-muted-ink">
+      <span>Disponíveis: {hours(room.capacityHours === null ? null : room.availableHours)}</span>
+      <button type="button" className="btn-quiet !min-h-9 !px-2 !py-1 text-skybrand-700" onClick={() => onTimeline(room.roomId)}>Ver cronograma</button>
     </div>
-    {room.shifts.length > 0 && <div className="grid gap-2 sm:grid-cols-3" aria-label={`Ocupação por turno de ${room.roomName}`}>
-      {room.shifts.map((shift) => <div key={shift.shiftId} className="text-xs">
-        <p>{shift.shiftName} · Taxa individual: {provenPercent(shift.capacityHours, shift.occupancyPercent)}</p>
-        <span className="text-muted-ink">{hours(shift.occupiedHours)} ocupadas · {hours(shift.availableHours)} disponíveis</span>
-      </div>)}
-    </div>}
+    <details className="text-xs text-muted-ink">
+      <summary className="cursor-pointer py-2 font-semibold text-ink">Detalhes do ambiente</summary>
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-muted-ink">
+        <span>Horas ocupadas na capacidade: {hours(room.capacityHours === null ? null : within)} / {hours(room.capacityHours)}</span>
+        <span>Registros físicos: {hours(room.physicalOccupiedHours)}</span><span>Disponíveis: {hours(room.availableHours)}</span>
+        {room.daysWithOccupations !== undefined && <span>Dias com ocupações: {room.daysWithOccupations}</span>}
+        <span>Dias possíveis: {room.eligibleDays ?? "Não comprovados"}</span>
+        <span>Dias livres: {room.unoccupiedDays ?? "Não comprovados"}</span>
+        {room.occupiedEligibleDays != null && <span>Dias ocupados elegíveis: {room.occupiedEligibleDays}</span>}
+        {room.unoccupiedSlots !== undefined && room.unoccupiedSlots !== null && <span>Turnos livres: {room.unoccupiedSlots}</span>}
+        {room.outsideCapacityHours !== null && room.outsideCapacityHours > 0 && <span>Fora da capacidade letiva: {hours(room.outsideCapacityHours)}</span>}
+        {room.unclassifiedOccupations > 0 && <span>{room.unclassifiedOccupations} ocupação(ões) sem turno classificável</span>}
+        <button type="button" className="text-skybrand-700 font-semibold underline focus-visible:outline focus-visible:outline-2" onClick={() => onTimeline(room.roomId)}>Ver cronograma</button>
+      </div>
+      {room.shifts.length > 0 && <div className="grid gap-2 sm:grid-cols-3" aria-label={`Ocupação por turno de ${room.roomName}`}>
+        {room.shifts.map((shift) => <div key={shift.shiftId} className="text-xs">
+          <p>{shift.shiftName} · Taxa individual: {provenPercent(shift.capacityHours, shift.occupancyPercent)}</p>
+          <span className="text-muted-ink">{hours(shift.occupiedHours)} ocupadas · {hours(shift.availableHours)} disponíveis</span>
+        </div>)}
+      </div>}
+    </details>
   </div>;
 }
 
@@ -85,63 +94,66 @@ export function OccupancyView({ report, onTimeline, onOpportunity, roomType = ""
   return <div className="space-y-5">
     <Summary report={report} semesterName={semesterName} />
     <Card className="p-5"><h3 className="section-title">Ocupação dos ambientes</h3>
-      <p className="muted mt-1">Cada barra representa a capacidade total do ambiente. Participações por turno usam o mesmo denominador. Gargalo acima de {percent(report.thresholds.bottleneckPercent)}; oportunidade abaixo de {percent(report.thresholds.opportunityPercent)}.</p>
+      <p className="text-xs text-muted-ink mt-1">Participação de cada turno na capacidade total. Gargalo acima de {percent(report.thresholds.bottleneckPercent)}; oportunidade abaixo de {percent(report.thresholds.opportunityPercent)}.</p>
       {roomType && <p className="text-xs text-muted-ink mt-1">O tipo refina esta lista e as oportunidades; o resumo acima permanece no escopo da consulta da API.</p>}
       <div className="mt-4 grid gap-3">{rooms.length ? rooms.map((room) => <RoomLine key={room.roomId} room={room} code={roomCodes[room.roomId]} onTimeline={onTimeline} />) : <p className="text-sm text-muted-ink">Nenhum ambiente para exibir.</p>}</div>
     </Card>
-    <Card className="p-5"><SectionHeading title="Distribuição das datas ocupadas" subtitle={report.referenceDate ? `Data local da instituição: ${dateBR(report.referenceDate)}. Hoje é mostrado separadamente.` : "Data de referência não informada pela API."} />
-      <dl className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4 mt-4 text-sm">
-        {[["Datas passadas", report.pastOccupiedRoomDays], ["Hoje", report.todayOccupiedRoomDays], ["Datas futuras", report.futureOccupiedRoomDays], ["Datas elegíveis sem ocupação", report.unoccupiedRoomDays]].map(([label, value]) =>
-          <div key={label} className="rounded-lg border border-line bg-canvas p-3"><dt className="text-muted-ink">{label}</dt><dd className="font-bold text-ink mt-1">{value == null ? "Não informado" : `${value} dias-ambiente`}</dd></div>)}
-      </dl><p className="muted mt-3">Reservas em datas passadas não comprovam aulas realizadas. Datas sem ocupação não incluem dias indisponíveis ou turnos não ofertados.</p>
-    </Card>
-    <Card className="p-5"><h3 className="section-title">Pendências gerenciais do período</h3>
-      <p className="muted mt-1">Capacidade é a base de horas oferecidas para o cálculo. Equipamentos operacionais são avaliados separadamente na compatibilidade técnica.</p>
-      {pending.length ? <ul className="mt-3 space-y-3">{pending.map((room) => <li key={room.roomId} className="text-sm border-t border-line pt-3">
-        <strong>{room.roomName}</strong>
-        {room.capacityHours === null && <p>Capacidade em horas não comprovada: configure ou revise os turnos oferecidos e o calendário.</p>}
-        {room.unclassifiedOccupations > 0 && <p>{room.unclassifiedOccupations} ocupação(ões) sem turno identificável.</p>}
-        {room.conflictPairs > 0 && <p>{room.conflictPairs} par(es) de conflitos registrados.</p>}
-        {room.warnings.map((warning) => <p key={warning}>{warning}</p>)}
-      </li>)}</ul> : <p className="muted mt-3">Nenhuma pendência indicada pelos dados deste relatório.</p>}
-    </Card>
-    <div className="grid xl:grid-cols-2 gap-5">
-      <Card className="p-5"><h3 className="section-title">Ocupação por turno</h3>
-        <p className="text-xs text-slate-600 mt-1">Horas físicas dos turnos cadastrados. Capacidade e horas livres somente onde comprovadas.</p>
-        {shifts.length ? shifts.map((shift) => <div key={shift.id} className="py-3 border-b border-slate-100 last:border-0 text-sm">
-          <b>{shift.name}</b><p className="text-slate-600 mt-1">Ocupadas: {hours(shift.occupied)} · Disponíveis comprovadas: {shift.known ? hours(shift.available) : "Não comprovadas"}</p>
-          <progress className="w-full h-2 mt-2 accent-sky-600" value={shift.occupied} max={maxShiftHours} aria-label={`${shift.name}: ${hours(shift.occupied)} ocupadas`} />
-          {shift.unknown > 0 && <p className="text-xs text-amber-800">Capacidade parcial ou desconhecida em {shift.unknown} ambiente(s).</p>}
-        </div>) : <p className="text-sm text-slate-600 mt-4">Sem distribuição por turno cadastrada.</p>}
-      </Card>
-      <Card className="p-5"><h3 className="section-title">Evolução da ocupação</h3>
-        <p className="text-xs text-slate-600 mt-1">Horas programadas/ocupadas no período; datas futuras são registros, não aulas já realizadas.</p>
-        {report.months.length ? report.months.map((month) => <div key={`${month.year}-${month.month}`} className="flex justify-between gap-3 py-3 border-b border-slate-100 last:border-0 text-sm">
-          <div className="w-full"><div className="flex justify-between gap-3"><span className="capitalize">{new Intl.DateTimeFormat("pt-BR", { month: "long", year: "numeric" }).format(new Date(month.year, month.month - 1, 1))}</span>
-            <b>{hours(month.physicalOccupiedHours)}</b></div>
-            <progress className="w-full h-2 mt-2 accent-sky-600" value={month.physicalOccupiedHours} max={maxMonthHours} aria-label={`${month.month}/${month.year}: ${hours(month.physicalOccupiedHours)}`} /></div>
-        </div>) : <p className="text-sm text-slate-600 mt-4">Sem distribuição mensal disponível.</p>}
-      </Card>
-    </div>
     <div className="grid xl:grid-cols-2 gap-5">
       <Card className="p-5"><h3 className="section-title">Gargalos</h3>
-        {bottlenecks.length ? bottlenecks.map((room) => <div key={room.roomId} className="py-3 border-b border-slate-100 text-sm">
+        {bottlenecks.length ? bottlenecks.map((room) => <div key={room.roomId} className="py-3 border-b border-line last:border-0 text-sm">
           <b>{room.roomName} · {percent(room.occupancyPercent)}</b><p className="text-slate-600 mt-1">Ocupadas: {hours(room.physicalOccupiedHours)} · Disponíveis: {hours(room.availableHours)}</p>
-          <p className="text-slate-600">Turnos em uso: {room.shifts.filter((s) => s.occupiedHours > 0).sort((a, b) => b.occupiedHours - a.occupiedHours).map((s) => s.shiftName).join(", ") || "sem dados"}</p>
           <button type="button" className="text-skybrand-700 underline mt-1" onClick={() => onTimeline(room.roomId)}>Ver cronograma</button>
         </div>) : <p className="text-sm text-slate-600 mt-4">Nenhum gargalo classificado.</p>}
       </Card>
       <Card className="p-5"><h3 className="section-title">Oportunidades de utilização</h3>
         <p className="muted mt-1">Horas livres indicam potencial de uso. A oferta de um curso depende da análise dos requisitos técnicos e das datas.</p>
-        {opportunities.length ? opportunities.map((room) => <div key={room.roomId} className="py-3 border-b border-slate-100 text-sm">
+        {opportunities.length ? opportunities.map((room) => <div key={room.roomId} className="py-3 border-b border-line last:border-0 text-sm">
           <b>{room.roomName} · {roomKind(room.kind)} · {percent(room.occupancyPercent)}</b>
           <p className="text-slate-600 mt-1">Disponíveis: {hours(room.availableHours)}</p>
-          <p className="text-slate-600">Turnos com horas livres comprovadas: {room.shifts.filter((s) => s.availableHours !== null && s.availableHours > 0).map((s) => s.shiftName).join(", ") || "sem dados"}</p>
           <button type="button" className="text-skybrand-700 underline mt-1" onClick={() => onTimeline(room.roomId)}>Ver cronograma</button>
           {onOpportunity && <button type="button" className="text-skybrand-700 underline mt-1 ml-4" onClick={() => onOpportunity(room.roomId)}>Analisar oportunidades</button>}
         </div>) : <p className="text-sm text-slate-600 mt-4">Nenhuma oportunidade classificada.</p>}
       </Card>
     </div>
+    <details className="card p-4 sm:p-5">
+      <summary className="cursor-pointer font-semibold text-ink">Detalhes e pendências do semestre</summary>
+      <div className="mt-4 space-y-4">
+        <Card className="p-5"><SectionHeading title="Distribuição das datas ocupadas" subtitle={report.referenceDate ? `Data local da instituição: ${dateBR(report.referenceDate)}. Hoje é mostrado separadamente.` : "Data de referência não informada pela API."} />
+          <dl className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4 mt-4 text-sm">
+            {[["Datas passadas", report.pastOccupiedRoomDays], ["Hoje", report.todayOccupiedRoomDays], ["Datas futuras", report.futureOccupiedRoomDays], ["Datas elegíveis sem ocupação", report.unoccupiedRoomDays]].map(([label, value]) =>
+              <div key={label} className="rounded-lg border border-line bg-canvas p-3"><dt className="text-muted-ink">{label}</dt><dd className="font-bold text-ink mt-1">{value == null ? "Não informado" : `${value} dias-ambiente`}</dd></div>)}
+          </dl><p className="muted mt-3">Reservas em datas passadas não comprovam aulas realizadas. Datas sem ocupação não incluem dias indisponíveis ou turnos não ofertados.</p>
+        </Card>
+        <Card className="p-5"><h3 className="section-title">Pendências gerenciais do período</h3>
+          <p className="muted mt-1">Capacidade é a base de horas oferecidas para o cálculo. Equipamentos operacionais são avaliados separadamente na compatibilidade técnica.</p>
+          {pending.length ? <ul className="mt-3 space-y-3">{pending.map((room) => <li key={room.roomId} className="text-sm border-t border-line pt-3">
+            <strong>{room.roomName}</strong>
+            {room.capacityHours === null && <p>Capacidade em horas não comprovada: configure ou revise os turnos oferecidos e o calendário.</p>}
+            {room.unclassifiedOccupations > 0 && <p>{room.unclassifiedOccupations} ocupação(ões) sem turno identificável.</p>}
+            {room.conflictPairs > 0 && <p>{room.conflictPairs} par(es) de conflitos registrados.</p>}
+            {room.warnings.map((warning) => <p key={warning}>{warning}</p>)}
+          </li>)}</ul> : <p className="muted mt-3">Nenhuma pendência indicada pelos dados deste relatório.</p>}
+        </Card>
+        <div className="grid xl:grid-cols-2 gap-5">
+          <Card className="p-5"><h3 className="section-title">Ocupação por turno</h3>
+            <p className="text-xs text-slate-600 mt-1">Horas físicas dos turnos cadastrados. Capacidade e horas livres somente onde comprovadas.</p>
+            {shifts.length ? shifts.map((shift) => <div key={shift.id} className="py-3 border-b border-slate-100 last:border-0 text-sm">
+              <b>{shift.name}</b><p className="text-slate-600 mt-1">Ocupadas: {hours(shift.occupied)} · Disponíveis comprovadas: {shift.known ? hours(shift.available) : "Não comprovadas"}</p>
+              <progress className="w-full h-2 mt-2 accent-sky-600" value={shift.occupied} max={maxShiftHours} aria-label={`${shift.name}: ${hours(shift.occupied)} ocupadas`} />
+              {shift.unknown > 0 && <p className="text-xs text-amber-800">Capacidade parcial ou desconhecida em {shift.unknown} ambiente(s).</p>}
+            </div>) : <p className="text-sm text-slate-600 mt-4">Sem distribuição por turno cadastrada.</p>}
+          </Card>
+          <Card className="p-5"><h3 className="section-title">Evolução da ocupação</h3>
+            <p className="text-xs text-slate-600 mt-1">Horas programadas/ocupadas no período; datas futuras são registros, não aulas já realizadas.</p>
+            {report.months.length ? report.months.map((month) => <div key={`${month.year}-${month.month}`} className="flex justify-between gap-3 py-3 border-b border-slate-100 last:border-0 text-sm">
+              <div className="w-full"><div className="flex justify-between gap-3"><span className="capitalize">{new Intl.DateTimeFormat("pt-BR", { month: "long", year: "numeric" }).format(new Date(month.year, month.month - 1, 1))}</span>
+                <b>{hours(month.physicalOccupiedHours)}</b></div>
+                <progress className="w-full h-2 mt-2 accent-sky-600" value={month.physicalOccupiedHours} max={maxMonthHours} aria-label={`${month.month}/${month.year}: ${hours(month.physicalOccupiedHours)}`} /></div>
+            </div>) : <p className="text-sm text-slate-600 mt-4">Sem distribuição mensal disponível.</p>}
+          </Card>
+        </div>
+      </div>
+    </details>
   </div>;
 }
 
@@ -181,7 +193,10 @@ export function ManagerDashboard({ onTimeline, onOpportunity, onExport, admin = 
   const [loading, setLoading] = useState(false);
   const [compareLoading, setCompareLoading] = useState(false);
   const inventoryPending = data.rooms.filter((room) => (!roomId || room.id === Number(roomId)) &&
-    room.computerGroups.some((group) => group.operationalQuantity == null));
+    room.computerGroups.some((group) => group.operationalQuantity == null)).map((room) => room.name).join(", ");
+  useEffect(() => {
+    if (inventoryPending) console.warn(`Quantidade operacional de computadores não informada em: ${inventoryPending}. Confira o inventário em Ambientes; o cadastro de máquinas não comprova adequação técnica.`);
+  }, [inventoryPending]);
   useEffect(() => {
     if (!semesterId && data.semesters.length) {
       const today = localDate(new Date());
@@ -212,11 +227,15 @@ export function ManagerDashboard({ onTimeline, onOpportunity, onExport, admin = 
       (reason) => setCompareError(indicatorErrorMessage(reason)), () => setCompareLoading(false));
     return () => { active = false; };
   }, [compareKey, semesterId, secondId, roomId]);
-  return <div className="mt-6 space-y-5">
-    <SectionHeading title="Dashboard gerencial de ocupação"
-      subtitle="Indicadores oficiais para as ocupações registradas no semestre. Valores sem base comprovada são identificados explicitamente."
-      action={<button type="button" className="btn-secondary" disabled={!semesterId} onClick={() => onExport(Number(semesterId), secondId ? Number(secondId) : null, roomId ? Number(roomId) : null)}>Exportar relatórios</button>} />
-    <FilterBar actions={admin ? <button type="button" className="btn-secondary" disabled={!semesterId} onClick={() => setConfiguring(true)}>Configurar turnos oferecidos</button> : undefined}>
+  return <div className="space-y-4">
+    <div className="flex flex-wrap items-center justify-between gap-3">
+      <h1 className="text-2xl font-bold tracking-tight text-ink">Visão Geral</h1>
+      <button type="button" className="btn-secondary" disabled={!semesterId} onClick={() => onExport(Number(semesterId), secondId ? Number(secondId) : null, roomId ? Number(roomId) : null)}>Exportar relatórios</button>
+    </div>
+    <FilterBar actions={<>
+      <button type="button" className="btn-quiet" disabled={!semesterId || loading} onClick={() => setIndicatorRevision((value) => value + 1)}>Atualizar</button>
+      {admin && <button type="button" className="btn-secondary" disabled={!semesterId} onClick={() => setConfiguring(true)}>Configurar turnos oferecidos</button>}
+    </>}>
       <Field label="Semestre"><select className="field" value={semesterId} onChange={(e) => { setSemesterId(e.target.value); if (e.target.value === secondId) setSecondId(""); }}>
         <option value="">Selecione</option>{data.semesters.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
       </select></Field>
@@ -231,7 +250,6 @@ export function ManagerDashboard({ onTimeline, onOpportunity, onExport, admin = 
         <option value="">Todos</option>{data.rooms.filter((r) => !roomType || r.kind === roomType).map((r) => <option key={r.id} value={r.id}>{r.code ? `${r.code} · ` : ""}{r.name}</option>)}
       </select></Field>
     </FilterBar>
-    {inventoryPending.length > 0 && <Notice type="info" message={`Quantidade operacional de computadores não informada em: ${inventoryPending.map((room) => room.name).join(", ")}. Confira o inventário em Ambientes; o cadastro de máquinas não comprova adequação técnica.`} />}
     {admin && configuring && semesterId && <Modal title="Turnos oferecidos por ambiente" onClose={() => setConfiguring(false)}>
       <OperatingShiftEditor key={semesterId} semesterId={Number(semesterId)} roomId={roomId} onSaved={() => setIndicatorRevision((value) => value + 1)} />
     </Modal>}

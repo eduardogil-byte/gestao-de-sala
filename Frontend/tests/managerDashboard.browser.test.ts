@@ -6,7 +6,10 @@ test("dashboard por semestre preserva gráficos, filtros, temas, comparação e 
   const { evaluate, waitFor, command, close } = await openAdminFixture("managerDashboard");
   try {
     await waitFor("document.body.textContent.includes('Ocupação do semestre · 2027/1')");
-    for (const width of [1366, 360]) {
+    assert.equal(await evaluate("document.querySelector('h1')?.textContent"), "Visão Geral");
+    assert.equal(await evaluate("document.querySelectorAll('[aria-label=\"Resumo do semestre\"] .card').length"), 4);
+    assert.equal(await evaluate("[...document.querySelectorAll('details')].every(element => !element.open)"), true);
+    for (const width of [1366, 768, 360]) {
       await command("Emulation.setDeviceMetricsOverride", { width, height: 850, deviceScaleFactor: 1, mobile: width === 360 });
       for (const theme of ["light", "dark"]) {
         await evaluate(`document.documentElement.dataset.theme = '${theme}'`);
@@ -15,6 +18,10 @@ test("dashboard por semestre preserva gráficos, filtros, temas, comparação e 
         assert.deepEqual(segments, [30, 30, 30, 10]);
       }
     }
+    const beforeRefresh = await evaluate<number>("adminTest.calls.filter(path => path.includes('/occupancy-indicators/semesters/')).length");
+    await evaluate("[...document.querySelectorAll('button')].find(button => button.textContent === 'Atualizar').click()");
+    await waitFor(`adminTest.calls.filter(path => path.includes('/occupancy-indicators/semesters/')).length > ${beforeRefresh}`);
+    await waitFor("!document.body.textContent.includes('Carregando dados')");
     const select = async (label: string, value: string) => {
       const field = `[...document.querySelectorAll('label')].find(label => label.querySelector('span')?.textContent === ${JSON.stringify(label)})?.querySelector('select')`;
       await waitFor(`!!(${field})?.querySelector('option[value="${value}"]')`);

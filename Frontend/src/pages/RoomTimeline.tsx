@@ -58,7 +58,7 @@ export function RoomTimeline({ user, openBookings, initialFilter }: { user: User
   const [classGroupId, setClassGroupId] = useState("");
   const [shiftId, setShiftId] = useState(initialFilter?.shiftId ? String(initialFilter.shiftId) : "");
   const [kind, setKind] = useState("");
-  const [filtersExpanded, setFiltersExpanded] = useState(true);
+  const [filtersExpanded, setFiltersExpanded] = useState(false);
   const [items, setItems] = useState<AgendaOccupation[] | null>(null);
   const [loadedQuery, setLoadedQuery] = useState("");
   const [loading, setLoading] = useState(false);
@@ -342,7 +342,7 @@ export function RoomTimeline({ user, openBookings, initialFilter }: { user: User
   }
 
   return <>
-    <Title title="Cronograma" subtitle="Consulte as ocupações dos ambientes por semana, mês ou semestre. Para ações do dia, use a Agenda; para carga docente, a Agenda dos Instrutores."
+    <Title title="Cronograma"
       action={<div className="flex flex-wrap gap-2"><button type="button" className="btn-secondary" onClick={openBookings}>Abrir reservas</button>
         {admin && <button type="button" className="btn-secondary" disabled={!range || exportBusy} onClick={() => void exportCurrentPeriod()}>{exportBusy ? "Gerando Excel..." : "Exportar ocupações"}</button>}</div>} />
     {exportError && <div className="mb-4"><Notice type="error" message={exportError} onClose={() => setExportError("")} /></div>}
@@ -350,7 +350,7 @@ export function RoomTimeline({ user, openBookings, initialFilter }: { user: User
     {moveSuccess && <div className="mb-4"><Notice type="success" message={moveSuccess} onClose={() => setMoveSuccess("")} /></div>}
     {operationError && <div className="mb-4"><Notice message={operationError} onClose={() => setOperationError("")} /></div>}
     <Card className="p-4 sm:p-5 mb-5 space-y-5">
-      <SectionHeading title="Período e visualização" subtitle="Altere a visão e refine os registros sem modificar as ocupações." />
+      <SectionHeading title="Período e visualização" />
       <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
         <div className="flex flex-wrap gap-2" role="group" aria-label="Visualização do cronograma">{(["week", "month", "semester"] as TimelineView[]).map((choice) => <button key={choice} type="button"
           aria-pressed={view === choice} onClick={() => changeView(choice)}

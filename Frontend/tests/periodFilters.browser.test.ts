@@ -13,6 +13,9 @@ test("períodos e filtros preservam navegação, seleção e temas em desktop e 
   try {
     await evaluate("adminTest.reset('timeline')");
     await waitFor("document.body.innerText.includes('Filtros do cronograma')");
+    assert.equal(await evaluate("document.querySelector('[aria-controls=timeline-filters]').getAttribute('aria-expanded')"), "false");
+    assert.equal(await evaluate("document.querySelector('#timeline-filters').getClientRects().length"), 0);
+    await evaluate("adminTest.click('Expandir filtros')");
     await evaluate("adminTest.click('Semana')");
     await waitFor("document.querySelector('table')?.innerText.includes('Turma sintética')");
     assert.equal(await evaluate(`${navigation}.previousElementSibling.textContent`), weekLabel);

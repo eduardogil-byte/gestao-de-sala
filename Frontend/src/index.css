@@ -24,6 +24,14 @@
   font-synthesis: none;
 }
 [data-theme="light"] {
+  color-scheme: light;
+  --color-surface-subtle: #eef2f7;
+  --color-surface-hover: #e5edf7;
+  --color-control-line: #7c8da5;
+  --color-action: #195aa2;
+  --color-action-soft: #dceefe;
+  --color-scroll-thumb: #7c8da5;
+  --color-focus: #195aa2;
   --color-canvas: #f3f6fb;
   --color-surface: #ffffff;
   --color-ink: #17243a;
@@ -37,6 +45,45 @@
   --shadow-soft: 0 8px 28px rgba(14, 23, 42, .08);
   --shadow-raised: 0 14px 36px rgba(14, 23, 42, .12);
 }
+
+/* Correções exclusivas do modo claro; os valores e utilitários escuros permanecem intactos. */
+[data-theme="light"] .table-head,
+[data-theme="light"] .app-workspace .bg-navy-800 {
+  background-color: var(--color-surface-subtle);
+}
+[data-theme="light"] .table-head { color: var(--color-muted-ink); }
+[data-theme="light"] .field {
+  border-color: var(--color-control-line);
+  accent-color: var(--color-action);
+}
+[data-theme="light"] .field::placeholder { opacity: 1; }
+[data-theme="light"] .field:focus {
+  border-color: var(--color-focus);
+  --tw-ring-color: var(--color-focus);
+}
+[data-theme="light"] .field:disabled {
+  background-color: var(--color-surface-subtle);
+  opacity: 1;
+  color: var(--color-muted-ink);
+}
+[data-theme="light"] :is(.btn-secondary, .btn-quiet):hover:not(:disabled),
+[data-theme="light"] :is(main, [role="dialog"]) .hover\:bg-white\/10:hover:not(:disabled) {
+  background-color: var(--color-surface-hover);
+}
+[data-theme="light"] .bg-sky-950.text-sky-100 {
+  background-color: var(--color-action-soft);
+  color: var(--color-action);
+  border-color: var(--color-action);
+}
+[data-theme="light"] :is(main, [role="dialog"]) :is(.text-slate-400, .text-slate-500) {
+  color: var(--color-muted-ink);
+}
+[data-theme="light"] * {
+  scrollbar-color: var(--color-scroll-thumb) var(--color-canvas);
+}
+[data-theme="light"] ::-webkit-scrollbar-thumb { background: var(--color-scroll-thumb); }
+[data-theme="light"] ::-webkit-scrollbar-thumb:hover { background: var(--color-muted-ink); }
+[data-theme="light"] ::selection { background: var(--color-action-soft); color: var(--color-ink); }
 body {
   margin: 0;
   min-width: 320px;
