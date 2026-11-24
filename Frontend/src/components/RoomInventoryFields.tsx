@@ -1,19 +1,11 @@
+import { ComputerGroupFields } from "./ComputerGroupFields";
 import { QuickResourceCreate } from "./QuickResourceCreate";
+import { RemoveIconButton } from "./RemoveIconButton";
 import { useId, useState } from "react";
 import { Info } from "lucide-react";
 import type { ComputerGroup, ResourceCatalogItem, RoomResource, Software } from "../types";
 import { Checkbox, Field, SectionHeading } from "./UI";
 
-const textFields = [
-  ["processor", "Processador", 160], ["storage", "Armazenamento", 120],
-  ["graphicsCard", "Placa de vídeo", 160], ["operatingSystem", "Sistema operacional", 120],
-  ["networkDetails", "Detalhes da rede", 500],
-] as const;
-const booleanFields = [
-  ["virtualization", "Virtualização"], ["dockerWsl", "Docker / WSL"],
-  ["cadCompatible", "Compatível com CAD"], ["simulatorCompatible", "Compatível com simuladores"],
-  ["internetAvailable", "Internet disponível no grupo"],
-] as const;
 const optionalNumber = (value: string) => value === "" ? null : Number(value);
 
 export function RoomInventoryFields({ groups, resources, software, catalog, onGroups, onResources, onRemoveGroup, onRemoveSoftware, onCatalogCreated }: {
@@ -25,6 +17,13 @@ export function RoomInventoryFields({ groups, resources, software, catalog, onGr
   const [quantityMode, setQuantityMode] = useState<Record<string, boolean>>({});
   const [inventoryHelpOpen, setInventoryHelpOpen] = useState(false);
   const inventoryHelpId = useId();
+  const [resourceHelpOpen, setResourceHelpOpen] = useState(false);
+  const resourceHelpId = useId();
+  const nextGroupName = () => {
+    let number = 1;
+    while (groups.some((group) => group.description.trim().toLocaleLowerCase("pt-BR") === `grupo ${number}`)) number++;
+    return `Grupo ${number}`;
+  };
   const usesQuantity = (resource: RoomResource, index: number) =>
     quantityMode[String(resource.id ?? `new-${index}`)] ?? !(resource.quantity === 1 && resource.operationalQuantity === 1);
   const changeGroup = (index: number, patch: Partial<ComputerGroup>) =>
@@ -52,66 +51,35 @@ export function RoomInventoryFields({ groups, resources, software, catalog, onGr
         </span>
       </div>
       <button type="button" className="btn-secondary" onClick={() => onGroups([...groups, {
-        description: "", quantity: 1, operationalQuantity: null, ramGb: 0, tier: "Basico", dedicatedGpu: false, software: [],
+        description: nextGroupName(), operatingSystem: "Windows 11", quantity: 1, operationalQuantity: 1, ramGb: 8, storage: "256 GB", graphicsCard: "Integrada", tier: "Basico", dedicatedGpu: false, software: [],
       }])}>Adicionar grupo</button>
     </div>
     {groups.length === 0 && <p className="rounded-control border border-dashed border-line p-4 muted">Nenhum grupo de computadores cadastrado.</p>}
-    {groups.map((group, index) => <fieldset key={group.id ?? `new-${index}`} className="rounded-panel border border-line p-4 sm:p-5 space-y-5">
-      <legend className="font-semibold px-1">Grupo {index + 1}{group.id ? ` · ID ${group.id}` : " · Novo"}</legend>
-      <p className="text-sm font-semibold text-ink">Identificação e quantidades</p>
-      <div className="grid sm:grid-cols-2 gap-3">
-        <Field label="Descrição do grupo"><input className="field" required maxLength={120} value={group.description}
-          onChange={(e) => changeGroup(index, { description: e.target.value })} /></Field>
-        <Field label="Computadores cadastrados"><input className="field" required type="number" min={1} max={1000} value={group.quantity}
-          onChange={(e) => changeGroup(index, { quantity: Number(e.target.value) })} /></Field>
-        <Field label="Computadores operacionais (opcional)"><input className="field" type="number" min={0} max={group.quantity}
-          value={group.operationalQuantity ?? ""} onChange={(e) => changeGroup(index, { operationalQuantity: optionalNumber(e.target.value) })} /></Field>
-        <Field label="RAM em GB (0 = não informada)"><input className="field" required type="number" min={0} value={group.ramGb}
-          onChange={(e) => changeGroup(index, { ramGb: Number(e.target.value) })} /></Field>
-        <Field label="Desempenho"><select className="field" value={group.tier} onChange={(e) => changeGroup(index, { tier: e.target.value })}>
-          <option value="Basico">Básico</option><option value="Intermediario">Intermediário</option><option value="Alto">Alto</option>
-        </select></Field>
-        {textFields.map(([key, label, maxLength]) => <Field key={key} label={label}><input className="field" maxLength={maxLength}
-          value={group[key] ?? ""} onChange={(e) => changeGroup(index, { [key]: e.target.value || null })} /></Field>)}
-        {booleanFields.map(([key, label]) => <Field key={key} label={label}><select className="field"
-          value={group[key] == null ? "" : String(group[key])} onChange={(e) => changeGroup(index, { [key]: e.target.value === "" ? null : e.target.value === "true" })}>
-          <option value="">Não informado</option><option value="true">Sim</option><option value="false">Não</option>
-        </select></Field>)}
-      </div>
-      <Checkbox label="GPU dedicada" checked={group.dedicatedGpu} onChange={(dedicatedGpu) => changeGroup(index, { dedicatedGpu })} />
-      <div className="space-y-3 border-t border-line pt-4">
-        <p className="text-sm font-semibold text-ink">Softwares instalados e licenças</p>
-        <Field label="Adicionar software instalado"><select className="field" value="" onChange={(e) => {
-          const selected = software.find((s) => s.id === Number(e.target.value));
-          if (selected) changeGroup(index, { software: [...group.software, {
-            softwareId: selected.id, name: selected.name, installedQuantity: 1, licenseQuantity: null, licenseExpiresOn: null, version: null,
-          }] });
-        }}><option value="">Selecione</option>{software.filter((s) => !group.software.some((x) => x.softwareId === s.id))
-          .map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}</select></Field>
-        {group.software.map((installed) => {
-          const change = (patch: Partial<typeof installed>) => changeGroup(index, { software: group.software.map((s) =>
-            s.softwareId === installed.softwareId ? { ...s, ...patch } : s) });
-          return <fieldset key={installed.softwareId} className="border border-line rounded-lg p-3 space-y-3">
-            <legend className="px-1">{installed.name}</legend>
-            <div className="grid sm:grid-cols-2 gap-3">
-              <Field label="Instalações"><input className="field" required type="number" min={1} max={group.quantity}
-                value={installed.installedQuantity} onChange={(e) => change({ installedQuantity: Number(e.target.value) })} /></Field>
-              <Field label="Licenças (opcional)"><input className="field" type="number" min={1} value={installed.licenseQuantity ?? ""}
-                onChange={(e) => change({ licenseQuantity: optionalNumber(e.target.value) })} /></Field>
-              <Field label="Versão"><input className="field" maxLength={80} value={installed.version ?? ""}
-                onChange={(e) => change({ version: e.target.value || null })} /></Field>
-              <Field label="Validade da licença (opcional)"><input className="field" type="date" value={installed.licenseExpiresOn ?? ""}
-                onChange={(e) => change({ licenseExpiresOn: e.target.value || null })} /></Field>
-            </div>
-            <button type="button" className="btn-danger" onClick={() => onRemoveSoftware(index, installed.softwareId)}>Remover software {installed.name}</button>
-          </fieldset>;
-        })}
-      </div>
-      <button type="button" className="btn-danger" onClick={() => onRemoveGroup(index)}>Remover grupo {index + 1}</button>
+    {groups.map((group, index) => <fieldset key={group.id ?? `new-${index}`} className="relative rounded-panel border border-line p-4 pt-5 sm:p-5 space-y-5">
+      <legend className="font-semibold px-1 pr-12 max-w-full break-words">Grupo {index + 1}{group.id ? ` · ID ${group.id}` : " · Novo"}</legend>
+      <RemoveIconButton label={`Remover grupo de computadores ${group.description || index + 1}`} onClick={() => onRemoveGroup(index)} />
+      <ComputerGroupFields group={group} software={software} onChange={(patch) => changeGroup(index, patch)} onRemoveSoftware={(id) => onRemoveSoftware(index, id)} />
+      <button type="button" className="btn-secondary" onClick={() => onGroups([...groups, {
+        ...group, id: undefined, description: nextGroupName(), operationalQuantity: null,
+        software: group.software.map((item) => ({ ...item, installedQuantity: 1, licenseQuantity: null, licenseExpiresOn: null })),
+      }])}>Duplicar configuração</button>
     </fieldset>)}
     </details>
     <div className="flex flex-wrap justify-between gap-3 items-center border-t border-line pt-5">
-      <SectionHeading title="Equipamentos e recursos" subtitle="Máquinas, ferramentas, mobiliário e demais recursos do ambiente." />
+      <div className="flex items-center gap-2">
+        <SectionHeading title="Equipamentos e recursos" />
+        <span className="relative inline-flex" onMouseEnter={() => setResourceHelpOpen(true)} onMouseLeave={() => setResourceHelpOpen(false)}>
+          <button type="button" aria-label="Informações sobre equipamentos e recursos" aria-describedby={resourceHelpOpen ? resourceHelpId : undefined}
+            className="inline-flex h-8 w-8 items-center justify-center rounded-full text-muted-ink hover:bg-action-soft hover:text-ink focus-visible:outline focus-visible:outline-2 focus-visible:outline-skybrand-500"
+            onFocus={() => setResourceHelpOpen(true)} onBlur={() => setResourceHelpOpen(false)}
+            onClick={() => setResourceHelpOpen(true)} onKeyDown={(event) => { if (event.key === "Escape" && resourceHelpOpen) { event.stopPropagation(); setResourceHelpOpen(false); } }}>
+            <Info size={17} aria-hidden="true" />
+          </button>
+          {resourceHelpOpen && <span id={resourceHelpId} role="tooltip" className="absolute right-0 top-full z-20 w-64 max-w-[calc(100vw-3rem)] rounded-lg border border-line bg-surface p-3 text-left text-sm font-normal text-ink shadow-lg">
+            Máquinas, ferramentas, mobiliário e demais recursos do ambiente.
+          </span>}
+        </span>
+      </div>
       <Field label="Adicionar recurso do catálogo"><select className="field" value="" onChange={(event) => {
         const selected = catalog.find((item) => item.id === Number(event.target.value));
         if (selected) onResources([...resources, { resourceCatalogItemId: selected.id,
@@ -129,8 +97,9 @@ export function RoomInventoryFields({ groups, resources, software, catalog, onGr
         onResources([...resources, { resourceCatalogItemId: item.id, name: item.name, type: item.category, quantity: 1, operationalQuantity: 1, description: null, condition: null, technicalDetails: null, voltage: null, warrantyExpiresOn: null, licenseExpiresOn: null }]);
     }} />
     {resources.length === 0 && <p className="rounded-control border border-dashed border-line p-4 muted">Nenhum equipamento ou recurso cadastrado.</p>}
-    {resources.map((resource, index) => <fieldset key={resource.id ?? `new-${index}`} className="border border-line rounded-panel p-4 sm:p-5">
-      <legend className="font-semibold px-1">{resource.name} · {resource.type}{resource.id ? ` · ID ${resource.id}` : ""}</legend>
+    {resources.map((resource, index) => <fieldset key={resource.id ?? `new-${index}`} className="relative border border-line rounded-panel p-4 pt-5 sm:p-5">
+      <legend className={`font-semibold px-1 break-words max-w-full ${!resource.id ? "pr-12" : ""}`}>{resource.name} · {resource.type}{resource.id ? ` · ID ${resource.id}` : ""}</legend>
+      {!resource.id && <RemoveIconButton label={`Remover recurso ${resource.name}`} onClick={() => onResources(resources.filter((_, i) => i !== index))} />}
       {resource.resourceCatalogItemId ? <div className="grid sm:grid-cols-2 gap-3">
         <Field label={`Disponibilidade de ${resource.name}`}><select className="field"
           value={usesQuantity(resource, index) ? "quantity" : "presence"}
@@ -147,7 +116,6 @@ export function RoomInventoryFields({ groups, resources, software, catalog, onGr
               changeResource(index, { quantity: Math.max(resource.quantity, value ?? 0), operationalQuantity: value });
             }} /></Field>}
       </div> : <p className="muted">Recurso legado preservado: {resource.quantity} cadastrado(s), {resource.operationalQuantity ?? "disponibilidade não informada"} disponível(is).</p>}
-      {!resource.id && <button type="button" className="btn-secondary mt-3" onClick={() => onResources(resources.filter((_, i) => i !== index))}>Descartar equipamento novo</button>}
     </fieldset>)}
   </section>;
 }

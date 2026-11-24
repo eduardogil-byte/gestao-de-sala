@@ -491,11 +491,6 @@ export function Rooms({ user, onImport }: { user: User; onImport?: (kind: "Ambie
                 checked={form.hasTeacherComputer}
                 onChange={(v) => set("hasTeacherComputer", v)}
               />
-              <Checkbox
-                label="Internet"
-                checked={form.hasInternet}
-                onChange={(v) => set("hasInternet", v)}
-              />
               </div>
             </details>}
             <RoomInventoryFields groups={groups} resources={form.resources} software={data.software} catalog={resourceCatalog} onCatalogCreated={(item) => setResourceCatalog((items) => [...items.filter((row) => row.id !== item.id), item])}

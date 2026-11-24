@@ -2,6 +2,39 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { chromePath, openAdminFixture } from "./helpers/browser.ts";
 
+test("grupos usam opções rápidas sem confirmar disponibilidade ou licenças automaticamente", { skip: !chromePath, timeout: 60000 }, async () => {
+  const { evaluate, waitFor, close } = await openAdminFixture();
+  try {
+    await evaluate("adminTest.reset('rooms')");
+    await waitFor("document.body.innerText.includes('Novo ambiente')");
+    await evaluate("adminTest.click('Novo ambiente')");
+    await waitFor("!!document.querySelector('[role=dialog]')");
+    await evaluate("[...document.querySelectorAll('[role=dialog] details')].find(item => item.querySelector('summary')?.textContent === 'Computadores e softwares').open = true; adminTest.click('Adicionar grupo')");
+    await waitFor("!![...document.querySelectorAll('label span')].find(item => item.textContent === 'Nome do grupo')");
+    const value = (label: string) => evaluate<string>(`[...document.querySelectorAll('label')].find(item => item.querySelector('span')?.textContent === ${JSON.stringify(label)}).querySelector('input,select').value`);
+    assert.equal(await value('Nome do grupo'), 'Grupo 1');
+    assert.equal(await value('Computadores operacionais'), 'all');
+    assert.equal(await value('Sistema operacional'), 'Windows 11');
+    assert.equal(await value('RAM'), '8');
+    assert.equal(await value('Armazenamento'), '256 GB');
+    assert.equal(await value('Placa de vídeo'), 'integrated');
+    await evaluate("adminTest.input('Computadores cadastrados', '20'); adminTest.select('Computadores operacionais', 'all')");
+    assert.equal(await value('Computadores operacionais'), 'all');
+    await evaluate("adminTest.select('RAM', '16'); adminTest.select('Armazenamento', '1 TB')");
+    assert.equal(await value('RAM'), '16');
+    assert.equal(await value('Armazenamento'), '1 TB');
+    await evaluate("adminTest.select('Adicionar software instalado', '1')");
+    await waitFor("document.body.innerText.includes('Instalação de CAD')");
+    await evaluate("adminTest.select('Instalação de CAD', 'all')");
+    assert.equal(await value('Licenças (opcional)'), '');
+    await evaluate("adminTest.click('Duplicar configuração')");
+    await waitFor("[...document.querySelectorAll('input')].some(item => item.value === 'Grupo 2')");
+    const modes = await evaluate<string[]>("[...document.querySelectorAll('label')].filter(item => item.querySelector('span')?.textContent === 'Computadores operacionais').map(item => item.querySelector('select').value)");
+    assert.deepEqual(modes, ['all', 'unknown']);
+    assert.equal(await evaluate("[...document.querySelectorAll('details')].filter(item => item.querySelector('summary')?.textContent === 'Detalhes técnicos').every(item => !item.open)"), true);
+  } finally { await close(); }
+});
+
 test("calendário salva e edita ocorrências usando o semestre selecionado", { skip: !chromePath, timeout: 60000 }, async () => {
   const { evaluate, waitFor, command, close } = await openAdminFixture("adminIntegrations");
   try {

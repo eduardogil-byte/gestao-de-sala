@@ -9,6 +9,9 @@
   --color-muted-ink: #b5c5dc;
   --color-line: #344760;
   --color-focus: #69b5ff;
+  --color-remove-ink: #fda4af;
+  --color-remove-soft: #3d2536;
+  --color-remove-line: #925264;
   --color-shift-morning: #edaa65;
   --color-shift-afternoon: #be987a;
   --color-shift-night: #688cc7;
@@ -32,6 +35,9 @@
   --color-action-soft: #dceefe;
   --color-scroll-thumb: #7c8da5;
   --color-focus: #195aa2;
+  --color-remove-ink: #b4233c;
+  --color-remove-soft: #fff1f3;
+  --color-remove-line: #d98b99;
   --color-canvas: #f3f6fb;
   --color-surface: #ffffff;
   --color-ink: #17243a;
