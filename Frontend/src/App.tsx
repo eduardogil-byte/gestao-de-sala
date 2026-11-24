@@ -21,6 +21,7 @@ import {
   PanelLeftOpen,
   RefreshCcw,
   SearchCheck,
+  Settings,
   Sun,
   Table2,
   UserRound,
@@ -83,6 +84,7 @@ function Workspace({ user, onLogout, onPasswordChanged, institutionalNotice = ""
   const [importKind, setImportKind] = useState<"Ambientes" | "Recursos" | "Docentes">("Ambientes");
   const [menu, setMenu] = useState(false);
   const [collapsed, setCollapsed] = useState(false);
+  const [expandedGroups, setExpandedGroups] = useState<Record<string, boolean>>({});
   const [accountOpen, setAccountOpen] = useState(false);
   const [darkMode, setDarkMode] = useState(() => localStorage.getItem("salagest-theme") !== "light");
   const menuButtonRef = useRef<HTMLButtonElement>(null);
@@ -166,6 +168,11 @@ function Workspace({ user, onLogout, onPasswordChanged, institutionalNotice = ""
     }
   }
   const admin = user.roles.includes("Admin");
+  useEffect(() => {
+    if (!admin) return;
+    const group = getNavigationSections(true).find((section) => section.icon && section.items.some((item) => item.page === page));
+    if (group) setExpandedGroups((previous) => ({ ...previous, [group.title]: true }));
+  }, [admin, page]);
   useEffect(() => {
     if (!menu) return;
     const menuElement = menuRef.current;
@@ -307,13 +314,29 @@ function Workspace({ user, onLogout, onPasswordChanged, institutionalNotice = ""
           </button>
         </div>
         <div className={`salagest-sidebar-scroll ${collapsed ? "lg:px-2" : ""} min-h-0 px-3 pt-2 pb-4 flex-1 overflow-y-auto overflow-x-hidden`}>
-          <nav aria-label="Navegação principal" className="space-y-4">
-            {navigation.map((section) => (
+          <nav aria-label="Navegação principal" className={admin ? "space-y-1" : "space-y-4"}>
+            {navigation.map((section) => {
+              const GroupIcon = section.icon ? navIcons[section.icon] : null;
+              const expanded = !!expandedGroups[section.title];
+              const groupId = `nav-group-${section.items[0].page}`;
+              const groupActive = section.items.some((item) => item.page === page);
+              return (
               <section key={section.title} aria-label={section.title}>
-                <p className={`mb-1.5 px-4 text-[10px] font-bold uppercase tracking-[.14em] text-[#94a8c8] ${collapsed ? "lg:sr-only" : ""}`}>
+                {admin && GroupIcon ? <button type="button" aria-expanded={expanded} aria-controls={groupId}
+                  aria-label={section.title} title={collapsed ? section.title : undefined}
+                  onClick={() => {
+                    const expandSidebar = collapsed && window.matchMedia("(min-width: 1024px)").matches;
+                    setCollapsed(false);
+                    setExpandedGroups((previous) => ({ ...previous, [section.title]: expandSidebar || !expanded }));
+                  }}
+                  className={`flex min-h-11 w-full items-center gap-3 rounded-[9px] px-4 py-2 text-left text-sm font-medium focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-sky-300 ${collapsed ? "lg:justify-center lg:px-2" : ""} ${groupActive ? "text-white bg-white/[.07]" : "text-[#d4e0f2] hover:bg-white/[.07] hover:text-white"}`}>
+                  <GroupIcon aria-hidden="true" size={19} strokeWidth={1.8} className="shrink-0" />
+                  <span className={collapsed ? "lg:sr-only" : ""}>{section.title}</span>
+                  <ChevronDown aria-hidden="true" size={16} className={`ml-auto shrink-0 transition-transform ${expanded ? "" : "-rotate-90"} ${collapsed ? "lg:hidden" : ""}`} />
+                </button> : !admin && <p className={`mb-1.5 px-4 text-[10px] font-bold uppercase tracking-[.14em] text-[#94a8c8] ${collapsed ? "lg:sr-only" : ""}`}>
                   {section.title}
-                </p>
-                <div className="space-y-1.5">
+                </p>}
+                <div id={groupId} hidden={!!GroupIcon && !expanded} className={`${admin ? "space-y-0.5" : "space-y-1.5"} ${GroupIcon ? `ml-4 border-l border-[#32435f] pl-1 ${collapsed ? "lg:hidden" : ""}` : ""}`}>
                   {section.items.map((item) => {
                     const Icon = navIcons[item.icon];
                     const active = page === item.page;
@@ -325,7 +348,7 @@ function Workspace({ user, onLogout, onPasswordChanged, institutionalNotice = ""
                         title={collapsed ? (item.teacherLabel && !admin ? item.teacherLabel : item.label) : undefined}
                         aria-current={active ? "page" : undefined}
                         onClick={() => open(item.page)}
-                        className={`w-full min-h-[50px] flex items-center gap-4 rounded-[9px] px-4 py-2.5 text-[14px] leading-5 text-left font-medium transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-sky-300 ${collapsed ? "lg:justify-center lg:px-2" : ""} ${active ? "bg-[#12377e] text-white font-semibold" : "text-[#d4e0f2] hover:bg-white/[.07] hover:text-white"}`}
+                        className={`w-full ${admin ? "min-h-11 gap-3 py-2" : "min-h-[50px] gap-4 py-2.5"} flex items-center rounded-[9px] px-4 text-[14px] leading-5 text-left font-medium transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-sky-300 ${collapsed ? "lg:justify-center lg:px-2" : ""} ${active ? "bg-[#12377e] text-white font-semibold" : "text-[#d4e0f2] hover:bg-white/[.07] hover:text-white"}`}
                       >
                         <Icon aria-hidden="true" size={19} strokeWidth={1.8} className="shrink-0" />
                         <span className={collapsed ? "lg:sr-only" : ""}>{item.teacherLabel && !admin ? item.teacherLabel : item.label}</span>
@@ -334,7 +357,15 @@ function Workspace({ user, onLogout, onPasswordChanged, institutionalNotice = ""
                   })}
                 </div>
               </section>
-            ))}
+              );
+            })}
+            {admin && <button type="button" aria-label="Configurações" title={collapsed ? "Configurações" : undefined}
+              aria-expanded={accountOpen} aria-controls="account-actions"
+              onClick={() => { menuReturnFocusRef.current = accountHeaderRef.current; setMenu(false); setAccountOpen(true); window.requestAnimationFrame(() => firstAccountActionRef.current?.focus()); }}
+              className={`flex min-h-11 w-full items-center gap-3 rounded-[9px] px-4 py-2 text-left text-sm font-medium text-[#d4e0f2] hover:bg-white/[.07] hover:text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-sky-300 ${collapsed ? "lg:justify-center lg:px-2" : ""}`}>
+              <Settings aria-hidden="true" size={19} strokeWidth={1.8} className="shrink-0" />
+              <span className={collapsed ? "lg:sr-only" : ""}>Configurações</span>
+            </button>}
           </nav>
         </div>
       </aside>

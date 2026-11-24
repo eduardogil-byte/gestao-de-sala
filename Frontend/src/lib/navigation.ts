@@ -24,7 +24,7 @@ export type NavigationItem = {
   adminOnly?: boolean;
 };
 
-export type NavigationSection = { title: string; items: NavigationItem[] };
+export type NavigationSection = { title: string; items: NavigationItem[]; icon?: NavigationItem["icon"] };
 
 const sections: NavigationSection[] = [
   {
@@ -73,6 +73,20 @@ const sections: NavigationSection[] = [
 ];
 
 export function getNavigationSections(isAdmin: boolean): NavigationSection[] {
+  if (isAdmin) {
+    const item = (page: Page, label?: string): NavigationItem => {
+      const existing = sections.flatMap((section) => section.items).find((entry) => entry.page === page)!;
+      return label ? { ...existing, label } : { ...existing };
+    };
+    return [
+      { title: "Visão geral", items: [item("dashboard")] },
+      { title: "Cadastros", icon: "catalog", items: [item("pedagogical-catalog", "Cursos"), item("rooms"), item("teachers"), item("academic", "Turmas e semestres")] },
+      { title: "Planejamento", icon: "planning", items: [item("semester-planning"), item("schedules")] },
+      { title: "Agenda", icon: "calendar", items: [item("room-timeline"), item("instructor-agenda"), item("bookings"), item("loans")] },
+      { title: "Gestão", icon: "opportunity", items: [item("opportunities"), item("imports"), item("exports")] },
+      { title: "Notificações", items: [item("notifications")] },
+    ];
+  }
   return sections
     .map((section) => {
       const items = section.items.filter((item) => isAdmin || !item.adminOnly);
