@@ -2,6 +2,61 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { chromePath, openAdminFixture } from "./helpers/browser.ts";
 
+test("linha e cartão abrem informações, com teclado e edição independente", { skip: !chromePath, timeout: 60000 }, async () => {
+  const { evaluate, waitFor, command, close } = await openAdminFixture();
+  try {
+    await evaluate("adminTest.reset('rooms')");
+    await waitFor("document.body.innerText.includes('Novo ambiente')");
+    for (const width of [1366, 360]) {
+      await command('Emulation.setDeviceMetricsOverride', { width, height: 850, deviceScaleFactor: 1, mobile: width === 360 });
+      await evaluate(width === 1366 ? "document.querySelector('table tbody tr td:nth-child(2)').click()" : "document.querySelector('article dl').click()");
+      await waitFor("adminTest.pending.some(item => item.path === '/api/rooms/10/inventory')");
+      await evaluate("adminTest.reply('/api/rooms/10/inventory', { computerGroups: [], resources: [] })");
+      await waitFor("!!document.querySelector('[role=dialog]')");
+      assert.equal(await evaluate("document.querySelector('[role=dialog]').innerText.includes('Ficha técnica cadastrada')"), true);
+      await evaluate("document.querySelector('[role=dialog] button[aria-label=Fechar]').click()");
+      await waitFor("!document.querySelector('[role=dialog]')");
+    }
+    await evaluate("(async () => { await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))); [...document.querySelectorAll('button[aria-label^=\"Abrir informações\"]')].find(item => item.getClientRects().length).focus(); })()");
+    await command('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Enter', code: 'Enter', windowsVirtualKeyCode: 13, text: '\r', unmodifiedText: '\r' });
+    await command('Input.dispatchKeyEvent', { type: 'keyUp', key: 'Enter', code: 'Enter', windowsVirtualKeyCode: 13 });
+    await waitFor("adminTest.pending.some(item => item.path === '/api/rooms/10/inventory')");
+    await evaluate("adminTest.reply('/api/rooms/10/inventory', { computerGroups: [], resources: [] })");
+    await waitFor("!!document.querySelector('[role=dialog]')");
+    await evaluate("document.querySelector('[role=dialog] button[aria-label=Fechar]').click()");
+    await waitFor("!document.querySelector('[role=dialog]')");
+    await evaluate("[...document.querySelectorAll('article button')].find(item => item.textContent.trim() === 'Editar').click()");
+    await waitFor("adminTest.pending.some(item => item.path === '/api/rooms/10/inventory')");
+    await evaluate("adminTest.reply('/api/rooms/10/inventory', { computerGroups: [], resources: [] })");
+    await waitFor("document.querySelector('[role=dialog]')?.innerText.includes('Editar ambiente')");
+    assert.equal(await evaluate("[...document.querySelectorAll('button')].some(item => item.textContent.trim() === 'Informações')"), false);
+  } finally { await close(); }
+});
+
+test("dropdown dos ambientes preserva filtros e cabe nos dois temas e tamanhos", { skip: !chromePath, timeout: 60000 }, async () => {
+  const { evaluate, waitFor, command, close } = await openAdminFixture();
+  try {
+    await evaluate("adminTest.reset('rooms')");
+    await waitFor("document.body.innerText.includes('Novo ambiente')");
+    await evaluate("adminTest.click('Filtros')");
+    await waitFor("!!document.querySelector('#room-filters-panel')");
+    await evaluate("adminTest.select('Tipo de ambiente', 'Comum')");
+    await waitFor("!document.querySelector('main')?.innerText.includes('Laboratório sintético') && document.body.innerText.includes('1 de 2 ambientes exibidos')");
+    await evaluate("adminTest.select('Situação', 'active')");
+    await waitFor("document.body.innerText.includes('Nenhum ambiente encontrado')");
+    for (const theme of ['light', 'dark']) for (const width of [360, 1366]) {
+      await evaluate(`document.documentElement.dataset.theme = '${theme}'`);
+      await command('Emulation.setDeviceMetricsOverride', { width, height: 850, deviceScaleFactor: 1, mobile: width === 360 });
+      assert.equal(await evaluate("(() => { const rect = document.querySelector('#room-filters-panel').getBoundingClientRect(); return rect.left >= 0 && rect.right <= innerWidth && document.documentElement.scrollWidth <= innerWidth + 1; })()"), true);
+    }
+    await evaluate("adminTest.click('Limpar filtros')");
+    await waitFor("document.body.innerText.includes('2 de 2 ambientes exibidos')");
+    await evaluate("document.dispatchEvent(new KeyboardEvent('keydown', {key: 'Escape', bubbles: true}))");
+    await waitFor("!document.querySelector('#room-filters-panel')");
+    assert.equal(await evaluate("document.activeElement.getAttribute('aria-controls')"), 'room-filters-panel');
+  } finally { await close(); }
+});
+
 test("grupos usam opções rápidas sem confirmar disponibilidade ou licenças automaticamente", { skip: !chromePath, timeout: 60000 }, async () => {
   const { evaluate, waitFor, close } = await openAdminFixture();
   try {

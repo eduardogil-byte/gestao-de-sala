@@ -6,6 +6,8 @@ import {
   Plus,
   Search,
   Settings2,
+  ChevronDown,
+  SlidersHorizontal,
 } from "lucide-react";
 import type { ResourceCatalogItem, Room, RoomInventory, RoomResource, User } from "../types";
 import { useData } from "../lib/data";
@@ -21,7 +23,6 @@ import {
   Checkbox,
   Empty,
   Field,
-  FilterBar,
   MetricCard,
   Modal,
   Notice,
@@ -61,6 +62,22 @@ export function Rooms({ user, onImport }: { user: User; onImport?: (kind: "Ambie
   const [search, setSearch] = useState("");
   const [kind, setKind] = useState("");
   const [status, setStatus] = useState("");
+  const [filtersOpen, setFiltersOpen] = useState(false);
+  const filtersRef = useRef<HTMLDivElement>(null);
+  const filtersButtonRef = useRef<HTMLButtonElement>(null);
+  useEffect(() => {
+    if (!filtersOpen) return;
+    filtersRef.current?.querySelector("select")?.focus();
+    const dismiss = (event: PointerEvent) => {
+      if (!filtersRef.current?.contains(event.target as Node)) setFiltersOpen(false);
+    };
+    const escape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") { setFiltersOpen(false); filtersButtonRef.current?.focus(); }
+    };
+    document.addEventListener("pointerdown", dismiss);
+    document.addEventListener("keydown", escape);
+    return () => { document.removeEventListener("pointerdown", dismiss); document.removeEventListener("keydown", escape); };
+  }, [filtersOpen]);
   const [semesterId, setSemesterId] = useState("");
   const [shiftRoom, setShiftRoom] = useState<Room | null>(null);
   const [indicatorRefresh, setIndicatorRefresh] = useState(0);
@@ -235,10 +252,17 @@ export function Rooms({ user, onImport }: { user: User; onImport?: (kind: "Ambie
     return occupied.length ? occupied.map((shift) => shift.shiftName).join(", ") : "Nenhuma ocupação por turno identificada";
   };
   const roomAction = (room: Room) => <div className="flex flex-wrap gap-2">
-    <button type="button" className="btn-secondary" disabled={detailLoading || opening} onClick={() => void showDetail(room)}>Ver ficha e inventário</button>
-    {admin && <button type="button" className="btn-secondary" disabled={opening || detailLoading} onClick={() => void open(room)}><Settings2 size={15} /> Editar ambiente</button>}
+    {admin && <button type="button" className="btn-secondary" disabled={opening || detailLoading} onClick={() => void open(room)}><Settings2 size={15} /> Editar</button>}
     {admin && semesterId && <button type="button" className="btn-secondary" onClick={() => setShiftRoom(room)}>Configurar turnos</button>}
   </div>;
+  const roomInformation = (room: Room) => <button type="button" disabled={detailLoading || opening}
+    aria-label={`Abrir informações de ${room.name}`} onClick={() => void showDetail(room)}
+    className="rounded text-left font-semibold text-ink underline decoration-line underline-offset-4 hover:decoration-current focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-skybrand-500 disabled:cursor-wait">
+    {room.name}
+  </button>;
+  const openRoomInformation = (event: React.MouseEvent, room: Room) => {
+    if (!detailLoading && !opening && !(event.target as HTMLElement).closest("button, a, input, select")) void showDetail(room);
+  };
   const bottleneckLabel = (room: Room) => {
     const indicator = admin && indicatorState === "idle" ? indicators?.rooms.find((item) => item.roomId === room.id) : undefined;
     return indicator && isBottleneck(indicator) ? <span className="pill bg-rose-50 text-rose-800 mt-1">{indicator.occupancyPercent}% · Gargalo</span> : null;
@@ -262,8 +286,8 @@ export function Rooms({ user, onImport }: { user: User; onImport?: (kind: "Ambie
         <MetricCard label="Inativos" value={data.rooms.filter((room) => !room.active).length} detail="Situação cadastral" tone="slate" />
       </div>
       <div className="mb-5">
-        <FilterBar>
-          <label className="relative sm:col-span-2 xl:col-span-3">
+        <section aria-label="Filtros de ambientes" className="flex flex-col gap-3 rounded-panel border border-line bg-surface p-4 sm:flex-row sm:items-end">
+          <label className="relative min-w-0 flex-1">
             <span className="field-label">Buscar ambiente</span>
             <Search
               size={17}
@@ -277,6 +301,13 @@ export function Rooms({ user, onImport }: { user: User; onImport?: (kind: "Ambie
               placeholder="Nome, código ou localização"
             />
           </label>
+          <div ref={filtersRef} className="relative sm:shrink-0" onBlur={(event) => { if (!event.currentTarget.contains(event.relatedTarget)) setFiltersOpen(false); }}>
+            <button ref={filtersButtonRef} type="button" className="btn-secondary w-full sm:w-auto" aria-expanded={filtersOpen} aria-controls="room-filters-panel" onClick={() => setFiltersOpen(!filtersOpen)}>
+              <SlidersHorizontal size={17} aria-hidden="true" />Filtros
+              {(kind || status || (admin && semesterId)) && <span className="rounded-full bg-canvas px-2 py-0.5 text-xs text-ink">{Number(!!kind) + Number(!!status) + Number(admin && !!semesterId)}<span className="sr-only"> selecionados</span></span>}
+              <ChevronDown size={16} aria-hidden="true" className={`transition-transform ${filtersOpen ? "rotate-180" : ""}`} />
+            </button>
+            {filtersOpen && <div id="room-filters-panel" role="region" aria-label="Opções de filtro" className="absolute right-0 top-full z-20 mt-2 w-full min-w-0 space-y-4 rounded-panel border border-line bg-surface p-4 shadow-soft sm:w-80">
           <Field label="Tipo de ambiente">
             <select className="field" value={kind} onChange={(e) => setKind(e.target.value)}>
               <option value="">Todos os tipos</option>
@@ -292,7 +323,13 @@ export function Rooms({ user, onImport }: { user: User; onImport?: (kind: "Ambie
           {admin && <Field label="Semestre dos turnos"><select className="field" value={semesterId} onChange={(e) => setSemesterId(e.target.value)}>
             <option value="">Selecione</option>{data.semesters.map((semester) => <option key={semester.id} value={semester.id}>{semester.name}</option>)}
           </select></Field>}
-        </FilterBar>
+              <div className="flex items-center justify-between gap-3 border-t border-line pt-3">
+                <button type="button" className="btn-quiet" disabled={!kind && !status && !semesterId} onClick={() => { setKind(""); setStatus(""); setSemesterId(""); }}>Limpar filtros</button>
+                <button type="button" className="btn-primary" onClick={() => { setFiltersOpen(false); filtersButtonRef.current?.focus(); }}>Concluir</button>
+              </div>
+            </div>}
+          </div>
+        </section>
       </div>
       {catalogLoading && <Busy />}
       {catalogError && <Notice message={catalogError} />}
@@ -311,15 +348,15 @@ export function Rooms({ user, onImport }: { user: User; onImport?: (kind: "Ambie
           <SectionHeading title="Ambientes" subtitle={`${list.length} de ${data.rooms.length} ambientes exibidos. Configuração de turnos e ocupação são informações distintas; nenhuma delas comprova disponibilidade em um horário.`} />
           <div className="hidden lg:block table-wrap"><table className="w-full text-sm"><thead><tr className="text-left text-muted-ink border-b border-line">
             <th scope="col" className="p-3">Ambiente</th><th scope="col" className="p-3">Tipo e localização</th><th scope="col" className="p-3">Alunos</th><th scope="col" className="p-3">Turnos configurados</th><th scope="col" className="p-3">Turnos com ocupação</th><th scope="col" className="p-3">Situação</th><th scope="col" className="p-3">Ações</th>
-          </tr></thead><tbody>{list.map((room) => <tr key={room.id} className="border-b border-line last:border-0 align-top">
-            <td className="p-3"><strong className="text-ink">{room.code || `#${room.id}`}</strong><span className="block text-muted-ink">{room.name}</span>{bottleneckLabel(room)}</td>
+          </tr></thead><tbody>{list.map((room) => <tr key={room.id} onClick={(event) => openRoomInformation(event, room)} className="cursor-pointer border-b border-line last:border-0 align-top transition-colors hover:bg-canvas focus-within:bg-canvas">
+            <td className="p-3"><strong className="text-ink">{room.code || `#${room.id}`}</strong><span className="block">{roomInformation(room)}</span>{bottleneckLabel(room)}</td>
             <td className="p-3">{roomKind(room.kind)}<span className="block text-muted-ink">{room.location || "Localização não informada"}</span></td>
             <td className="p-3 tabular-nums">{room.seats}</td><td className="p-3 text-muted-ink">{shiftLabel(room)}</td><td className="p-3 text-muted-ink">{occupiedShiftLabel(room)}</td>
             <td className="p-3"><span className={`pill ${room.active ? "bg-emerald-50 text-emerald-700" : "bg-slate-100 text-slate-500"}`}>{room.active ? "Ativa" : "Inativa"}</span></td>
             <td className="p-3">{roomAction(room)}</td>
           </tr>)}</tbody></table></div>
-          <div className="grid gap-3 sm:grid-cols-2 lg:hidden">{list.map((room) => <article key={room.id} className="rounded-panel border border-line p-4 space-y-3">
-            <div className="flex items-start justify-between gap-2"><div><p className="text-xs font-semibold uppercase tracking-wide text-muted-ink">{room.code || `#${room.id}`}</p><h3 className="font-bold text-ink">{room.name}</h3></div><span className={`pill ${room.active ? "bg-emerald-50 text-emerald-700" : "bg-slate-100 text-slate-500"}`}>{room.active ? "Ativa" : "Inativa"}</span></div>
+          <div className="grid gap-3 sm:grid-cols-2 lg:hidden">{list.map((room) => <article key={room.id} onClick={(event) => openRoomInformation(event, room)} className="cursor-pointer rounded-panel border border-line p-4 space-y-3 transition-colors hover:bg-canvas focus-within:bg-canvas">
+            <div className="flex items-start justify-between gap-2"><div><p className="text-xs font-semibold uppercase tracking-wide text-muted-ink">{room.code || `#${room.id}`}</p><h3 className="font-bold text-ink">{roomInformation(room)}</h3></div><span className={`pill ${room.active ? "bg-emerald-50 text-emerald-700" : "bg-slate-100 text-slate-500"}`}>{room.active ? "Ativa" : "Inativa"}</span></div>
             <p className="muted">{roomKind(room.kind)} · {room.location || "Localização não informada"}</p>
             {bottleneckLabel(room)}
             <dl className="grid grid-cols-2 gap-2 text-sm"><div><dt className="text-muted-ink">Capacidade</dt><dd>{room.seats} alunos</dd></div><div><dt className="text-muted-ink">Turnos configurados</dt><dd>{shiftLabel(room)}</dd></div><div className="col-span-2"><dt className="text-muted-ink">Turnos com ocupação</dt><dd>{occupiedShiftLabel(room)}</dd></div></dl>
@@ -404,7 +441,7 @@ export function Rooms({ user, onImport }: { user: User; onImport?: (kind: "Ambie
               <p className="muted">{[item.condition && `Condição: ${item.condition}`, item.voltage && `Voltagem: ${item.voltage} V`, item.warrantyExpiresOn && `Garantia até ${item.warrantyExpiresOn}`, item.licenseExpiresOn && `Licença até ${item.licenseExpiresOn}`].filter(Boolean).join(" · ")}</p>
             </div>) : <p className="muted">Nenhum equipamento cadastrado.</p>}
           </div>
-          {admin && <button type="button" className="btn-secondary" onClick={() => { const room = detail.room; setDetail(null); void open(room); }}>Editar ambiente</button>}
+          {admin && <button type="button" className="btn-secondary" onClick={() => { const room = detail.room; setDetail(null); void open(room); }}>Editar</button>}
         </div>
       </Modal>}
       {form && (

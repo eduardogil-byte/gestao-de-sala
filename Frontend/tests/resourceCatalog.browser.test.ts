@@ -3,17 +3,32 @@ import test from "node:test";
 import { chromePath, openAdminFixture } from "./helpers/browser.ts";
 
 test("Admin gerencia catálogo e associa recurso ao ambiente sem campos fixos", { skip: !chromePath, timeout: 60000 }, async () => {
-  const { evaluate, waitFor, close } = await openAdminFixture();
+  const { evaluate, waitFor, command, close } = await openAdminFixture();
   try {
     await evaluate("adminTest.reset('rooms')");
     await waitFor("document.body.textContent.includes('Catálogo de recursos')");
+    await evaluate("adminTest.click('Novo tipo de recurso')");
+    await waitFor("!!document.querySelector('[role=dialog]')");
     await evaluate("adminTest.input('Nome', 'Projetor'); adminTest.input('Categoria', 'Audiovisual'); adminTest.input('Descrição', 'Projeção'); adminTest.click('Adicionar recurso')");
     await waitFor("adminTest.pending.some(r => r.path === '/api/resource-catalog')");
     assert.deepEqual(await evaluate("adminTest.pending.find(r => r.path === '/api/resource-catalog').body"),
       { name: "Projetor", category: "Audiovisual", description: "Projeção", active: true });
     await evaluate(`adminTest.catalog['/api/resource-catalog'] = [{ id: 5, name: 'Projetor', category: 'Audiovisual', description: 'Projeção', active: true }];
       adminTest.reply('/api/resource-catalog', { id: 5, name: 'Projetor', category: 'Audiovisual', description: 'Projeção', active: true }, 201)`);
-    await waitFor("document.body.textContent.includes('Desativar Projetor')");
+    await waitFor("!!document.querySelector('button[aria-label=\"Desativar recurso Projetor\"]') && !document.querySelector('[role=dialog]')");
+    await evaluate("document.querySelector('button[aria-label=\"Editar recurso Projetor\"]').click()");
+    await waitFor("document.querySelector('[role=dialog]')?.textContent.includes('Editar tipo de recurso')");
+    assert.equal(await evaluate("[...document.querySelectorAll('[role=dialog] label')].find(item => item.textContent.includes('Nome')).querySelector('input').value"), 'Projetor');
+    for (const theme of ['light', 'dark']) for (const width of [360, 1366]) {
+      await evaluate(`document.documentElement.dataset.theme = '${theme}'`);
+      await command('Emulation.setDeviceMetricsOverride', { width, height: 850, deviceScaleFactor: 1, mobile: width === 360 });
+      assert.equal(await evaluate("document.documentElement.scrollWidth <= innerWidth + 1"), true);
+    }
+    await evaluate("adminTest.input('Descrição', 'Descrição revisada'); adminTest.click('Salvar alterações')");
+    await waitFor("adminTest.pending.some(item => item.path === '/api/resource-catalog/5')");
+    assert.equal(await evaluate("adminTest.pending.find(item => item.path === '/api/resource-catalog/5').body.description"), 'Descrição revisada');
+    await evaluate("adminTest.reply('/api/resource-catalog/5', null, 204)");
+    await waitFor("!document.querySelector('[role=dialog]')");
 
     await evaluate("adminTest.click('Novo ambiente')");
     await waitFor("!!document.querySelector('[role=dialog]')");
@@ -29,14 +44,14 @@ test("Admin gerencia catálogo e associa recurso ao ambiente sem campos fixos", 
     await evaluate("adminTest.reply('/api/rooms', { id: 20, name: 'Sala nova' }, 201)");
     await waitFor("!document.querySelector('[role=dialog]')");
 
-    await evaluate("adminTest.click('Desativar Projetor')");
+    await evaluate("document.querySelector('button[aria-label=\"Desativar recurso Projetor\"]').click()");
     await waitFor("!!document.querySelector('[role=dialog]')");
-    await evaluate("adminTest.click('Desativar')");
+    await evaluate("[...document.querySelectorAll('[role=dialog] button')].find(item => item.textContent.trim() === 'Desativar').click()");
     await waitFor("adminTest.pending.some(r => r.path === '/api/resource-catalog/5')");
     assert.equal(await evaluate("adminTest.pending.find(r => r.path === '/api/resource-catalog/5').body.active"), false);
     await evaluate(`adminTest.catalog['/api/resource-catalog'] = [{ id: 5, name: 'Projetor', category: 'Audiovisual', description: 'Projeção', active: false }];
       adminTest.reply('/api/resource-catalog/5', null, 204)`);
-    await waitFor("document.body.textContent.includes('Reativar Projetor')");
+    await waitFor("!!document.querySelector('button[aria-label=\"Reativar recurso Projetor\"]')");
   } finally { await close(); }
 });
 

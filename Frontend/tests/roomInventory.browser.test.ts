@@ -15,7 +15,7 @@ test("ambientes carregam inventário completo e enviam IDs e remoções explíci
   const { evaluate, waitFor, close } = await openAdminFixture();
   const reply = (path: string, data: unknown, status = 200) => evaluate(`adminTest.reply(${JSON.stringify(path)}, ${JSON.stringify(data)}, ${status})`);
   const open = async () => {
-    await evaluate("adminTest.click('Editar ambiente')");
+    await evaluate("adminTest.click('Editar')");
     await waitFor("adminTest.pending.some(r => r.path === '/api/rooms/10/inventory')");
     assert.equal(await evaluate("!!document.querySelector('[role=dialog]')"), false);
     await reply('/api/rooms/10/inventory', inventory);

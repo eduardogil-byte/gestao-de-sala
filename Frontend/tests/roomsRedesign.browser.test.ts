@@ -44,7 +44,7 @@ test("ambientes mostram filtros, ficha persistida e turnos sem presumir disponib
     await evaluate("document.querySelector('[role=dialog] button[aria-label=Fechar]')?.click()");
     await waitFor("!document.querySelector('[role=dialog]')");
 
-    await evaluate("adminTest.click('Ver ficha e inventário')");
+    await evaluate("document.querySelector('table tbody tr td:nth-child(2)').click()");
     await waitFor("adminTest.pending.some(r => r.path === '/api/rooms/10/inventory')");
     await evaluate(`adminTest.reply('/api/rooms/10/inventory', { computerGroups: [{ id: 7, description: 'Grupo técnico',
       quantity: 10, operationalQuantity: null, ramGb: 16, software: [{ softwareId: 1, name: 'CAD',
@@ -57,7 +57,7 @@ test("ambientes mostram filtros, ficha persistida e turnos sem presumir disponib
     assert.match(detail, /Validade: Não informado/);
     assert.match(detail, /Torno/);
     await evaluate("document.querySelector('[role=dialog] button[aria-label=Fechar]')?.click()");
-    await evaluate("adminTest.click('Ver ficha e inventário')");
+    await evaluate("document.querySelector('table tbody tr td:nth-child(2)').click()");
     await waitFor("adminTest.pending.some(r => r.path === '/api/rooms/10/inventory')");
     await evaluate(`adminTest.reply('/api/rooms/10/inventory', { computerGroups: [{ id: 7, description: 'Grupo completo',
       quantity: 10, operationalQuantity: 8, ramGb: 16, tier: 'Alto', dedicatedGpu: true,
@@ -92,7 +92,7 @@ test("ambientes mostram filtros, ficha persistida e turnos sem presumir disponib
     await evaluate("adminTest.reset('rooms', 'Professor')");
     await waitFor("document.body.innerText.includes('Sala inativa')");
     assert.equal(await evaluate("document.body.innerText.includes('Consulta restrita ao Admin')"), true);
-    assert.equal(await evaluate("[...document.querySelectorAll('button')].some(b => /^(Editar ambiente|Configurar turnos|Importar ambientes|Importar recursos)$/.test(b.textContent?.trim() || ''))"), false);
+    assert.equal(await evaluate("[...document.querySelectorAll('button')].some(b => /^(Editar|Configurar turnos|Importar ambientes|Importar recursos)$/.test(b.textContent?.trim() || ''))"), false);
     assert.equal(await evaluate("adminTest.calls.some(c => c.path.includes('occupancy-indicators') || c.path.includes('operating-shifts'))"), false);
   } finally { await close(); }
 });
