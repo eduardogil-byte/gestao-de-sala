@@ -22,9 +22,9 @@ test("cadastro de professor aparece somente para Admin", async () => {
     const profile = { id: "account", email: "account@example.test", displayName: "Conta" };
     const admin = renderToStaticMarkup(createElement(Teachers, { user: { ...profile, roles: ["Admin"] }, onImport: () => {} }));
     const professor = renderToStaticMarkup(createElement(Teachers, { user: { ...profile, roles: ["Professor"] }, onImport: () => {} }));
-    assert.match(admin, /<form/);
+    assert.doesNotMatch(admin, /<form/);
     assert.match(admin, /Cadastrar instrutor/i);
-    assert.match(admin, /type="password"/);
+    assert.doesNotMatch(admin, /type="password"/);
     assert.match(admin, /Importar docentes/);
     assert.doesNotMatch(professor, /<form|Cadastrar instrutor/i);
     assert.doesNotMatch(professor, /Importar docentes/);

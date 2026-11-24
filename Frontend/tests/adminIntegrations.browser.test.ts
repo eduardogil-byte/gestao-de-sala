@@ -15,6 +15,10 @@ test("integrações administrativas usam contratos existentes e preservam estado
   const reset = async (mode: string, role = "Admin") => {
     await evaluate(`adminTest.reset(${JSON.stringify(mode)}, ${JSON.stringify(role)})`);
     await waitFor("!document.body.innerText.includes('Carregando dados...')");
+    if (mode === "teachers") {
+      await waitFor("!!document.querySelector('button[aria-label^=\"Abrir perfil de\"]')");
+      await evaluate("document.querySelector('button[aria-label^=\"Abrir perfil de\"]').click()");
+    }
   };
   const screenshotDir = await mkdtemp(join(tmpdir(), "salagest-etapa5b-"));
   const capture = async (name: string) => {
@@ -313,6 +317,10 @@ test("integrações administrativas usam contratos existentes e preservam estado
       assert.deepEqual(await evaluate<any>(`adminTest.pending.find(r => r.path === ${JSON.stringify(availabilityPath)}).body`),
         [{ weekday: 1, shiftId: 1 }, { weekday: 2, shiftId: 1 }]);
       await reply(availabilityPath, null, 204);
+      await evaluate("document.querySelector('[role=dialog] button[aria-label=Fechar]').click()");
+      await waitFor("!document.querySelector('[role=dialog]')");
+      await evaluate("adminTest.click('Cadastrar instrutor')");
+      await waitFor("!!document.querySelector('[role=dialog]')");
       await evaluate("adminTest.input('Nome', 'Docente de teste'); adminTest.input('E-mail', 'docente@example.test'); adminTest.input('Senha inicial', 'Example123!'); adminTest.click('Criar instrutor')");
       await waitFor("adminTest.pending.some(r => r.path === '/api/auth/register')");
       await reply("/api/auth/register", { role: "Professor" }, 201);
@@ -351,6 +359,8 @@ test("integrações administrativas usam contratos existentes e preservam estado
         adminTest.catalog['/api/courses/5/modules'] = [{ id: 6, courseId: 5, name: 'Módulo de outro curso', order: 1 }];
         adminTest.catalog['/api/courses/5/modules/6/curricular-units'] = [{ id: 7, courseModuleId: 6,
           code: 'UC-X', name: 'UC de outro curso', plannedHours: 12 }]`);
+      await waitFor("!!document.querySelector('button[aria-label^=\"Abrir perfil de\"]')");
+      await evaluate("document.querySelector('button[aria-label^=\"Abrir perfil de\"]').click()");
       await waitFor("document.body.innerText.includes('Habilitações por curso e UC')");
       await evaluate("adminTest.select('Curso para habilitação', '5')");
       await waitFor("document.body.innerText.includes('Módulo de outro curso')");
