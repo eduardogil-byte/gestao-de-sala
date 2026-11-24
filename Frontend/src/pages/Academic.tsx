@@ -10,6 +10,8 @@ import { useData } from "../lib/data";
 import { post, put, read } from "../lib/api";
 import { dateBR, resultMessage } from "../lib/utils";
 import { NeedFields, defaultNeed } from "../components/NeedFields";
+import { AcademicCalendarEditor } from "../components/AcademicCalendarEditor";
+import { semesterDates } from "../lib/semesterDates";
 import {
   Card,
   Badge,
@@ -33,11 +35,9 @@ type EligibleTeacher = { teacherId: string; displayName: string };
 export function Academic({ user }: { user: User }) {
   const admin = user.roles.includes("Admin");
   const { data, reload } = useData();
-  const [semester, setSemester] = useState({
-    name: "2026/2",
-    startDate: "2026-10-12",
-    endDate: "2026-12-18",
-  });
+  const [year, setYear] = useState(new Date().getFullYear());
+  const [term, setTerm] = useState(new Date().getMonth() < 6 ? 1 : 2);
+  const [semester, setSemester] = useState(() => semesterDates(year, term));
   const [cls, setCls] = useState({ semesterId: "", code: "", name: "", students: 25, shiftId: "",
     courseId: "", courseModuleId: "" });
   const [courses, setCourses] = useState<Course[]>([]);
@@ -167,8 +167,8 @@ export function Academic({ user }: { user: User }) {
   return (
     <>
       <Title
-        title="Estrutura acadêmica"
-        subtitle="Cadastre semestres, turmas e disciplinas para a geração automática da grade."
+        title="Turmas e semestres"
+        subtitle="Organize semestres, calendário letivo e turmas."
       />
       {error && (
         <div className="mb-4">
@@ -184,6 +184,7 @@ export function Academic({ user }: { user: User }) {
           />
         </div>
       )}
+      {admin && <AcademicCalendarEditor />}
       {admin && (
         <div className="grid xl:grid-cols-2 gap-5 mb-6">
           <Card className="p-5">
@@ -200,6 +201,16 @@ export function Academic({ user }: { user: User }) {
                 );
               }}
             >
+              <div className="grid grid-cols-2 gap-3">
+                <Field label="Ano"><input className="field" type="number" required min={1900} max={9998} value={year}
+                  onChange={(event) => { const value = Number(event.target.value); setYear(value);
+                    if (value >= 1900 && value <= 9998) setSemester(semesterDates(value, term)); }} /></Field>
+                <Field label="Semestre"><select className="field" value={term} onChange={(event) => {
+                  const value = Number(event.target.value); setTerm(value);
+                  if (year >= 1900 && year <= 9998) setSemester(semesterDates(year, value));
+                }}><option value={1}>1º semestre</option><option value={2}>2º semestre</option></select></Field>
+              </div>
+              <p className="muted text-xs">Datas sugeridas pela RN-01. Ajuste conforme o calendário oficial.</p>
               <Field label="Nome">
                 <input
                   required

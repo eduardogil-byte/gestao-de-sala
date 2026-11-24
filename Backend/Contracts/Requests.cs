@@ -8,7 +8,7 @@ public record SoftwareCreate(string Name);
 public record GroupSoftwareInput(int SoftwareId, int InstalledQuantity);
 public record ComputerGroupInput(string Description, int Quantity, int RamGb, HardwareTier Tier,
     bool DedicatedGpu, List<GroupSoftwareInput> Software, int? Id = null);
-public record RoomInput(string Name, string Location, RoomKind Kind, int Seats, int Desks,
+public record RoomInput(string Name, string Location, RoomKind Kind, int Seats, int? Desks,
     bool HasProjector, bool HasTeacherComputer, bool HasInternet, bool Active,
     List<ComputerGroupInput> ComputerGroups, string? Purpose = null, string? Code = null,
     RoomInventoryInput? Inventory = null);

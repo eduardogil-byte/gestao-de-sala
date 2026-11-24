@@ -24,6 +24,25 @@ namespace SalaGest.Backend.Tests;
 public sealed class EnvironmentInventoryTests
 {
     [Fact]
+    public async Task EditingWithoutDesksPreservesHistoricalValueAndRejectsNegativeValue()
+    {
+        await using var host = await InventoryHost.CreateAsync();
+        host.AsAdmin();
+        var update = RoomUpdate() with { Desks = null };
+        var payload = JsonSerializer.SerializeToNode(update, new JsonSerializerOptions(JsonSerializerDefaults.Web))!.AsObject();
+        payload.Remove("desks");
+        Assert.Equal(HttpStatusCode.NoContent,
+            (await host.Client.PutAsJsonAsync($"/api/rooms/{host.RoomId}", payload)).StatusCode);
+        using var scope = host.App.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+        Assert.Equal(10, (await db.Rooms.FindAsync(host.RoomId))!.Desks);
+        Assert.Equal(HttpStatusCode.BadRequest,
+            (await host.Client.PutAsJsonAsync($"/api/rooms/{host.RoomId}", update with { Desks = -1 })).StatusCode);
+        Assert.Equal(HttpStatusCode.Created,
+            (await host.Client.PostAsJsonAsync("/api/rooms", update with { Name = "Nova sala" })).StatusCode);
+    }
+
+    [Fact]
     public async Task RenamingCatalogTypeKeepsIdentityAndUpdatesLinkedResource()
     {
         await using var host = await InventoryHost.CreateAsync();

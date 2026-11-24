@@ -276,7 +276,8 @@ public static partial class ApiEndpoints
             existing.NormalizedCode = normalizedCode;
             existing.Name = input.Name.Trim(); existing.Location = input.Location.Trim();
             existing.Purpose = input.Purpose?.Trim() ?? "";
-            existing.Kind = input.Kind; existing.Seats = input.Seats; existing.Desks = input.Desks;
+            existing.Kind = input.Kind; existing.Seats = input.Seats;
+            if (input.Desks.HasValue) existing.Desks = input.Desks.Value;
             existing.HasProjector = input.HasProjector;
             existing.HasTeacherComputer = input.HasTeacherComputer;
             existing.HasInternet = input.HasInternet; existing.Active = input.Active;
@@ -463,7 +464,7 @@ public static partial class ApiEndpoints
             return "Envie os grupos pelo inventário técnico ou pelo cadastro básico, sem misturar os dois contratos.";
         if ((input.Code?.Trim().Length ?? 0) > 30) return "O código do ambiente deve ter até 30 caracteres.";
         if (string.IsNullOrWhiteSpace(input.Name) || input.Name.Length > 120 ||
-            !Enum.IsDefined(input.Kind) || input.Seats < 1 || input.Desks < 1 ||
+            !Enum.IsDefined(input.Kind) || input.Seats < 1 || input.Desks < 0 ||
             input.Seats > 1000 || input.Desks > 1000 ||
             input.Location is null || input.ComputerGroups is null || (input.Purpose?.Length ?? 0) > 350) return "Informações da sala inválidas";
         if (input.ComputerGroups.Any(g => g is null || string.IsNullOrWhiteSpace(g.Description)) ||
@@ -491,7 +492,7 @@ public static partial class ApiEndpoints
         Purpose = input.Purpose?.Trim() ?? "",
         Kind = input.Kind,
         Seats = input.Seats,
-        Desks = input.Desks,
+        Desks = input.Desks ?? 0,
         HasProjector = input.HasProjector,
         HasTeacherComputer = input.HasTeacherComputer,
         HasInternet = input.HasInternet,

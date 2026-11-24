@@ -1,4 +1,6 @@
-import { useState } from "react";
+import { QuickResourceCreate } from "./QuickResourceCreate";
+import { useId, useState } from "react";
+import { Info } from "lucide-react";
 import type { ComputerGroup, ResourceCatalogItem, RoomResource, Software } from "../types";
 import { Checkbox, Field, SectionHeading } from "./UI";
 
@@ -14,12 +16,15 @@ const booleanFields = [
 ] as const;
 const optionalNumber = (value: string) => value === "" ? null : Number(value);
 
-export function RoomInventoryFields({ groups, resources, software, catalog, onGroups, onResources, onRemoveGroup, onRemoveSoftware }: {
+export function RoomInventoryFields({ groups, resources, software, catalog, onGroups, onResources, onRemoveGroup, onRemoveSoftware, onCatalogCreated }: {
+  onCatalogCreated: (item: ResourceCatalogItem) => void;
   groups: ComputerGroup[]; resources: RoomResource[]; software: Software[]; catalog: ResourceCatalogItem[];
   onGroups: (groups: ComputerGroup[]) => void; onResources: (resources: RoomResource[]) => void;
   onRemoveGroup: (index: number) => void; onRemoveSoftware: (index: number, softwareId: number) => void;
 }) {
   const [quantityMode, setQuantityMode] = useState<Record<string, boolean>>({});
+  const [inventoryHelpOpen, setInventoryHelpOpen] = useState(false);
+  const inventoryHelpId = useId();
   const usesQuantity = (resource: RoomResource, index: number) =>
     quantityMode[String(resource.id ?? `new-${index}`)] ?? !(resource.quantity === 1 && resource.operationalQuantity === 1);
   const changeGroup = (index: number, patch: Partial<ComputerGroup>) =>
@@ -28,15 +33,28 @@ export function RoomInventoryFields({ groups, resources, software, catalog, onGr
     onResources(resources.map((resource, i) => i === index ? { ...resource, ...patch } : resource));
   return <section aria-label="Inventário técnico" className="border-t border-line pt-5 space-y-6">
     <details className="rounded-panel border border-line p-4">
-    <summary className="cursor-pointer font-semibold text-ink">Inventário técnico legado (opcional)</summary>
-    <p className="muted mt-2">Dados existentes são preservados. Use esta seção apenas para manutenção de grupos de computadores já cadastrados.</p>
+    <summary className="cursor-pointer font-semibold text-ink">Computadores e softwares</summary>
+    <p className="muted mt-2">Especificações e licenças dos computadores do ambiente.</p>
     <div className="flex flex-wrap justify-between gap-3 items-center mt-4">
-      <SectionHeading title="Grupos de computadores" subtitle="Equipamentos cadastrados, condições operacionais e especificações técnicas." />
+      <div className="flex items-center gap-2">
+        <SectionHeading title="Grupos de computadores" />
+        <span className="relative inline-flex" onMouseEnter={() => setInventoryHelpOpen(true)} onMouseLeave={() => setInventoryHelpOpen(false)}>
+          <button type="button" aria-label="Informações sobre os computadores" aria-describedby={inventoryHelpOpen ? inventoryHelpId : undefined}
+            className="inline-flex h-8 w-8 items-center justify-center rounded-full text-muted-ink hover:bg-action-soft hover:text-ink focus-visible:outline focus-visible:outline-2 focus-visible:outline-skybrand-500"
+            onFocus={() => setInventoryHelpOpen(true)} onBlur={() => setInventoryHelpOpen(false)}
+            onClick={() => setInventoryHelpOpen(true)} onKeyDown={(event) => { if (event.key === "Escape" && inventoryHelpOpen) { event.stopPropagation(); setInventoryHelpOpen(false); } }}>
+            <Info size={17} aria-hidden="true" />
+          </button>
+          {inventoryHelpOpen && <span id={inventoryHelpId} role="tooltip" className="absolute right-0 top-full z-20 w-64 max-w-[calc(100vw-3rem)] rounded-lg border border-line bg-surface p-3 text-left text-sm font-normal text-ink shadow-lg">
+            Equipamentos cadastrados, condições operacionais e especificações técnicas.
+            <br />Deixe em branco o que não foi verificado. Quantidade cadastrada não comprova quantidade operacional. Validade em branco significa prazo não informado.
+          </span>}
+        </span>
+      </div>
       <button type="button" className="btn-secondary" onClick={() => onGroups([...groups, {
         description: "", quantity: 1, operationalQuantity: null, ramGb: 0, tier: "Basico", dedicatedGpu: false, software: [],
       }])}>Adicionar grupo</button>
     </div>
-    <p className="muted">Deixe em branco o que não foi verificado. Quantidade cadastrada não comprova quantidade operacional. Validade em branco significa prazo não informado.</p>
     {groups.length === 0 && <p className="rounded-control border border-dashed border-line p-4 muted">Nenhum grupo de computadores cadastrado.</p>}
     {groups.map((group, index) => <fieldset key={group.id ?? `new-${index}`} className="rounded-panel border border-line p-4 sm:p-5 space-y-5">
       <legend className="font-semibold px-1">Grupo {index + 1}{group.id ? ` · ID ${group.id}` : " · Novo"}</legend>
@@ -106,6 +124,10 @@ export function RoomInventoryFields({ groups, resources, software, catalog, onGr
             resource.type.toLocaleUpperCase("pt-BR") === item.category.toLocaleUpperCase("pt-BR"))))
         .map((item) => <option key={item.id} value={item.id}>{item.name} · {item.category}</option>)}</select></Field>
     </div>
+    <QuickResourceCreate catalog={catalog} onCreated={(item) => { onCatalogCreated(item);
+      if (!resources.some((resource) => resource.resourceCatalogItemId === item.id))
+        onResources([...resources, { resourceCatalogItemId: item.id, name: item.name, type: item.category, quantity: 1, operationalQuantity: 1, description: null, condition: null, technicalDetails: null, voltage: null, warrantyExpiresOn: null, licenseExpiresOn: null }]);
+    }} />
     {resources.length === 0 && <p className="rounded-control border border-dashed border-line p-4 muted">Nenhum equipamento ou recurso cadastrado.</p>}
     {resources.map((resource, index) => <fieldset key={resource.id ?? `new-${index}`} className="border border-line rounded-panel p-4 sm:p-5">
       <legend className="font-semibold px-1">{resource.name} · {resource.type}{resource.id ? ` · ID ${resource.id}` : ""}</legend>

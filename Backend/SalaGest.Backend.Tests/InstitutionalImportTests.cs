@@ -23,6 +23,26 @@ namespace SalaGest.Backend.Tests;
 public sealed class InstitutionalImportTests
 {
     [Fact]
+    public async Task ImportWithoutDesksPreservesExistingValueAndAcceptsNewRooms()
+    {
+        await using var host = await ImportHost.CreateAsync();
+        var id = await host.SeedRoomAsync();
+        host.AsAdmin();
+        var csv = "Codigo,IdAmbiente,Nome,Tipo,CapacidadeAlunos,Projetor,ComputadorDocente,Internet\n" +
+            $"LAB1,{id},Oficina renovada,Oficina,25,Sim,Sim,Sim\n" +
+            "LAB2,,Nova sala,Comum,20,Sim,Sim,Sim\n";
+        var response = await host.UploadAsync("preview", "Ambientes", csv);
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var preview = (await response.Content.ReadFromJsonAsync<ImportPreview>())!;
+        Assert.Equal(0, preview.InvalidCount);
+        Assert.Equal(HttpStatusCode.OK, (await host.UploadAsync("confirm", "Ambientes", csv, preview.Token, true)).StatusCode);
+        using var scope = host.App.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+        Assert.Equal(20, (await db.Rooms.FindAsync(id))!.Desks);
+        Assert.Equal(0, (await db.Rooms.SingleAsync(room => room.Code == "LAB2")).Desks);
+    }
+
+    [Fact]
     public async Task PreviewDoesNotWriteAndConfirmationImportsOnlyValidRowsWithAudit()
     {
         await using var host = await ImportHost.CreateAsync();

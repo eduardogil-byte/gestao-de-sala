@@ -43,7 +43,7 @@ export function ResourceCatalogManager({ catalog, onChanged }: {
     finally { setBusy(false); }
   }
   return <Card className="p-5 mt-6 space-y-4">
-    <SectionHeading title="Catálogo de recursos" subtitle="Tipos disponíveis para o inventário dos ambientes. Sala ativa é uma propriedade independente." />
+    <SectionHeading title="Catálogo de recursos" subtitle="Recursos compartilhados entre os ambientes." />
     {error && <Notice message={error} />}{success && <Notice type="success" message={success} />}
     {catalog.length ? <ul className="grid gap-2 sm:grid-cols-2">
       {catalog.map((item) => <li key={item.id} className="rounded-control border border-line p-3 flex flex-wrap items-start justify-between gap-2">

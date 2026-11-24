@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
   Bell,
+  BookOpen,
+  Presentation,
   CalendarDays,
   CalendarRange,
   ChevronDown,
@@ -65,12 +67,12 @@ const navIcons = {
   spreadsheet: Table2,
   import: Import,
   export: Download,
-  catalog: Layers3,
-  people: Users,
+  catalog: BookOpen,
+  people: Presentation,
   booking: ClipboardList,
   loan: Handshake,
   bell: Bell,
-  course: GraduationCap,
+  course: CalendarDays,
 } satisfies Record<NavigationItem["icon"], typeof LayoutDashboard>;
 
 function Workspace({ user, onLogout, onPasswordChanged, institutionalNotice = "", institutionalError = "" }: { user: User; onLogout: () => void; onPasswordChanged: () => void; institutionalNotice?: string; institutionalError?: string }) {

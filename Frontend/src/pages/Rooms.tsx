@@ -31,7 +31,7 @@ import {
   useConfirmation,
 } from "../components/UI";
 
-type RoomInput = Omit<Room, "id"> & { resources: RoomResource[] };
+type RoomInput = Omit<Room, "id" | "desks"> & { resources: RoomResource[] };
 type OfferedShift = { shiftId: number; weekdaysMask: number };
 const stated = (value: string | null | undefined) => value?.trim() || "Não informado";
 const yesNoUnknown = (value: boolean | null | undefined) => value == null ? "Não informado" : value ? "Sim" : "Não";
@@ -42,7 +42,6 @@ const emptyRoom: RoomInput = {
   purpose: "",
   kind: "Comum",
   seats: 30,
-  desks: 30,
   hasProjector: false,
   hasTeacherComputer: false,
   hasInternet: false,
@@ -168,6 +167,7 @@ export function Rooms({ user, onImport }: { user: User; onImport?: (kind: "Ambie
     setError("");
     try {
       const { computerGroups, resources, ...room } = form;
+      delete (room as Partial<Room>).desks;
       const body = {
         ...room,
         computerGroups: [],
@@ -471,20 +471,11 @@ export function Rooms({ user, onImport }: { user: User; onImport?: (kind: "Ambie
                     onChange={(e) => set("seats", Number(e.target.value))}
                   />
                 </Field>
-                <Field label="Carteiras">
-                  <input
-                    type="number"
-                    min="1"
-                    max="1000"
-                    className="field"
-                    value={form.desks}
-                    onChange={(e) => set("desks", Number(e.target.value))}
-                  />
-                </Field>
+
               </div>
             </div>
             <div className="flex flex-wrap gap-4">
-              <Checkbox label="Sala ativa" checked={form.active} onChange={(v) => set("active", v)} />
+              <Checkbox label="Ambiente ativo" checked={form.active} onChange={(v) => set("active", v)} />
             </div>
             {editing && <details className="rounded-control border border-line p-3">
               <summary className="cursor-pointer font-semibold">Campos legados de compatibilidade</summary>
@@ -507,7 +498,7 @@ export function Rooms({ user, onImport }: { user: User; onImport?: (kind: "Ambie
               />
               </div>
             </details>}
-            <RoomInventoryFields groups={groups} resources={form.resources} software={data.software} catalog={resourceCatalog}
+            <RoomInventoryFields groups={groups} resources={form.resources} software={data.software} catalog={resourceCatalog} onCatalogCreated={(item) => setResourceCatalog((items) => [...items.filter((row) => row.id !== item.id), item])}
               onGroups={(next) => set("computerGroups", next)} onResources={(next) => set("resources", next)}
               onRemoveGroup={(index) => void removeGroup(index)} onRemoveSoftware={(index, id) => void removeSoftware(index, id)} />
             <div className="flex justify-end gap-2 pt-1">
