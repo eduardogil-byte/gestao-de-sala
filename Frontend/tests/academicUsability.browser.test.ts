@@ -30,19 +30,7 @@ test("cadastros distinguem bloqueio de carregamento e confirmam descarte", { ski
     assert.equal(await evaluate("document.querySelector('[role=dialog] details').open"), false);
     await evaluate("adminTest.click('Cancelar')");
     await waitFor("!document.querySelector('[role=dialog]')");
-    await evaluate("adminTest.catalog['/api/semesters/1/calendar']={events:[]}; adminTest.click('Calendário')");
-    await waitFor("!!document.querySelector('[aria-label=\"Calendário do semestre\"]')");
-    assert.equal(await evaluate("!!document.querySelector('[role=dialog] form')"), false);
-    await evaluate("document.querySelector('button[data-date=\"2027-03-10\"]').click()");
-    await waitFor("!!document.querySelector('[role=dialog] input')");
-    await evaluate("adminTest.input('Descrição da ocorrência', 'Feriado'); document.querySelector('[role=dialog] button[aria-label=Fechar]').click()");
-    await waitFor("document.querySelectorAll('[role=dialog]').length === 2");
-    await confirmButton('Cancelar');
-    await waitFor("document.querySelectorAll('[role=dialog]').length === 1");
-    await evaluate("adminTest.click('Cancelar')");
-    await waitFor("document.querySelectorAll('[role=dialog]').length === 2");
-    await confirmButton('Descartar');
-    await waitFor("!document.querySelector('[role=dialog] form')");
+    assert.equal(await evaluate("[...document.querySelectorAll('button')].some(item => item.textContent.trim() === 'Calend\u00e1rio')"), false);
     assert.equal(await evaluate("adminTest.pending.length"), 0);
   } finally { await close(); }
 });

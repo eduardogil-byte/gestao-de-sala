@@ -90,39 +90,6 @@ test("grupos usam opções rápidas sem confirmar disponibilidade ou licenças a
   } finally { await close(); }
 });
 
-test("calendário salva e edita ocorrências usando o semestre selecionado", { skip: !chromePath, timeout: 60000 }, async () => {
-  const { evaluate, waitFor, command, close } = await openAdminFixture("adminIntegrations");
-  try {
-    await evaluate("adminTest.reset('academic')");
-    await waitFor("document.body.innerText.includes('Turmas e semestres')");
-    await evaluate("adminTest.click('Semestres')");
-    await waitFor("document.body.innerText.includes('Semestre A')");
-    await evaluate("adminTest.catalog['/api/semesters/1/calendar'] = {events: []}; adminTest.click('Calendário')");
-    await waitFor("!!document.querySelector('[aria-label=\"Calendário do semestre\"]')");
-    await evaluate("document.querySelector('button[data-date=\"2027-03-10\"]').click()");
-    await waitFor("!!document.querySelector('[role=dialog] input')");
-    await evaluate("adminTest.input('Descrição da ocorrência', 'Recesso escolar')");
-    await evaluate("adminTest.click('Salvar ocorrência')");
-    await waitFor("adminTest.pending.some(item => item.path === '/api/semesters/1/calendar/events/batch')");
-    await evaluate("adminTest.reply('/api/semesters/1/calendar/events/batch', [{id: 7, startDate: '2027-03-10', endDate: '2027-03-10', kind: 'Holiday', description: 'Recesso escolar'}])");
-    await waitFor("document.body.innerText.includes('Calendário atualizado')");
-    await evaluate("document.querySelector('button[data-date=\"2027-03-10\"]').click()");
-    await waitFor("document.body.innerText.includes('Editar ocorrência')");
-    await evaluate("adminTest.click('Editar ocorrência')");
-    await evaluate("adminTest.input('Descrição da ocorrência', 'Feriado escolar'); adminTest.click('Salvar ocorrência')");
-    await waitFor("adminTest.pending.some(item => item.path === '/api/semesters/1/calendar/events/7')");
-    await evaluate("adminTest.reply('/api/semesters/1/calendar/events/7', null, 204)");
-    await waitFor("document.body.innerText.includes('Calendário atualizado')");
-    await evaluate("document.querySelector('button[data-date=\"2027-03-10\"]').click()");
-    await waitFor("document.body.innerText.includes('Feriado escolar')");
-    for (const theme of ["light", "dark"]) for (const width of [360, 1366]) {
-      await evaluate(`document.documentElement.dataset.theme = '${theme}'`);
-      await command("Emulation.setDeviceMetricsOverride", { width, height: 850, deviceScaleFactor: 1, mobile: width === 360 });
-      assert.equal(await evaluate("document.documentElement.scrollWidth <= innerWidth + 1"), true);
-    }
-  } finally { await close(); }
-});
-
 test("modal adiciona recurso compartilhado e mantém detalhes técnicos recolhidos", { skip: !chromePath, timeout: 60000 }, async () => {
   const { evaluate, waitFor, command, close } = await openAdminFixture();
   try {

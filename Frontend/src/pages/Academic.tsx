@@ -12,7 +12,6 @@ import { useData } from "../lib/data";
 import { post, put, read } from "../lib/api";
 import { dateBR, resultMessage } from "../lib/utils";
 import { NeedFields, defaultNeed } from "../components/NeedFields";
-import { AcademicCalendarEditor } from "../components/AcademicCalendarEditor";
 import { semesterDates } from "../lib/semesterDates";
 import {
   Card,
@@ -42,7 +41,6 @@ export function Academic({ user, onPlanning }: { user: User; onPlanning?: () => 
   const admin = user.roles.includes("Admin");
   const confirm = useConfirmation();
   const createBaseline = useRef("");
-  const calendarCloseGuard = useRef<(() => Promise<boolean>) | null>(null);
   const { data, reload } = useData();
   const [tab, setTab] = useState<"classes" | "semesters">("classes");
   const [query, setQuery] = useState("");
@@ -66,7 +64,6 @@ export function Academic({ user, onPlanning }: { user: User; onPlanning?: () => 
     return () => { document.removeEventListener("pointerdown", dismiss); document.removeEventListener("keydown", escape); };
   }, [filtersOpen]);
   const [createModal, setCreateModal] = useState<"class" | "semester" | null>(null);
-  const [calendarId, setCalendarId] = useState<number | null>(null);
   const [legacyOpen, setLegacyOpen] = useState(false);
   const [year, setYear] = useState(new Date().getFullYear());
   const [term, setTerm] = useState(new Date().getMonth() < 6 ? 1 : 2);
@@ -264,9 +261,6 @@ export function Academic({ user, onPlanning }: { user: User; onPlanning?: () => 
     if (action || !await discardChanges(editingDirty() || !!assignmentTeacherId)) return false;
     setExpandedClassId(null); setAssignmentClassId(""); setEditingClass(null); return true;
   };
-  const closeCalendar = async () => {
-    if (!calendarCloseGuard.current || await calendarCloseGuard.current()) setCalendarId(null);
-  };
   const semesterForm = (<div>
             <form
               className="space-y-4"
@@ -286,7 +280,6 @@ export function Academic({ user, onPlanning }: { user: User; onPlanning?: () => 
                   if (year >= 1900 && year <= 9998) setSemester(semesterDates(year, value));
                 }}><option value={1}>1º semestre</option><option value={2}>2º semestre</option></select></Field>
               </div>
-              <p className="muted text-xs">Datas sugeridas pela RN-01. Ajuste conforme o calendário oficial.</p>
               <p className="text-sm text-ink">{semester.name} · {dateBR(semester.startDate)} a {dateBR(semester.endDate)}</p>
               <details className="rounded-lg border border-line p-3" onInvalidCapture={(event) => { event.currentTarget.open = true; }}>
               <summary className="cursor-pointer font-medium text-ink">Ajustar dados sugeridos</summary>
@@ -769,7 +762,6 @@ export function Academic({ user, onPlanning }: { user: User; onPlanning?: () => 
     <section role="tabpanel" id="academic-panel-semesters" aria-labelledby="academic-tab-semesters" hidden={tab !== "semesters"}>
       <Card className="p-4 sm:p-5 space-y-4"><div className="flex items-center justify-between gap-3"><h2 className="section-title">Semestres cadastrados</h2>{admin && <button type="button" className="btn-primary" onClick={() => openCreate("semester")}>Novo semestre</button>}</div>
         {!data.semesters.length ? <Empty text="Comece cadastrando um semestre." /> : <ul className="space-y-3">{data.semesters.map((item) => <li key={item.id} className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-line p-4"><div><strong className="text-ink">{item.name}</strong><p className="muted">{dateBR(item.startDate)} a {dateBR(item.endDate)} · {data.classes.filter((row) => row.semesterId === item.id).length} turmas</p></div>
-          {admin && <button type="button" className="btn-secondary" onClick={() => setCalendarId(item.id)}>Calendário</button>}
         </li>)}</ul>}
       </Card>
     </section>
@@ -786,6 +778,5 @@ export function Academic({ user, onPlanning }: { user: User; onPlanning?: () => 
       {error && <div className="mb-3"><Notice message={error} /></div>}
       <fieldset disabled={!!action}>{createModal === "class" ? classForm : semesterForm}</fieldset>
     </Modal>}
-    {admin && calendarId !== null && <Modal title={`Calendário letivo · ${data.semesters.find((item) => item.id === calendarId)?.name ?? ""}`} width="max-w-3xl" onClose={() => void closeCalendar()}><AcademicCalendarEditor key={calendarId} semesterId={calendarId} closeGuardRef={calendarCloseGuard} /></Modal>}
   </div>;
 }
