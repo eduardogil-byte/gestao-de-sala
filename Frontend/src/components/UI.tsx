@@ -356,13 +356,15 @@ export function useConfirmation() {
 }
 export function SubmitButton({
   busy,
+  disabled = false,
   children,
 }: {
   busy: boolean;
+  disabled?: boolean;
   children: ReactNode;
 }) {
   return (
-    <button type="submit" className="btn-primary" disabled={busy} aria-busy={busy}>
+    <button type="submit" className="btn-primary" disabled={busy || disabled} aria-busy={busy}>
       {busy && <LoaderCircle aria-hidden="true" size={16} className="animate-spin" />}
       {children}
     </button>

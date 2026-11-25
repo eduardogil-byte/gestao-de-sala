@@ -95,18 +95,25 @@ test("calendário salva e edita ocorrências usando o semestre selecionado", { s
   try {
     await evaluate("adminTest.reset('academic')");
     await waitFor("document.body.innerText.includes('Turmas e semestres')");
-    await waitFor("!!document.querySelector('details select option[value=\"1\"]')");
-    await evaluate("adminTest.catalog['/api/semesters/1/calendar'] = {events: []}; document.querySelector('details').open = true; const select = document.querySelector('details select'); Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value').set.call(select, '1'); select.dispatchEvent(new Event('change', {bubbles: true}))");
-    await waitFor("document.body.innerText.includes('Nenhuma ocorrência cadastrada')");
-    await evaluate("adminTest.input('Início da ocorrência', '2027-03-10'); adminTest.input('Fim da ocorrência', '2027-03-11'); adminTest.input('Descrição da ocorrência', 'Recesso escolar')");
+    await evaluate("adminTest.click('Semestres')");
+    await waitFor("document.body.innerText.includes('Semestre A')");
+    await evaluate("adminTest.catalog['/api/semesters/1/calendar'] = {events: []}; adminTest.click('Calendário')");
+    await waitFor("!!document.querySelector('[aria-label=\"Calendário do semestre\"]')");
+    await evaluate("document.querySelector('button[data-date=\"2027-03-10\"]').click()");
+    await waitFor("!!document.querySelector('[role=dialog] input')");
+    await evaluate("adminTest.input('Descrição da ocorrência', 'Recesso escolar')");
     await evaluate("adminTest.click('Salvar ocorrência')");
-    await waitFor("adminTest.pending.some(item => item.path === '/api/semesters/1/calendar/events')");
-    await evaluate("adminTest.reply('/api/semesters/1/calendar/events', {id: 7, startDate: '2027-03-10', endDate: '2027-03-11', kind: 'Holiday', description: 'Recesso escolar'}, 201)");
+    await waitFor("adminTest.pending.some(item => item.path === '/api/semesters/1/calendar/events/batch')");
+    await evaluate("adminTest.reply('/api/semesters/1/calendar/events/batch', [{id: 7, startDate: '2027-03-10', endDate: '2027-03-10', kind: 'Holiday', description: 'Recesso escolar'}])");
     await waitFor("document.body.innerText.includes('Calendário atualizado')");
-    await evaluate("adminTest.click('Editar')");
+    await evaluate("document.querySelector('button[data-date=\"2027-03-10\"]').click()");
+    await waitFor("document.body.innerText.includes('Editar ocorrência')");
+    await evaluate("adminTest.click('Editar ocorrência')");
     await evaluate("adminTest.input('Descrição da ocorrência', 'Feriado escolar'); adminTest.click('Salvar ocorrência')");
     await waitFor("adminTest.pending.some(item => item.path === '/api/semesters/1/calendar/events/7')");
     await evaluate("adminTest.reply('/api/semesters/1/calendar/events/7', null, 204)");
+    await waitFor("document.body.innerText.includes('Calendário atualizado')");
+    await evaluate("document.querySelector('button[data-date=\"2027-03-10\"]').click()");
     await waitFor("document.body.innerText.includes('Feriado escolar')");
     for (const theme of ["light", "dark"]) for (const width of [360, 1366]) {
       await evaluate(`document.documentElement.dataset.theme = '${theme}'`);

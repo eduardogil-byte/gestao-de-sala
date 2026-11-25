@@ -229,15 +229,12 @@ export function PedagogicalCatalog({ user }: { user: User }) {
   return (
     <>
       <Title title="Catálogo Pedagógico"
-        subtitle="Navegue por Curso → Módulo → UC → Capacidade para consultar carga horária, conteúdos e requisitos técnicos."
         action={admin ? <button className="btn-primary" onClick={() => beginForm()} disabled={busy !== ""}>
           <Plus size={16} /> Novo {levelNames[level]}
         </button> : undefined} />
 
-      <nav aria-label="Caminho no catálogo" className="card flex flex-wrap items-center gap-2 p-3 text-sm mb-5">
-        <button type="button" className="text-sky-300 font-semibold hover:underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-sky-400 rounded" onClick={goCourses}
-          disabled={busy !== ""}>Cursos</button>
-        {courseId !== null && <><ChevronRight size={15} className="text-slate-400" />
+      {courseId !== null && <nav aria-label="Caminho no catálogo" className="card flex flex-wrap items-center gap-2 p-3 text-sm mb-5">
+        {courseId !== null && <>
           <button type="button" className="text-sky-300 font-semibold hover:underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-sky-400 rounded" onClick={() => goModules(courseId)}
             disabled={busy !== ""}>{course?.name || "Curso"}</button></>}
         {moduleId !== null && <><ChevronRight size={15} className="text-slate-400" />
@@ -245,7 +242,7 @@ export function PedagogicalCatalog({ user }: { user: User }) {
             disabled={busy !== ""}>{module?.name || "Módulo"}</button></>}
         {unitId !== null && <><ChevronRight size={15} className="text-slate-400" />
           <span aria-current="page" className="font-semibold text-ink">{unit?.name || "Unidade curricular"}</span></>}
-      </nav>
+      </nav>}
 
       {level !== "course" && <button className="btn-quiet mb-4" disabled={busy !== ""}
         onClick={() => level === "module" ? goCourses() :
@@ -353,14 +350,13 @@ export function PedagogicalCatalog({ user }: { user: User }) {
         <span className="muted text-sm">Critérios compartilhados com o inventário dos ambientes.</span>
       </div>}
       <Card className="overflow-hidden">
-        <div className="px-5 py-4 border-b border-line flex items-center justify-between gap-3">
+        <div className="px-5 py-4 border-b border-line flex flex-wrap items-center gap-3">
           <h2 className="section-title">{level === "course" ? "Cursos" : level === "module" ? "Módulos" :
             level === "unit" ? "Unidades curriculares" : "Capacidades"}</h2>
-          {!loading && !loadError && <span className="text-xs text-muted-ink">{query ? `${visibleCount} de ${count}` : count} registro(s)</span>}
+          {!loading && !loadError && count > 0 && <div className="w-full sm:ml-auto sm:w-80"><Field label={`Buscar ${levelNames[level]}`}>
+            <input type="search" className="field" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Filtrar registros deste nível" />
+          </Field></div>}
         </div>
-        {!loading && !loadError && count > 0 && <div className="px-4 py-3 border-b border-line"><Field label={`Buscar ${levelNames[level]}`}>
-          <input type="search" className="field max-w-md" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Filtrar registros deste nível" />
-        </Field></div>}
         {loading ? <Busy /> : loadError ? <div className="p-5">
           <button className="btn-secondary" onClick={() => setRevision((value) => value + 1)}>Tentar novamente</button>
         </div> : count === 0 ? <Empty text={`Nenhum(a) ${levelNames[level]} cadastrado(a) neste contexto.`} /> : visibleCount === 0 ?

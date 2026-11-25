@@ -24,6 +24,46 @@ namespace SalaGest.Backend.Tests;
 public sealed class AcademicCalendarTests
 {
     [Fact]
+    public async Task BatchDatesAreAtomicAndPreserveExistingOccupations()
+    {
+        await using var host = await CalendarHost.CreateAsync(); host.AsAdmin();
+        var path = $"/api/semesters/{host.SemesterId}/calendar/events/batch";
+        var input = new AcademicCalendarDatesInput([new(2027, 3, 10), new(2027, 3, 12), new(2027, 3, 20)], AcademicDayKind.Recess, "Recesso");
+        var response = await host.Client.PostAsJsonAsync(path, input);
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var created = (await response.Content.ReadFromJsonAsync<List<AcademicCalendarEventResponse>>())!;
+        Assert.Equal(3, created.Count);
+        Assert.All(created, item => { Assert.Equal(item.StartDate, item.EndDate); Assert.Equal(AcademicDayKind.Recess, item.Kind); });
+        Assert.Equal(HttpStatusCode.Conflict, (await host.Client.PostAsJsonAsync(path, input with {
+            Dates = [new(2027, 3, 11), new(2027, 3, 12)] })).StatusCode);
+        using var scope = host.App.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+        Assert.Equal(3, await db.AcademicCalendarEvents.CountAsync());
+        Assert.False(await db.AcademicCalendarEvents.AnyAsync(x => x.StartDate == new DateOnly(2027, 3, 11)));
+        Assert.Null((await db.Occupations.FindAsync(host.OccupationId))!.CancelledAtUtc);
+        Assert.NotNull(await db.Bookings.FindAsync(host.BookingId));
+    }
+
+    [Fact]
+    public async Task BatchDatesValidateLimitsFieldsAndAuthorization()
+    {
+        await using var host = await CalendarHost.CreateAsync(); host.AsAdmin();
+        var path = $"/api/semesters/{host.SemesterId}/calendar/events/batch";
+        var valid = new AcademicCalendarDatesInput([new(2027, 3, 10)], AcademicDayKind.Holiday, "Feriado");
+        foreach (var input in new[] {
+            valid with { Dates = null }, valid with { Dates = [] },
+            valid with { Dates = [new(2027, 3, 10), new(2027, 3, 10)] },
+            valid with { Dates = [new(2027, 4, 1)] }, valid with { Description = " " },
+            valid with { Kind = (AcademicDayKind)999 },
+            valid with { Dates = Enumerable.Repeat(new DateOnly(2027, 3, 1), 371).ToList() }
+        }) Assert.Equal(HttpStatusCode.BadRequest, (await host.Client.PostAsJsonAsync(path, input)).StatusCode);
+        host.AsTeacher();
+        Assert.Equal(HttpStatusCode.Forbidden, (await host.Client.PostAsJsonAsync(path, valid)).StatusCode);
+        using var scope = host.App.Services.CreateScope();
+        Assert.Equal(0, await scope.ServiceProvider.GetRequiredService<AppDbContext>().AcademicCalendarEvents.CountAsync());
+    }
+
+    [Fact]
     public void PreviewExcludesHolidaysRecessPlanningEadAndReportsMissingMeetings()
     {
         var semester = new Semester { Id = 1, StartDate = new DateOnly(2027, 3, 1),

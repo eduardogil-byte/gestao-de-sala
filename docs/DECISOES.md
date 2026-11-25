@@ -51,5 +51,13 @@ Este documento separa **regras confirmadas**, **propostas do coordenador** e **d
 - **Complemento de desenvolvimento aprovado:** requisições protegidas revalidam conta, bloqueio, stamp e papéis. Troca de senha e alteração de papéis revogam tokens anteriores; bloqueio temporário somente suspende acesso. Após desbloqueio, token não expirado pode retomar se não houver outra revogação. Consultas com falha não autorizam operações.
 - **Pendências institucionais:** matriz futura Gestor/Coordenador (D-08), duração de sessões, procedimento do primeiro Admin em produção e entrega de credenciais iniciais. Ver `docs/tasks/SG-03.md`.
 
+## DC-11 — Troca confirmada do turno oficial (2026-11-25)
+
+- Pedido explícito do responsável pelo projeto: permitir ao Admin alterar somente o turno oficial após consultar os vínculos e confirmar em um modal.
+- Atribuições, reservas, ocupações, propostas e grades existentes mantêm seus horários, estados e relacionamentos; a operação não remaneja aulas nem cria reservas no novo turno.
+- A operação dedicada exige confirmação e prévia atualizada, valida o turno e registra auditoria. A edição geral continua protegida contra troca direta de turno com vínculos.
+- A confirmação de turno não salva alterações de nome ou código feitas no mesmo formulário.
+
 ## Como registrar novas decisões
+
 Acrescentar: data, ID, situação (`Confirmada`, `Proposta`, `Em aberto`), responsável pela decisão, regra, motivo e Issues afetadas. **Não mudar o status para Confirmada por dedução.**

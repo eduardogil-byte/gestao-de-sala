@@ -24,6 +24,7 @@ public static partial class ApiEndpoints
         MapPedagogicalCatalog(app);
         MapCurricularUnitResources(app);
         MapClassUnitOfferings(app);
+        MapClassShiftChange(app);
         MapCurricularWorkload(app);
         MapTeacherPedagogicalProfiles(app);
         MapAssignments(app);
