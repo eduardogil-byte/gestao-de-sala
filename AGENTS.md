@@ -20,6 +20,10 @@ O SalaGest organiza ambientes pedagógicos, turmas, professores e suas reservas 
 8. **Segurança:** nunca exponha senhas, tokens, CPFs ou strings de conexão com segredos. Não amplie permissões silenciosamente.
 9. **Trabalho em equipe:** entregue mudanças pequenas e fáceis de revisar, com explicação dos arquivos alterados e impactos. Não execute commit, push, merge, rebase ou crie PR sem solicitação explícita.
 
+## Compatibilidade obrigatória com temas claro e escuro
+
+Toda criação ou alteração visual no frontend deve considerar os temas claro e escuro. Use tokens e estilos do design system; evite cores fixas que prejudiquem um dos temas. Garanta contraste e legibilidade nos estados de hover, foco, seleção, erro e desabilitado. Teste os dois temas em desktop e celular quando houver ambiente seguro. Se a validação visual não for possível, registre essa limitação; testes em um tema só não validam a alteração visual por completo.
+
 ## Ambiente e validação
 - O desenvolvedor pode trabalhar em um computador **sem .NET SDK ou SQL Server**. Primeiro verifique as ferramentas disponíveis. Não instale ferramentas nem altere configurações do sistema sem pedir autorização.
 - Backend, se disponível: `dotnet restore`, `dotnet build`, `dotnet test Backend/SalaGest.Backend.Tests/SalaGest.Backend.Tests.csproj`.

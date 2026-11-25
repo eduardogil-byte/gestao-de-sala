@@ -14,6 +14,10 @@ export type RoomIndicator = {
   capacityHours: number | null; availableHours: number | null;
   occupancyPercent: number | null; outsideCapacityHours: number | null;
   conflictPairs: number; unclassifiedOccupations: number;
+  daysWithOccupations?: number; occupiedSlots?: number; unoccupiedSlots?: number | null;
+  eligibleDays?: number | null; occupiedEligibleDays?: number | null; unoccupiedDays?: number | null;
+  pastOccupiedDays?: number; todayOccupiedDays?: number; futureOccupiedDays?: number;
+  occupiedWithinCapacityHours?: number | null;
   classification: IndicatorClassification; warnings: string[];
   shifts: ShiftIndicator[];
 };
@@ -25,6 +29,11 @@ export type SemesterIndicators = {
   availableHours: number | null; occupancyPercent: number | null;
   outsideCapacityHours: number | null; roomsWithUnknownCapacity: number;
   conflictPairs: number; classification: IndicatorClassification;
+  daysWithOccupations?: number; occupiedSlots?: number; unoccupiedSlots?: number | null;
+  occupiedWithinCapacityHours?: number | null;
+  referenceDate?: string; occupiedRoomDays?: number; eligibleRoomDays?: number | null;
+  occupiedEligibleRoomDays?: number | null; unoccupiedRoomDays?: number | null;
+  pastOccupiedRoomDays?: number; todayOccupiedRoomDays?: number; futureOccupiedRoomDays?: number;
   rooms: RoomIndicator[];
   months: { year: number; month: number; physicalOccupiedHours: number; daysWithOccupations: number }[];
   warnings: string[];
@@ -81,10 +90,33 @@ export const comparisonPath = (firstSemesterId: number, secondSemesterId: number
   `/occupancy-indicators/compare?firstSemesterId=${firstSemesterId}&secondSemesterId=${secondSemesterId}${roomId ? `&roomId=${roomId}` : ""}`;
 
 export const orderedRooms = (rooms: RoomIndicator[]) => [...rooms].sort((a, b) => {
+  if (a.capacityHours === null) return b.capacityHours === null ? a.roomName.localeCompare(b.roomName) : 1;
+  if (b.capacityHours === null) return -1;
   if (a.occupancyPercent === null) return b.occupancyPercent === null ? a.roomName.localeCompare(b.roomName) : 1;
   if (b.occupancyPercent === null) return -1;
   return b.occupancyPercent - a.occupancyPercent || a.roomName.localeCompare(b.roomName);
 });
+
+export const isBottleneck = (room: RoomIndicator) => room.capacityHours !== null && room.capacityHours > 0 &&
+  room.occupancyPercent !== null && Number.isFinite(room.occupancyPercent) && room.classification === "Bottleneck";
+
+export const shiftColor = (name: string) => /^manh/i.test(name) ? "var(--color-shift-morning)" :
+  /^tard/i.test(name) ? "var(--color-shift-afternoon)" : /^noit/i.test(name) ? "var(--color-shift-night)" : "var(--color-shift-other)";
+
+// Participação na capacidade total do ambiente, distinta da taxa individual do turno.
+export function stackedOccupation(room: RoomIndicator) {
+  const capacity = room.capacityHours;
+  if (capacity === null || !Number.isFinite(capacity) || capacity <= 0 || room.availableHours === null ||
+    !Number.isFinite(room.availableHours) || room.availableHours < 0 || room.availableHours > capacity) return null;
+  const segments = room.shifts.filter((shift) => shift.capacityHours !== null && shift.availableHours !== null)
+    .map((shift) => {
+      const occupied = shift.capacityHours! - shift.availableHours!;
+      return { id: shift.shiftId, name: shift.shiftName, hours: occupied, percent: occupied / capacity * 100 };
+    });
+  if (segments.some((segment) => !Number.isFinite(segment.hours) || segment.hours < 0) ||
+    Math.abs(segments.reduce((sum, segment) => sum + segment.hours, 0) - (capacity - room.availableHours)) > 0.001) return null;
+  return { segments, freePercent: room.availableHours / capacity * 100 };
+}
 
 // Agrega somente números já calculados pela SG-23; não deriva percentuais ou capacidade.
 export function shiftDistribution(report: SemesterIndicators) {
@@ -101,5 +133,6 @@ export function shiftDistribution(report: SemesterIndicators) {
 
 export const variationPoints = (first: SemesterIndicators, second: SemesterIndicators) =>
   first.occupancyPercent !== null && second.occupancyPercent !== null &&
+  first.capacityHours !== null && second.capacityHours !== null &&
   first.roomsWithUnknownCapacity === 0 && second.roomsWithUnknownCapacity === 0
     ? Number((second.occupancyPercent - first.occupancyPercent).toFixed(2)) : null;

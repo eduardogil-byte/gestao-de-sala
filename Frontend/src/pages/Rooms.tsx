@@ -1,97 +1,181 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
-  Cpu,
   DoorOpen,
-  MapPin,
-  Monitor,
+  HardDrive,
+  AppWindow,
   Plus,
-  Projector,
   Search,
   Settings2,
-  Wifi,
-  X,
+  ChevronDown,
+  SlidersHorizontal,
 } from "lucide-react";
-import type { ComputerGroup, Room, User } from "../types";
+import type { ResourceCatalogItem, Room, RoomInventory, RoomResource, User } from "../types";
 import { useData } from "../lib/data";
-import { post, put } from "../lib/api";
+import { post, put, read } from "../lib/api";
+import { RoomInventoryFields } from "../components/RoomInventoryFields";
+import { ResourceCatalogManager } from "../components/ResourceCatalogManager";
+import { OperatingShiftEditor } from "../components/OperatingShiftEditor";
+import { indicatorPath, isBottleneck, isSemesterIndicators, type SemesterIndicators } from "../lib/occupancyIndicators";
 import { resultMessage, roomKind } from "../lib/utils";
 import {
+  Busy,
   Card,
   Checkbox,
   Empty,
   Field,
+  MetricCard,
   Modal,
   Notice,
+  SectionHeading,
   SubmitButton,
   Title,
+  useConfirmation,
 } from "../components/UI";
 
-type RoomInput = Omit<Room, "id">;
+type RoomInput = Omit<Room, "id" | "desks"> & { resources: RoomResource[] };
+type OfferedShift = { shiftId: number; weekdaysMask: number };
+const stated = (value: string | null | undefined) => value?.trim() || "Não informado";
+const yesNoUnknown = (value: boolean | null | undefined) => value == null ? "Não informado" : value ? "Sim" : "Não";
 const emptyRoom: RoomInput = {
+  code: "",
   name: "",
   location: "",
   purpose: "",
   kind: "Comum",
   seats: 30,
-  desks: 30,
-  hasProjector: true,
-  hasTeacherComputer: true,
-  hasInternet: true,
+  hasProjector: false,
+  hasTeacherComputer: false,
+  hasInternet: false,
   active: true,
   computerGroups: [],
+  resources: [],
 };
-const emptyGroup: ComputerGroup = {
-  description: "Computadores dos alunos",
-  quantity: 25,
-  ramGb: 8,
-  tier: "Basico",
-  dedicatedGpu: false,
-  software: [],
-};
-
-export function Rooms({ user }: { user: User }) {
+export function Rooms({ user, onImport }: { user: User; onImport?: (kind: "Ambientes" | "Recursos") => void }) {
+  const confirm = useConfirmation();
+  const openingRequest = useRef(0);
+  const persistedSoftware = useRef<Record<number, number[]>>({});
+  const [opening, setOpening] = useState(false);
+  const [removedGroupIds, setRemovedGroupIds] = useState<number[]>([]);
+  const [removedSoftwareIds, setRemovedSoftwareIds] = useState<Record<number, number[]>>({});
   const admin = user.roles.includes("Admin");
-  const { data, reload } = useData();
+  const { data, reload, loading: catalogLoading, error: catalogError } = useData();
   const [search, setSearch] = useState("");
   const [kind, setKind] = useState("");
+  const [status, setStatus] = useState("");
+  const [filtersOpen, setFiltersOpen] = useState(false);
+  const filtersRef = useRef<HTMLDivElement>(null);
+  const filtersButtonRef = useRef<HTMLButtonElement>(null);
+  useEffect(() => {
+    if (!filtersOpen) return;
+    filtersRef.current?.querySelector("select")?.focus();
+    const dismiss = (event: PointerEvent) => {
+      if (!filtersRef.current?.contains(event.target as Node)) setFiltersOpen(false);
+    };
+    const escape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") { setFiltersOpen(false); filtersButtonRef.current?.focus(); }
+    };
+    document.addEventListener("pointerdown", dismiss);
+    document.addEventListener("keydown", escape);
+    return () => { document.removeEventListener("pointerdown", dismiss); document.removeEventListener("keydown", escape); };
+  }, [filtersOpen]);
+  const [semesterId, setSemesterId] = useState("");
+  const [shiftRoom, setShiftRoom] = useState<Room | null>(null);
+  const [indicatorRefresh, setIndicatorRefresh] = useState(0);
+  const [indicators, setIndicators] = useState<SemesterIndicators | null>(null);
+  const [indicatorState, setIndicatorState] = useState<"idle" | "loading" | "error">("idle");
+  const [offeredShifts, setOfferedShifts] = useState<Record<number, OfferedShift[] | null>>({});
+  const [detail, setDetail] = useState<{ room: Room; inventory: RoomInventory } | null>(null);
+  const [detailLoading, setDetailLoading] = useState(false);
   const [editing, setEditing] = useState<number | null>(null);
   const [form, setForm] = useState<RoomInput | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [softwareName, setSoftwareName] = useState("");
   const [softwareBusy, setSoftwareBusy] = useState(false);
+  const [softwareSuccess, setSoftwareSuccess] = useState("");
+  const [softwareSearch, setSoftwareSearch] = useState("");
+  const [resourceCatalog, setResourceCatalog] = useState<ResourceCatalogItem[]>([]);
+  const [resourceCatalogError, setResourceCatalogError] = useState("");
+  async function refreshResourceCatalog() {
+    const items = await read<ResourceCatalogItem[]>("/resource-catalog");
+    setResourceCatalog(items);
+    setResourceCatalogError("");
+  }
+  useEffect(() => {
+    let active = true;
+    read<ResourceCatalogItem[]>("/resource-catalog").then((items) => { if (active) setResourceCatalog(items); })
+      .catch((cause) => { if (active) setResourceCatalogError(resultMessage(cause)); });
+    return () => { active = false; };
+  }, []);
   const set = <K extends keyof RoomInput>(k: K, v: RoomInput[K]) =>
     setForm((prev) => (prev ? { ...prev, [k]: v } : prev));
   const groups = form?.computerGroups || [];
-  function changeGroup(i: number, patch: Partial<ComputerGroup>) {
-    set(
-      "computerGroups",
-      groups.map((g, index) => (index === i ? { ...g, ...patch } : g)),
-    );
+  useEffect(() => {
+    if (!admin || !semesterId) { setIndicators(null); setIndicatorState("idle"); return; }
+    let active = true;
+    setIndicators(null); setIndicatorState("loading");
+    read<unknown>(indicatorPath(Number(semesterId))).then((value) => {
+      if (!isSemesterIndicators(value) || value.semesterId !== Number(semesterId)) throw new Error("Indicadores de outro semestre ou incompletos.");
+      if (active) { setIndicators(value); setIndicatorState("idle"); }
+    }).catch(() => { if (active) setIndicatorState("error"); });
+    return () => { active = false; };
+  }, [admin, semesterId, indicatorRefresh]);
+  useEffect(() => {
+    if (!admin || !semesterId) { setOfferedShifts({}); return; }
+    let active = true;
+    setOfferedShifts({});
+    const rooms = data.rooms;
+    void (async () => {
+      for (let start = 0; start < rooms.length; start += 8) {
+        const batch = await Promise.all(rooms.slice(start, start + 8).map(async (room) => {
+          try {
+            const rows = await read<OfferedShift[]>(`/semesters/${semesterId}/rooms/${room.id}/operating-shifts`);
+            if (!Array.isArray(rows) || rows.some((row) => !Number.isInteger(row.shiftId) || !Number.isInteger(row.weekdaysMask) || row.weekdaysMask < 1 || row.weekdaysMask > 127))
+              return [room.id, null] as const;
+            return [room.id, rows] as const;
+          } catch { return [room.id, null] as const; }
+        }));
+        if (!active) return;
+        setOfferedShifts((current) => ({ ...current, ...Object.fromEntries(batch) }));
+      }
+    })();
+    return () => { active = false; };
+  }, [admin, semesterId, data.rooms, indicatorRefresh]);
+  async function showDetail(room: Room) {
+    const request = ++openingRequest.current;
+    setDetail(null); setDetailLoading(true); setError("");
+    try {
+      const inventory = await read<RoomInventory>(`/rooms/${room.id}/inventory`);
+      if (request === openingRequest.current) setDetail({ room, inventory });
+    } catch (cause) { if (request === openingRequest.current) setError(resultMessage(cause)); }
+    finally { if (request === openingRequest.current) setDetailLoading(false); }
   }
-  function open(room?: Room) {
-    setEditing(room?.id ?? null);
-    setForm(
-      room
-        ? {
-            name: room.name,
-            location: room.location,
-            purpose: room.purpose || "",
-            kind: room.kind,
-            seats: room.seats,
-            desks: room.desks,
-            hasProjector: room.hasProjector,
-            hasTeacherComputer: room.hasTeacherComputer,
-            hasInternet: room.hasInternet,
-            active: room.active,
-            computerGroups: room.computerGroups.map((g) => ({
-              ...g,
-              software: g.software.map((s) => ({ ...s })),
-            })),
-          }
-        : { ...emptyRoom, computerGroups: [] },
-    );
-    setError("");
+  async function open(room?: Room) {
+    const request = ++openingRequest.current;
+    setError(""); setForm(null); setOpening(true);
+    setRemovedGroupIds([]); setRemovedSoftwareIds({});
+    try {
+      const inventory = room ? await read<RoomInventory>(`/rooms/${room.id}/inventory`) : { computerGroups: [], resources: [] };
+      if (request !== openingRequest.current) return;
+      persistedSoftware.current = Object.fromEntries(inventory.computerGroups.filter((g) => g.id != null)
+        .map((g) => [g.id!, g.software.map((s) => s.softwareId)]));
+      setEditing(room?.id ?? null);
+      setForm(room ? { ...room, ...inventory } : { ...emptyRoom, computerGroups: [], resources: [] });
+    } catch (cause) { if (request === openingRequest.current) setError(resultMessage(cause)); }
+    finally { if (request === openingRequest.current) setOpening(false); }
+  }
+  async function removeGroup(index: number) {
+    const group = groups[index];
+    if (!await confirm({ title: "Remover grupo de computadores", message: `O grupo ${group.description || index + 1} e suas instalações serão removidos ao salvar. O histórico de auditoria será preservado.`, confirmLabel: "Remover grupo", danger: true })) return;
+    if (group.id) setRemovedGroupIds((ids) => [...ids, group.id!]);
+    set("computerGroups", groups.filter((_, i) => i !== index));
+  }
+  async function removeSoftware(index: number, softwareId: number) {
+    const group = groups[index];
+    if (!await confirm({ title: "Remover software do grupo", message: "A instalação e os dados de licença deste software serão removidos do grupo ao salvar. O catálogo de softwares e o histórico serão preservados.", confirmLabel: "Remover software", danger: true })) return;
+    if (group.id && persistedSoftware.current[group.id]?.includes(softwareId))
+      setRemovedSoftwareIds((ids) => ({ ...ids, [group.id!]: [...new Set([...(ids[group.id!] ?? []), softwareId])] }));
+    set("computerGroups", groups.map((g, i) => i === index ? { ...g, software: g.software.filter((s) => s.softwareId !== softwareId) } : g));
   }
   async function submit(e: React.FormEvent) {
     e.preventDefault();
@@ -99,15 +183,21 @@ export function Rooms({ user }: { user: User }) {
     setBusy(true);
     setError("");
     try {
+      const { computerGroups, resources, ...room } = form;
+      delete (room as Partial<Room>).desks;
       const body = {
-        ...form,
-        computerGroups: form.computerGroups.map((g) => ({
-          ...g,
-          software: g.software.map((s) => ({
-            softwareId: s.softwareId,
-            installedQuantity: s.installedQuantity,
+        ...room,
+        computerGroups: [],
+        inventory: {
+          computerGroups: computerGroups.map(({ id, software, ...details }) => ({
+            id: id ?? null,
+            details: { ...details, operationalQuantity: details.operationalQuantity ?? null },
+            software: software.map((s) => ({ ...s, licenseQuantity: s.licenseQuantity ?? null, licenseExpiresOn: s.licenseExpiresOn || null })),
+            removedSoftwareIds: (id ? removedSoftwareIds[id] ?? [] : []).filter((id) => !software.some((s) => s.softwareId === id)),
           })),
-        })),
+          resources: resources.map(({ id, ...details }) => ({ id: id ?? null, details })),
+          removedGroupIds,
+        },
       };
       if (editing) await put(`/rooms/${editing}`, body);
       else await post("/rooms", body);
@@ -123,10 +213,12 @@ export function Rooms({ user }: { user: User }) {
     e.preventDefault();
     setSoftwareBusy(true);
     setError("");
+    setSoftwareSuccess("");
     try {
       await post("/software", { name: softwareName });
       setSoftwareName("");
       await reload();
+      setSoftwareSuccess("Software adicionado ao catálogo.");
     } catch (e) {
       setError(resultMessage(e));
     } finally {
@@ -136,158 +228,164 @@ export function Rooms({ user }: { user: User }) {
   const list = data.rooms.filter(
     (r) =>
       (!kind || r.kind === kind) &&
+      (!status || (status === "active") === r.active) &&
       `${r.name} ${r.location} ${r.code ?? ""}`.toLowerCase().includes(search.toLowerCase()),
   );
+  const shiftLabel = (room: Room) => {
+    if (!admin) return "Consulta restrita ao Admin";
+    if (!semesterId) return "Selecione um semestre";
+    const configured = offeredShifts[room.id];
+    if (configured === undefined) return "Consultando configuração";
+    if (configured === null) return "Não informado";
+    if (!configured.length) return "Nenhum turno configurado";
+    const names = configured.map((row) => data.shifts.find((shift) => shift.id === row.shiftId)?.name);
+    return names.every(Boolean) ? names.join(", ") : "Não informado";
+  };
+  const occupiedShiftLabel = (room: Room) => {
+    if (!admin) return "Consulta restrita ao Admin";
+    if (!semesterId) return "Selecione um semestre";
+    if (indicatorState === "loading") return "Consultando ocupações";
+    if (indicatorState === "error" || !indicators) return "Não informado";
+    const report = indicators.rooms.find((item) => item.roomId === room.id);
+    if (!report) return "Não informado";
+    const occupied = report.shifts.filter((shift) => shift.occupiedHours > 0);
+    return occupied.length ? occupied.map((shift) => shift.shiftName).join(", ") : "Nenhuma ocupação por turno identificada";
+  };
+  const roomAction = (room: Room) => <div className="flex flex-wrap gap-2">
+    {admin && <button type="button" className="btn-secondary" disabled={opening || detailLoading} onClick={() => void open(room)}><Settings2 size={15} /> Editar</button>}
+    {admin && semesterId && <button type="button" className="btn-secondary" onClick={() => setShiftRoom(room)}>Configurar turnos</button>}
+  </div>;
+  const roomInformation = (room: Room) => <button type="button" disabled={detailLoading || opening}
+    aria-label={`Abrir informações de ${room.name}`} onClick={() => void showDetail(room)}
+    className="rounded text-left font-semibold text-ink underline decoration-line underline-offset-4 hover:decoration-current focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-skybrand-500 disabled:cursor-wait">
+    {room.name}
+  </button>;
+  const openRoomInformation = (event: React.MouseEvent, room: Room) => {
+    if (!detailLoading && !opening && !(event.target as HTMLElement).closest("button, a, input, select")) void showDetail(room);
+  };
+  const bottleneckLabel = (room: Room) => {
+    const indicator = admin && indicatorState === "idle" ? indicators?.rooms.find((item) => item.roomId === room.id) : undefined;
+    return indicator && isBottleneck(indicator) ? <span className="pill bg-rose-50 text-rose-800 mt-1">{indicator.occupancyPercent}% · Gargalo</span> : null;
+  };
   return (
     <>
       <Title
         title="Ambientes"
-        subtitle="Gerencie salas comuns, laboratórios e equipamentos."
-        action={
-          admin ? (
-            <button className="btn-primary" onClick={() => open()}>
-              <Plus size={17} /> Nova sala
+        subtitle="Consulte as fichas técnicas e gerencie salas, laboratórios e oficinas."
+        action={admin ? <>
+            {onImport && <><button type="button" className="btn-secondary" onClick={() => onImport("Ambientes")}>Importar ambientes</button>
+              <button type="button" className="btn-secondary" onClick={() => onImport("Recursos")}>Importar recursos</button></>}
+            <button className="btn-primary" disabled={opening} onClick={() => void open()}>
+              <Plus size={17} /> Novo ambiente
             </button>
-          ) : undefined
-        }
+          </> : undefined}
       />
-      <Card className="p-4 mb-5">
-        <div className="flex flex-wrap gap-3">
-          <div className="flex-1 min-w-[220px] relative">
+      <div className="grid gap-3 sm:grid-cols-3 mb-5">
+        <MetricCard label="Ambientes cadastrados" value={data.rooms.length} detail="Todos os tipos retornados pela API" icon={DoorOpen} />
+        <MetricCard label="Ativos" value={data.rooms.filter((room) => room.active).length} detail="Situação cadastral" tone="emerald" />
+        <MetricCard label="Inativos" value={data.rooms.filter((room) => !room.active).length} detail="Situação cadastral" tone="slate" />
+      </div>
+      <div className="mb-5">
+        <section aria-label="Filtros de ambientes" className="flex flex-col gap-3 rounded-panel border border-line bg-surface p-4 sm:flex-row sm:items-end">
+          <label className="relative min-w-0 flex-1">
+            <span className="field-label">Buscar ambiente</span>
             <Search
               size={17}
-              className="absolute left-3 top-3 text-slate-400"
+              className="absolute left-3 bottom-3 text-slate-400"
             />
             <input
-              aria-label="Buscar sala"
+              aria-label="Buscar ambiente"
               className="field !pl-10"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              placeholder="Buscar nome ou localização..."
+              placeholder="Nome, código ou localização"
             />
+          </label>
+          <div ref={filtersRef} className="relative sm:shrink-0" onBlur={(event) => { if (!event.currentTarget.contains(event.relatedTarget)) setFiltersOpen(false); }}>
+            <button ref={filtersButtonRef} type="button" className="btn-secondary w-full sm:w-auto" aria-expanded={filtersOpen} aria-controls="room-filters-panel" onClick={() => setFiltersOpen(!filtersOpen)}>
+              <SlidersHorizontal size={17} aria-hidden="true" />Filtros
+              {(kind || status || (admin && semesterId)) && <span className="rounded-full bg-canvas px-2 py-0.5 text-xs text-ink">{Number(!!kind) + Number(!!status) + Number(admin && !!semesterId)}<span className="sr-only"> selecionados</span></span>}
+              <ChevronDown size={16} aria-hidden="true" className={`transition-transform ${filtersOpen ? "rotate-180" : ""}`} />
+            </button>
+            {filtersOpen && <div id="room-filters-panel" role="region" aria-label="Opções de filtro" className="absolute right-0 top-full z-20 mt-2 w-full min-w-0 space-y-4 rounded-panel border border-line bg-surface p-4 shadow-soft sm:w-80">
+          <Field label="Tipo de ambiente">
+            <select className="field" value={kind} onChange={(e) => setKind(e.target.value)}>
+              <option value="">Todos os tipos</option>
+              <option value="Comum">Sala comum</option>
+              <option value="Laboratorio">Laboratório</option>
+              <option value="Hibrida">Híbrida</option>
+              <option value="Oficina">Oficina</option>
+            </select>
+          </Field>
+          <Field label="Situação"><select className="field" value={status} onChange={(e) => setStatus(e.target.value)}>
+            <option value="">Todas</option><option value="active">Ativas</option><option value="inactive">Inativas</option>
+          </select></Field>
+          {admin && <Field label="Semestre dos turnos"><select className="field" value={semesterId} onChange={(e) => setSemesterId(e.target.value)}>
+            <option value="">Selecione</option>{data.semesters.map((semester) => <option key={semester.id} value={semester.id}>{semester.name}</option>)}
+          </select></Field>}
+              <div className="flex items-center justify-between gap-3 border-t border-line pt-3">
+                <button type="button" className="btn-quiet" disabled={!kind && !status && !semesterId} onClick={() => { setKind(""); setStatus(""); setSemesterId(""); }}>Limpar filtros</button>
+                <button type="button" className="btn-primary" onClick={() => { setFiltersOpen(false); filtersButtonRef.current?.focus(); }}>Concluir</button>
+              </div>
+            </div>}
           </div>
-          <select
-            aria-label="Tipo de sala"
-            className="field !w-auto"
-            value={kind}
-            onChange={(e) => setKind(e.target.value)}
-          >
-            <option value="">Todos os tipos</option>
-            <option value="Comum">Sala comum</option>
-            <option value="Laboratorio">Laboratório</option>
-            <option value="Hibrida">Híbrida</option>
-          </select>
-        </div>
-      </Card>
-      {list.length === 0 ? (
+        </section>
+      </div>
+      {catalogLoading && <Busy />}
+      {catalogError && <Notice message={catalogError} />}
+      {resourceCatalogError && <Notice message={`Catálogo de recursos indisponível: ${resourceCatalogError}`} />}
+      {(opening || detailLoading) && <p role="status">Carregando inventário técnico...</p>}
+      {indicatorState === "error" && <Notice type="info" message="Não foi possível consultar os turnos oferecidos neste semestre. Nenhuma disponibilidade foi presumida." />}
+      {!catalogLoading && list.length === 0 ? (
         <Card>
           <Empty
-            title="Nenhuma sala cadastrada"
-            text={
-              admin
-                ? "Cadastre a primeira sala para começar a montar a grade."
-                : "Aguarde o administrador cadastrar as salas."
-            }
+            title={data.rooms.length ? "Nenhum ambiente encontrado" : "Nenhum ambiente cadastrado"}
+            text={data.rooms.length ? "Ajuste a busca ou os filtros para visualizar outros ambientes." : "Os ambientes cadastrados aparecerão aqui."}
           />
         </Card>
-      ) : (
-        <div className="grid md:grid-cols-2 xl:grid-cols-3 gap-4">
-          {list.map((r) => {
-            const pcs = r.computerGroups.reduce((a, g) => a + g.quantity, 0);
-            return (
-              <Card
-                key={r.id}
-                className="p-5 hover:border-skybrand-200 transition"
-              >
-                <div className="flex justify-between gap-2 items-start">
-                  <div className="w-11 h-11 bg-skybrand-50 rounded-xl flex items-center justify-center text-skybrand-700">
-                    <DoorOpen size={21} />
-                  </div>
-                  <span
-                    className={`pill ${r.active ? "bg-emerald-50 text-emerald-700" : "bg-slate-100 text-slate-500"}`}
-                  >
-                    {r.active ? "Ativa" : "Inativa"}
-                  </span>
-                </div>
-                <h3 className="text-lg font-bold text-slate-800 mt-4">
-                  {r.name}
-                </h3>
-                <p className="text-xs text-slate-500 mt-1">ID {r.id}{r.code ? ` · Código ${r.code}` : " · Código não informado"}</p>
-                <div className="text-xs text-slate-500 flex items-center gap-1.5 mt-1">
-                  <MapPin size={13} />
-                  {r.location || "Localização não informada"} •{" "}
-                  {roomKind(r.kind)}
-                </div>
-                {r.purpose && (
-                  <p className="text-xs text-slate-500 mt-2">
-                    Uso: {r.purpose}
-                  </p>
-                )}
-                <div className="grid grid-cols-2 gap-2 mt-5">
-                  <div className="bg-slate-50 rounded-lg p-3">
-                    <span className="block text-xs text-slate-500">
-                      Lugares
-                    </span>
-                    <b className="text-xl text-slate-800">{r.seats}</b>
-                  </div>
-                  <div className="bg-slate-50 rounded-lg p-3">
-                    <span className="block text-xs text-slate-500">
-                      Computadores
-                    </span>
-                    <b className="text-xl text-slate-800">{pcs}</b>
-                  </div>
-                </div>
-                <div className="flex flex-wrap gap-2 mt-4 text-[11px] text-slate-500">
-                  {r.hasProjector && (
-                    <span className="inline-flex gap-1 items-center">
-                      <Projector size={13} />
-                      Projetor
-                    </span>
-                  )}
-                  {r.hasTeacherComputer && (
-                    <span className="inline-flex gap-1 items-center">
-                      <Monitor size={13} />
-                      PC docente
-                    </span>
-                  )}
-                  {r.hasInternet && (
-                    <span className="inline-flex gap-1 items-center">
-                      <Wifi size={13} />
-                      Internet
-                    </span>
-                  )}
-                </div>
-                {admin && (
-                  <button
-                    onClick={() => open(r)}
-                    className="btn-secondary w-full mt-5"
-                  >
-                    <Settings2 size={15} />
-                    Editar ambiente
-                  </button>
-                )}
-              </Card>
-            );
-          })}
-        </div>
+      ) : !catalogLoading && (
+        <Card className="p-4 sm:p-5 space-y-4">
+          <SectionHeading title="Ambientes" subtitle={`${list.length} de ${data.rooms.length} ambientes exibidos. Configuração de turnos e ocupação são informações distintas; nenhuma delas comprova disponibilidade em um horário.`} />
+          <div className="hidden lg:block table-wrap"><table className="w-full text-sm"><thead><tr className="text-left text-muted-ink border-b border-line">
+            <th scope="col" className="p-3">Ambiente</th><th scope="col" className="p-3">Tipo e localização</th><th scope="col" className="p-3">Alunos</th><th scope="col" className="p-3">Turnos configurados</th><th scope="col" className="p-3">Turnos com ocupação</th><th scope="col" className="p-3">Situação</th><th scope="col" className="p-3">Ações</th>
+          </tr></thead><tbody>{list.map((room) => <tr key={room.id} onClick={(event) => openRoomInformation(event, room)} className="cursor-pointer border-b border-line last:border-0 align-top transition-colors hover:bg-canvas focus-within:bg-canvas">
+            <td className="p-3"><strong className="text-ink">{room.code || `#${room.id}`}</strong><span className="block">{roomInformation(room)}</span>{bottleneckLabel(room)}</td>
+            <td className="p-3">{roomKind(room.kind)}<span className="block text-muted-ink">{room.location || "Localização não informada"}</span></td>
+            <td className="p-3 tabular-nums">{room.seats}</td><td className="p-3 text-muted-ink">{shiftLabel(room)}</td><td className="p-3 text-muted-ink">{occupiedShiftLabel(room)}</td>
+            <td className="p-3"><span className={`pill ${room.active ? "bg-emerald-50 text-emerald-700" : "bg-slate-100 text-slate-500"}`}>{room.active ? "Ativa" : "Inativa"}</span></td>
+            <td className="p-3">{roomAction(room)}</td>
+          </tr>)}</tbody></table></div>
+          <div className="grid gap-3 sm:grid-cols-2 lg:hidden">{list.map((room) => <article key={room.id} onClick={(event) => openRoomInformation(event, room)} className="cursor-pointer rounded-panel border border-line p-4 space-y-3 transition-colors hover:bg-canvas focus-within:bg-canvas">
+            <div className="flex items-start justify-between gap-2"><div><p className="text-xs font-semibold uppercase tracking-wide text-muted-ink">{room.code || `#${room.id}`}</p><h3 className="font-bold text-ink">{roomInformation(room)}</h3></div><span className={`pill ${room.active ? "bg-emerald-50 text-emerald-700" : "bg-slate-100 text-slate-500"}`}>{room.active ? "Ativa" : "Inativa"}</span></div>
+            <p className="muted">{roomKind(room.kind)} · {room.location || "Localização não informada"}</p>
+            {bottleneckLabel(room)}
+            <dl className="grid grid-cols-2 gap-2 text-sm"><div><dt className="text-muted-ink">Capacidade</dt><dd>{room.seats} alunos</dd></div><div><dt className="text-muted-ink">Turnos configurados</dt><dd>{shiftLabel(room)}</dd></div><div className="col-span-2"><dt className="text-muted-ink">Turnos com ocupação</dt><dd>{occupiedShiftLabel(room)}</dd></div></dl>
+            {roomAction(room)}
+          </article>)}</div>
+        </Card>
+      )}
+      {admin && (
+        <ResourceCatalogManager catalog={resourceCatalog} onChanged={refreshResourceCatalog} />
       )}
       {admin && (
         <Card className="p-5 mt-6">
-          <h3 className="section-title mb-3">Catálogo de softwares</h3>
-          <div className="flex flex-wrap gap-2 mb-4">
-            {data.software.length ? (
-              data.software.map((s) => (
-                <span key={s.id} className="pill bg-slate-100 text-slate-600">
-                  {s.name}
-                </span>
-              ))
-            ) : (
-              <p className="muted">Nenhum software cadastrado.</p>
-            )}
-          </div>
-          <form className="flex gap-2" onSubmit={addSoftware}>
+          <SectionHeading title="Catálogo de softwares" subtitle="Softwares disponíveis para associar aos grupos de computadores." />
+          {softwareSuccess && <div className="mt-3"><Notice type="success" message={softwareSuccess} onClose={() => setSoftwareSuccess("")} /></div>}
+          <p className="muted mt-3 mb-3" role="status">{data.software.length} software(s) cadastrado(s)</p>
+          {data.software.length > 8 && <Field label="Buscar software"><input className="field" type="search" value={softwareSearch} onChange={(event) => setSoftwareSearch(event.target.value)} placeholder="Nome do software…" /></Field>}
+          {data.software.length ? <ul className="grid gap-2 sm:grid-cols-2 mt-3">
+            {data.software.filter((item) => item.name.toLocaleLowerCase("pt-BR").includes(softwareSearch.toLocaleLowerCase("pt-BR"))).map((item) =>
+              <li key={item.id} className="flex min-w-0 items-center gap-3 rounded-panel border border-line bg-surface px-3 py-3">
+                <AppWindow size={18} className="shrink-0 text-skybrand-500" aria-hidden="true" />
+                <span className="min-w-0 flex-1 break-words font-semibold text-ink">{item.name}</span>
+                <span className="pill border border-line text-muted-ink">Cadastrado</span>
+              </li>)}
+          </ul> : <Empty title="Nenhum software cadastrado" text="Adicione um software para associá-lo aos computadores dos ambientes." />}
+          {data.software.length > 0 && softwareSearch && !data.software.some((item) => item.name.toLocaleLowerCase("pt-BR").includes(softwareSearch.toLocaleLowerCase("pt-BR"))) && <p className="muted mt-3">Nenhum software encontrado para esta busca.</p>}
+          <form className="flex flex-wrap gap-2 mt-4" onSubmit={addSoftware}>
             <input
               className="field max-w-sm"
+              aria-label="Nome do software"
               required
               placeholder="Ex.: SolidWorks"
               value={softwareName}
@@ -305,15 +403,62 @@ export function Rooms({ user }: { user: User }) {
           <Notice message={error} onClose={() => setError("")} />
         </div>
       )}
+      {shiftRoom && semesterId && <Modal width="max-w-2xl" title={`Turnos oferecidos · ${shiftRoom.name}`} onClose={() => setShiftRoom(null)}>
+        <OperatingShiftEditor key={`${semesterId}|${shiftRoom.id}`} semesterId={Number(semesterId)} roomId={String(shiftRoom.id)} onSaved={() => setIndicatorRefresh((value) => value + 1)} />
+      </Modal>}
+      {detail && <Modal width="max-w-3xl" title={`${detail.room.code || `#${detail.room.id}`} · ${detail.room.name}`} onClose={() => setDetail(null)}>
+        <div className="space-y-5">
+          <p className="muted">Ficha técnica cadastrada. Os turnos oferecidos não comprovam disponibilidade para reserva.</p>
+          <dl className="grid gap-3 sm:grid-cols-2 text-sm">
+            {[["Tipo", roomKind(detail.room.kind)], ["Localização", detail.room.location || "Não informada"], ["Capacidade", `${detail.room.seats} alunos`], ["Carteiras", String(detail.room.desks)], ["Situação", detail.room.active ? "Ativa" : "Inativa"], ["Turnos configurados", shiftLabel(detail.room)], ["Turnos com ocupação", occupiedShiftLabel(detail.room)]].map(([label, value]) => <div key={label} className="rounded-control border border-line p-3"><dt className="text-muted-ink">{label}</dt><dd className="mt-1 font-semibold text-ink">{value}</dd></div>)}
+          </dl>
+          <div className="space-y-3"><SectionHeading title="Grupos de computadores" subtitle="Quantidades operacionais desconhecidas permanecem sem confirmação." />
+            {detail.inventory.computerGroups.length ? detail.inventory.computerGroups.map((group, index) => <div key={group.id ?? index} className="rounded-control border border-line p-4 text-sm space-y-2">
+              <h3 className="font-semibold text-ink"><HardDrive size={16} className="inline mr-2" />{group.description}</h3>
+              <p>{group.quantity} cadastrados · {group.operationalQuantity == null ? "Operacionais não informados" : `${group.operationalQuantity} operacionais`}</p>
+              <dl className="grid gap-x-4 gap-y-2 sm:grid-cols-2">
+                {[["Processador", stated(group.processor)], ["RAM", group.ramGb ? `${group.ramGb} GB` : "Não informada"],
+                  ["Armazenamento", stated(group.storage)], ["Placa de vídeo", stated(group.graphicsCard)],
+                  ["GPU dedicada", yesNoUnknown(group.dedicatedGpu)], ["Desempenho", stated(group.tier)],
+                  ["Sistema operacional", stated(group.operatingSystem)], ["Virtualização", yesNoUnknown(group.virtualization)],
+                  ["Docker / WSL", yesNoUnknown(group.dockerWsl)], ["Suporte a CAD", yesNoUnknown(group.cadCompatible)],
+                  ["Suporte a simuladores", yesNoUnknown(group.simulatorCompatible)],
+                  ["Internet no grupo", yesNoUnknown(group.internetAvailable)], ["Rede e restrições", stated(group.networkDetails)]].map(([label, value]) =>
+                  <div key={label}><dt className="text-muted-ink">{label}</dt><dd className="text-ink break-words">{value}</dd></div>)}
+              </dl>
+              <div className="border-t border-line pt-3"><h4 className="font-semibold text-ink mb-2">Softwares e licenças</h4>
+                {group.software.length ? <ul className="space-y-2">{group.software.map((item) => <li key={item.softwareId}>
+                  <strong>{item.name}</strong> · Versão: {stated(item.version)} · {item.installedQuantity} instalações · Licenças: {item.licenseQuantity ?? "Não informadas"} · Validade: {stated(item.licenseExpiresOn)}
+                </li>)}</ul> : <p className="muted">Nenhum software informado.</p>}
+              </div>
+            </div>) : <p className="muted">Nenhum grupo cadastrado.</p>}
+          </div>
+          <div className="space-y-3"><SectionHeading title="Equipamentos e recursos" />
+            {detail.inventory.resources.length ? detail.inventory.resources.map((item, index) => <div key={item.id ?? index} className="rounded-control border border-line p-4 text-sm">
+              <h3 className="font-semibold text-ink">{item.name} · {item.type}</h3><p>{item.quantity} cadastrados · {item.operationalQuantity == null ? "Operacionais não informados" : `${item.operationalQuantity} operacionais`}</p>
+              {item.description && <p className="muted">{item.description}</p>}
+              {item.technicalDetails && <p className="muted">{item.technicalDetails}</p>}
+              <p className="muted">{[item.condition && `Condição: ${item.condition}`, item.voltage && `Voltagem: ${item.voltage} V`, item.warrantyExpiresOn && `Garantia até ${item.warrantyExpiresOn}`, item.licenseExpiresOn && `Licença até ${item.licenseExpiresOn}`].filter(Boolean).join(" · ")}</p>
+            </div>) : <p className="muted">Nenhum equipamento cadastrado.</p>}
+          </div>
+          {admin && <button type="button" className="btn-secondary" onClick={() => { const room = detail.room; setDetail(null); void open(room); }}>Editar</button>}
+        </div>
+      </Modal>}
       {form && (
         <Modal
           width="max-w-3xl"
-          title={editing ? "Editar sala" : "Cadastrar sala"}
-          onClose={() => setForm(null)}
+          title={editing ? "Editar ambiente" : "Cadastrar ambiente"}
+          onClose={() => { if (!busy) setForm(null); }}
         >
           <form className="space-y-5" onSubmit={submit}>
+            <fieldset disabled={busy} className="space-y-5">
             {error && <Notice message={error} />}
+            <SectionHeading title="Dados gerais" subtitle="Código, capacidade e recursos físicos do ambiente." />
             <div className="grid sm:grid-cols-2 gap-3">
+              <Field label="Código do ambiente">
+                <input className="field" maxLength={30} value={form.code || ""}
+                  onChange={(e) => set("code", e.target.value)} placeholder="Ex.: LAB-01" />
+              </Field>
               <Field label="Nome da sala">
                 <input
                   required
@@ -349,10 +494,11 @@ export function Rooms({ user }: { user: User }) {
                   <option value="Comum">Sala comum</option>
                   <option value="Laboratorio">Laboratório</option>
                   <option value="Hibrida">Híbrida</option>
+                  <option value="Oficina">Oficina</option>
                 </select>
               </Field>
               <div className="grid grid-cols-2 gap-2">
-                <Field label="Lugares">
+                <Field label="Capacidade de alunos">
                   <input
                     type="number"
                     min="1"
@@ -362,221 +508,31 @@ export function Rooms({ user }: { user: User }) {
                     onChange={(e) => set("seats", Number(e.target.value))}
                   />
                 </Field>
-                <Field label="Carteiras">
-                  <input
-                    type="number"
-                    min="1"
-                    max="1000"
-                    className="field"
-                    value={form.desks}
-                    onChange={(e) => set("desks", Number(e.target.value))}
-                  />
-                </Field>
+
               </div>
             </div>
             <div className="flex flex-wrap gap-4">
+              <Checkbox label="Ambiente ativo" checked={form.active} onChange={(v) => set("active", v)} />
+            </div>
+            {editing && <details className="rounded-control border border-line p-3">
+              <summary className="cursor-pointer font-semibold">Campos legados de compatibilidade</summary>
+              <p className="muted mt-2">Mantidos para salas e importações anteriores. Recursos do catálogo com quantidade operacional informada passam a prevalecer.</p>
+              <div className="flex flex-wrap gap-4 mt-3">
               <Checkbox
                 label="Projetor"
                 checked={form.hasProjector}
                 onChange={(v) => set("hasProjector", v)}
               />
               <Checkbox
-                label="PC do professor"
+                label="PC do instrutor"
                 checked={form.hasTeacherComputer}
                 onChange={(v) => set("hasTeacherComputer", v)}
               />
-              <Checkbox
-                label="Internet"
-                checked={form.hasInternet}
-                onChange={(v) => set("hasInternet", v)}
-              />
-              <Checkbox
-                label="Sala ativa"
-                checked={form.active}
-                onChange={(v) => set("active", v)}
-              />
-            </div>
-            <div className="border-t pt-4">
-              <div className="flex items-center justify-between gap-3 mb-4">
-                <h3 className="font-semibold text-sm">
-                  Grupos de computadores
-                </h3>
-                <button
-                  type="button"
-                  className="btn-secondary !py-1.5"
-                  onClick={() =>
-                    set("computerGroups", [
-                      ...groups,
-                      { ...emptyGroup, software: [] },
-                    ])
-                  }
-                >
-                  <Plus size={15} />
-                  Adicionar grupo
-                </button>
               </div>
-              <p className="text-xs text-slate-500 mb-3">
-                Uma sala pode ter grupos de máquinas diferentes. Softwares são
-                vinculados a cada grupo.
-              </p>
-              <div className="space-y-3">
-                {groups.map((g, i) => (
-                  <div
-                    className="p-4 bg-slate-50 border border-slate-100 rounded-xl"
-                    key={i}
-                  >
-                    <div className="flex justify-between mb-3">
-                      <span className="font-semibold text-sm flex items-center gap-2">
-                        <Cpu size={16} />
-                        Grupo {i + 1}
-                      </span>
-                      <button
-                        title="Excluir grupo"
-                        type="button"
-                        onClick={() =>
-                          set(
-                            "computerGroups",
-                            groups.filter((_, j) => i !== j),
-                          )
-                        }
-                        className="text-slate-500 hover:text-red-600"
-                      >
-                        <X size={17} />
-                      </button>
-                    </div>
-                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-                      <Field label="Descrição">
-                        <input
-                          className="field"
-                          value={g.description}
-                          onChange={(e) =>
-                            changeGroup(i, { description: e.target.value })
-                          }
-                        />
-                      </Field>
-                      <Field label="Quantidade">
-                        <input
-                          className="field"
-                          min="1"
-                          max="1000"
-                          type="number"
-                          value={g.quantity}
-                          onChange={(e) =>
-                            changeGroup(i, {
-                              quantity: Number(e.target.value),
-                              software: g.software.map((s) => ({
-                                ...s,
-                                installedQuantity: Math.min(
-                                  s.installedQuantity,
-                                  Number(e.target.value),
-                                ),
-                              })),
-                            })
-                          }
-                        />
-                      </Field>
-                      <Field label="RAM (GB)">
-                        <input
-                          className="field"
-                          min="1"
-                          type="number"
-                          value={g.ramGb}
-                          onChange={(e) =>
-                            changeGroup(i, { ramGb: Number(e.target.value) })
-                          }
-                        />
-                      </Field>
-                      <Field label="Desempenho">
-                        <select
-                          className="field"
-                          value={g.tier}
-                          onChange={(e) =>
-                            changeGroup(i, { tier: e.target.value })
-                          }
-                        >
-                          <option value="Basico">Básico</option>
-                          <option value="Intermediario">Intermediário</option>
-                          <option value="Alto">Alto</option>
-                        </select>
-                      </Field>
-                    </div>
-                    <div className="mt-3">
-                      <Checkbox
-                        label="Possui GPU dedicada"
-                        checked={g.dedicatedGpu}
-                        onChange={(v) => changeGroup(i, { dedicatedGpu: v })}
-                      />
-                    </div>
-                    {data.software.length > 0 && (
-                      <div className="mt-3 border-t border-slate-200 pt-3">
-                        <span className="field-label">
-                          Softwares instalados e quantidade de
-                          licenças/instalações
-                        </span>
-                        <div className="grid sm:grid-cols-2 gap-2">
-                          {data.software.map((s) => {
-                            const found = g.software.find(
-                              (x) => x.softwareId === s.id,
-                            );
-                            return (
-                              <div
-                                className="flex gap-3 items-center"
-                                key={s.id}
-                              >
-                                <Checkbox
-                                  label={s.name}
-                                  checked={!!found}
-                                  onChange={(yes) =>
-                                    changeGroup(i, {
-                                      software: yes
-                                        ? [
-                                            ...g.software,
-                                            {
-                                              softwareId: s.id,
-                                              name: s.name,
-                                              installedQuantity: g.quantity,
-                                            },
-                                          ]
-                                        : g.software.filter(
-                                            (x) => x.softwareId !== s.id,
-                                          ),
-                                    })
-                                  }
-                                />
-                                {found && (
-                                  <input
-                                    aria-label={`Instalações de ${s.name}`}
-                                    className="field !w-20 !py-1"
-                                    type="number"
-                                    min="1"
-                                    max={g.quantity}
-                                    value={found.installedQuantity}
-                                    onChange={(e) =>
-                                      changeGroup(i, {
-                                        software: g.software.map((x) =>
-                                          x.softwareId === s.id
-                                            ? {
-                                                ...x,
-                                                installedQuantity: Number(
-                                                  e.target.value,
-                                                ),
-                                              }
-                                            : x,
-                                        ),
-                                      })
-                                    }
-                                  />
-                                )}
-                              </div>
-                            );
-                          })}
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                ))}
-              </div>
-            </div>
+            </details>}
+            <RoomInventoryFields groups={groups} resources={form.resources} software={data.software} catalog={resourceCatalog} onCatalogCreated={(item) => setResourceCatalog((items) => [...items.filter((row) => row.id !== item.id), item])}
+              onGroups={(next) => set("computerGroups", next)} onResources={(next) => set("resources", next)}
+              onRemoveGroup={(index) => void removeGroup(index)} onRemoveSoftware={(index, id) => void removeSoftware(index, id)} />
             <div className="flex justify-end gap-2 pt-1">
               <button
                 type="button"
@@ -589,6 +545,7 @@ export function Rooms({ user }: { user: User }) {
                 {editing ? "Salvar alterações" : "Cadastrar sala"}
               </SubmitButton>
             </div>
+            </fieldset>
           </form>
         </Modal>
       )}

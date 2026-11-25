@@ -1,225 +1,45 @@
-# SalaGest — Backend de desenvolvimento (v0.2, regras de alocação por turno)
+# Backend do SalaGest
 
-**Stack preservada:** C# / ASP.NET Core 8 Minimal API, Entity Framework Core 8, SQL Server Express,
-ASP.NET Core Identity Bearer Token. O React já enviado anteriormente é um projeto separado e
-**ainda deve ser atualizado** para este novo fluxo.
+ASP.NET Core 8 Minimal APIs, ASP.NET Core Identity com Bearer Token, EF Core 8 e SQL Server. O projeto é `SalaGest.Api.csproj`; os testes estão em `SalaGest.Backend.Tests/`.
 
-**Estado de validação:** o backend compilou e os testes unitários passaram neste ambiente.
-A migration SG-08 foi gerada, mas não foi aplicada nem testada em SQL Server. Valide os fluxos
-HTTP e a migration em um banco de teste antes de colocar usuários reais.
+## Organização
 
-## Autenticação e permissões — SG-03
+- `Models/`: entidades do domínio; `Contracts/`: requisições e respostas HTTP.
+- `Endpoints/`: rotas, autenticação, cadastros e operações.
+- `Services/`: regras de reserva, compatibilidade, indicadores, exportação e proteção da sessão.
+- `Data/AppDbContext.cs`: mapeamentos EF Core; `Migrations/`: histórico versionado. Não recrie `InitialCreate` nem edite o snapshot manualmente.
 
-`POST /api/auth/register` exige Bearer Token e papel Admin: 401 sem autenticação e 403 sem permissão. O servidor atribui somente Professor. Conta e papel são criados na mesma transação; falha na atribuição não confirma o cadastro. A tela pública oferece login local e SSO, sem autocadastro; o formulário administrativo em Professores é reutilizado.
+As rotas exigem Identity Bearer conforme o endpoint. `POST /api/auth/register` é restrito a Admin e cria Professor; não há autocadastro público. A API revalida conta, bloqueio, security stamp e papéis antes das operações protegidas. O SSO OIDC é opcional e depende de provedor institucional configurado. O primeiro Admin não deve ser criado por uma rota pública.
 
-Reservas, empréstimos, ocupações, grade/agenda, planejamento semestral e alteração de disponibilidade exigem Admin ou Professor, além das verificações de titularidade existentes. A agenda omite descrição privada e destino da turma no empréstimo para terceiros. Contas e histórico existentes são preservados.
+## Build e testes sem SQL Server
 
-O primeiro Admin de desenvolvimento continua provisionado com seed opt-in e segredos privados, sem promoção de conta comum preexistente. O procedimento de produção permanece pendente; não habilitar Development em produção. Os testes SG-03 verificaram o bootstrap somente em SQLite em memória.
-
-**Sessões:** antes da autorização, requisições Bearer protegidas validam usuário, elegibilidade, bloqueio, security stamp e papéis persistidos. Troca de senha e alterações de papéis invalidam tokens anteriores; bloqueio temporário suspende o acesso enquanto vigente. Falha de consulta retorna 503 sem executar a operação. A expiração existente foi preservada, sem cache ou nova tabela. Ver testes, impactos e pendências em `docs/tasks/SG-03.md`.
-
-## Começar no Windows
-
-Instale .NET 8 SDK, SQL Server Express e (opcional) Visual Studio. Abra um terminal
-na pasta `Backend/` e execute:
+Na raiz do repositório:
 
 ```powershell
-dotnet --version
-dotnet restore
-dotnet build
-dotnet tool install --global dotnet-ef --version 8.0.0
-# se já estiver instalado: dotnet tool update --global dotnet-ef --version 8.0.0
-
-dotnet user-secrets set "Seed:AdminEmail" "admin@instituicao.local"
-dotnet user-secrets set "Seed:AdminPassword" "TroquePorUmaSenhaForte123!"
-
-dotnet ef database update
-dotnet run
+dotnet restore Backend/SalaGest.Api.csproj
+dotnet restore Backend/SalaGest.Backend.Tests/SalaGest.Backend.Tests.csproj
+dotnet build Backend/SalaGest.Api.csproj --no-restore
+dotnet test Backend/SalaGest.Backend.Tests/SalaGest.Backend.Tests.csproj --no-restore
 ```
 
-As migrations `InitialCreate`, `SG07PedagogicalCatalog` e `SG08CapabilitiesWorkload` já estão versionadas. Não execute
-`migrations add InitialCreate` novamente. `database update` aplica as migrations pendentes
-ao banco configurado; execute-o apenas quando houver um SQL Server disponível.
+Os testes usam TestServer/SQLite em memória e inspeção de metadados; não substituem o ensaio em SQL Server. Na Etapa 11, 200/200 testes passaram, com dois avisos nullable nos arquivos de testes. Não interprete esse resultado como homologação integrada.
 
-### SG-07: catálogo pedagógico
+## Configuração e execução
 
-As consultas exigem autenticação Bearer; POST e PUT exigem o perfil `Admin`. Os caminhos
-de módulo e UC preservam o contexto do curso. Exemplos de escrita:
+O ASP.NET Core carrega `appsettings.json`, `appsettings.{Environment}.json`, variáveis de ambiente e, em Development, User Secrets. Use `ConnectionStrings__DefaultConnection` apenas após conferir servidor, banco e identidade. Não copie credenciais para arquivos versionados ou comandos compartilhados. `Bootstrap__EnableDevelopmentSeed=false` impede o seed opt-in; fora de Development a aplicação rejeita seed habilitado. O launch profile define Development e a porta 5108, mas não prova que seu banco é isolado.
 
-```text
-POST /api/courses                                  {"code":"AUT","name":"Técnico em Automação","active":true}
-POST /api/courses/1/modules                        {"name":"Módulo Introdutório","order":1}
-POST /api/courses/1/modules/2/curricular-units     {"code":"UC01","name":"Fundamentos de Automação"}
-```
+**A configuração base pode apontar para `SalaGestDb`. Não use `dotnet run` sem confirmar o destino efetivo.** Para testes com escrita, siga [SG-etapa6B](../docs/tasks/SG-etapa6B.md): a execução em `Homologation` requer manifesto externo, conexão explícita, TLS confiável, SSO e seed desabilitados, identidade restrita e validação antes da API. Os wrappers de `tools/homologacao/` separam manutenção, provisionamento e aplicação. Não execute `dotnet ef database update` diretamente nesse fluxo.
 
-Use GET e PUT nos mesmos recursos: `/api/courses/{courseId}`,
-`/api/courses/{courseId}/modules/{moduleId}` e
-`/api/courses/{courseId}/modules/{moduleId}/curricular-units/{unitId}`.
-GET nas coleções lista cursos, módulos do curso e UCs do módulo, respectivamente.
-Não há endpoint de exclusão do catálogo; as FKs impedem exclusão em cascata.
+Uma execução de desenvolvimento só deve ocorrer depois de o operador confirmar conexão isolada, credenciais próprias e ausência de dados reais. Use `dotnet run --project Backend/SalaGest.Api.csproj --no-launch-profile` com ambiente e variáveis aprovados na sessão. Não há migration automática na inicialização. Para a configuração futura de serviço, consulte o [guia de implantação](../docs/deployment/etapa13.md).
 
-### SG-08: capacidades e carga horária
+## Comportamentos importantes
 
-As rotas abaixo usam como base
-`/api/courses/{courseId}/modules/{moduleId}/curricular-units/{unitId}`.
-GET exige Bearer; POST e PUT exigem `Admin`.
+Reservas cotidianas válidas são confirmadas pelo Professor, sem aprovação rotineira de Admin; recorrência parcial exige confirmação explícita. Aprovação de proposta semestral não ocupa sala: publicação revalida e cria ocupações. A API verifica conflitos, compatibilidade e permissões novamente na gravação. Empréstimo exige oferta do titular, aceite do destinatário e definição do destino da turma titular. Alterar um dia para EAD não libera automaticamente a sala.
 
-```text
-PUT  /workload                         {"plannedHours":40.5}
-POST /capabilities                     {"description":"Projetar circuitos","contents":"Diagramas e simulação","requiredHours":12.5,"order":1}
-GET  /capabilities
-GET  /capabilities/{capabilityId}
-PUT  /capabilities/{capabilityId}      {"description":"Projetar circuitos","contents":"Diagramas e simulação","requiredHours":14,"order":1}
-GET  /workload-summary?hoursPerShift=4
-```
+`GET /health/live` indica processo; `GET /health/ready` tenta conectar ao banco e retorna 503 quando indisponível. Swagger é exposto em Development. Consulte [fluxo](../docs/FLUXO_DO_SISTEMA.md), [regras](../docs/REGRAS_NEGOCIO.md) e [pendências](../docs/deployment/pendencias-etapa12.md).
 
-`plannedHours` pode ser `null` enquanto a UC não tiver CH definida. O `PUT` original
-da UC mantém a CH atual. O resumo soma as horas das capacidades, mostra horas faltantes
-ou excedentes e calcula encontros a partir da CH prevista e de `hoursPerShift`.
-Não há exclusão física de capacidades.
+## Diagnóstico seguro
 
-Depois de configurar o SQL Server, valide a aplicação da migration a partir de `Backend/`:
-
-```powershell
-dotnet restore
-dotnet build
-dotnet test .\SalaGest.Backend.Tests\SalaGest.Backend.Tests.csproj
-dotnet tool restore
-dotnet ef migrations list --context AppDbContext
-dotnet ef database update --context AppDbContext
-```
-
-O endereço padrão em `Properties/launchSettings.json` é `http://localhost:5108`;
-abra `http://localhost:5108/swagger` no perfil Development.
-
-`appsettings.json` usa `Server=localhost\\SQLEXPRESS;Database=SalaGestDb;Trusted_Connection=True;...`.
-Use **um banco exclusivo**, preferencialmente novo. Se você já criou migrations para a
-versão anterior, **não rode `InitialCreate` outra vez:** gere uma nova migration ou
-faça backup e decida como migrar os dados existentes. Não apague tabelas de produção.
-O seed cria três turnos apenas quando não existe nenhum: manhã **08:00–12:00**,
-tarde **13:30–17:30**, noite **18:30–22:30**. Se o banco já tinha turnos
-cadastrados, confira-os; o seed não altera horários existentes automaticamente.
-
-Para executar os testes puros (em outro terminal, a partir da pasta que contém `SalaGest.Backend.Tests`):
-
-```powershell
-dotnet test .\SalaGest.Backend.Tests\SalaGest.Backend.Tests.csproj
-```
-
-## Regra principal
-
-A unidade física de alocação é **sala + dia concreto + turno completo**.
-Uma turma pode usar salas diferentes em dias e turnos diferentes.
-Não existe exigência de aprovação administrativa: ganha a primeira confirmação válida,
-em transação SQL serializável, sempre com nova verificação de conflitos.
-
-### Reserva pontual ou recorrente
-
-1. Professor autenticado chama `POST /api/bookings` para criar **rascunho de solicitação**.
-2. Chama `GET /api/bookings/{id}/suggestions` e vê salas **compatíveis e incompatíveis,
-   ocupadas e livres**, com recursos, capacidade, especificações e ocupantes (IDs).
-3. Opcional: `GET /api/bookings/{id}/availability?roomId=1` devolve **datas concretas**,
-   ocupantes e turmas das indisponíveis.
-4. Confirma pessoalmente em `POST /api/bookings/{id}/confirm` com `{"roomId":1}`.
-   Se parte das datas estiver indisponível, a API retorna **409 Conflict** com dias
-   livres e indisponíveis e não grava nada. Para confirmar apenas os livres,
-   repita com `{"roomId":1,"confirmPartial":true}`.
-5. Se a mesma turma e mesmo professor já ocupam aquele turno em outra sala,
-   informe `"replaceOwnClassBooking":true` na confirmação **após confirmação humana**.
-   A reserva anterior é liberada na mesma transação. Reserva de outro professor
-   nunca é substituída automaticamente.
-
-**Recorrência semanal:** `weekdaysMask` utiliza os bits de `DayOfWeek` C#:
-bit 0 domingo, bit 1 segunda, bit 2 terça, bit 3 quarta, bit 4 quinta,
-bit 5 sexta, bit 6 sábado. Exemplos: seg/ter/qua = `2+4+8=14`;
-qui/sex = `16+32=48`. Use `recurrence: "Semanal"` e `repeatUntil` (até 365 dias).
-O primeiro dia informado em `startsAt` também deve estar entre os selecionados.
-`recurringEadWeekday` é opcional (`5` = sexta). Os turnos são verificados pelo banco:
-use horários iguais aos do cadastro em `/api/shifts`.
-
-**Capacidade:** `Students` é a quantidade de alunos e `Room.Seats` o limite de
-ocupantes. `StudentsPerComputer` (1, 2 ou mais) permite trabalhos em grupos,
-sem confundir quantidade de computadores com quantidade de vagas.
-
-### Editar aulas concretas
-
-- `GET /api/agenda?from=2026-10-12&to=2026-10-19` traz ocorrências ativas, titular e ocupante efetivo.
-- `PUT /api/occupations/{id}/day-status` `{"status":"Ead"}` ou `"Letivo"` ou `"NaoLetivo"`.
-- `POST /api/occupations/{id}/release` `{"confirm":true}` libera **uma** ocorrência.
-- `POST /api/occupations/release-many` `{"occupationIds":[1,2],"confirm":true}` libera várias.
-- `GET /api/occupations/{id}/room-options` indica salas para realocação,
-  inclusive se ocupadas/incompatíveis.
-- `PUT /api/occupations/{id}/room` `{"roomId":3,"notifyTeachers":true}`
-  troca a sala daquela ocorrência sem depender da coordenação.
-- `GET /api/occupations/{id}/history` mostra alterações e cancelamentos.
-
-**Decisão pendente de negócio:** marcar EAD ou não letivo altera a situação da turma,
-**não libera automaticamente a sala**. A liberação precisa ser explícita. Isso
-protege reservas enquanto a instituição não confirma outra política.
-
-### Empréstimos sem aprovação de coordenação
-
-1. O **titular** identifica no `/api/agenda` os IDs das ocorrências das quais é dono,
-   no período original da reserva; `POST /api/loans/offer` envia uma ou várias
-   ocorrências para outro professor:
-   `{"roomOccupationIds":[11,12],"borrowerId":"ID_PROF_B","reason":"Aula de robótica"}`.
-2. O **destinatário** chama `POST /api/loans/{id}/accept`, informando turma, alunos,
-   recursos e softwares da aula; cada ocorrência de uma oferta múltipla é aceita individualmente.
-3. O **titular** chama `POST /api/loans/{id}/finalize` com um dos destinos:
-   `{"disposition":"Ead"}`, `{"disposition":"NaoLetivo"}` ou
-   `{"disposition":"OutraSala","replacementRoomId":3}`.
-4. O histórico original é mantido. A agenda indica `originalTeacherId`,
-   `actualTeacherId`, `isBorrowed`, `loanId` e `loanDisposition`.
-
-O sistema valida novamente as datas, sala e o turno, impede empréstimo duplicado,
-verifica compatibilidade da aula do destinatário e, para realocação da turma titular,
-confere a nova sala e conflitos antes de concluir. Não há aprovação administrativa.
-Empréstimos vigentes bloqueiam operações incompatíveis de transferência/liberação.
-
-### Painel e notificações
-
-- `GET /api/dashboard/usage?from=2026-10-01&to=2026-10-31` lista salas mais/menos
-  ocupadas entre as que possuem ocorrências, horas e número distinto de salas por data.
-  Filtros opcionais `shiftId` e `classGroupId`. Uma sala que não aparece em `Rooms`
-  possui zero ocorrências no período; o frontend pode cruzar com `/api/rooms`.
-- `GET /api/notifications` devolve até 100 notificações do usuário, com autoria (ID).
-- `POST /api/notifications/{id}/read` marca como lida.
-
-### Catálogo e permissões
-
-- Cadastro de salas/equipamentos/softwares somente pela coordenação/Admin.
-- Turnos, semestres e turmas têm endpoints administrativos.
-- Professor pode solicitar/confirmar, alterar dia, liberar e transferir **sua própria** alocação.
-- Admin pode transferir/liberar alocações da instituição e consultar o painel.
-- Os endpoints legados `/api/schedules/generate` e `/publish` foram **preservados**
-  para não descartar o código original, mas a geração automática da grade
-  completa **não é o fluxo principal e não deve ser utilizada no MVP sem nova validação**.
-- O endpoint legado `POST /api/bookings/{id}/approve` não efetiva mais reservas;
-  usar `POST /confirm`.
-- Os endpoints antigos de empréstimo com aprovação do admin foram substituídos
-  por `/offer`, `/accept` e `/finalize`.
-
-## Integração com o frontend antigo
-
-O ZIP React original ainda espera `/bookings/{id}/approve`,
-`/loans/{id}/owner-approve`, `/loans/{id}/admin-approve` e o fluxo de
-"solicitação pendente". **Essas telas devem ser alteradas antes de um teste ponta a ponta.**
-A documentação em `SalaGest.http` fornece exemplos das novas chamadas. A API usa
-Bearer Token do ASP.NET Core Identity 8 e serializa enums com nomes (strings).
-Datas e horários de aula são **locais da instituição sem sufixo `Z`**.
-
-## Limitações e próximos testes
-
-- Não há calendário institucional importado; o professor controla a situação de ocorrências.
-- Não há reservas de frações de turno.
-- Remarcação de **data** exige liberar a ocorrência antiga e criar outra;
-  a transferência direta altera **sala**, não data.
-- Uma turma sem cadastro de atribuições ainda pode ser selecionada por um professor;
-  cadastros/permissões acadêmicas mais restritos deverão ser discutidos.
-- Testar SQL Server real: concorrência de dois professores na mesma sala,
-  recorrência parcialmente disponível, troca da mesma turma, múltiplos empréstimos
-  e realocação da turma cedente.
-- Cadastro restrito a Admin pela DD-SG03; aprovar provisionamento do primeiro Admin e política de sessões antes da publicação institucional.
-
-**Não disponibilize o sistema para operação real sem compilar, migrar, testar e
-revisar as políticas de acesso na infraestrutura da instituição.**
+- Falha de conexão ou `503` em readiness: confira destino, TLS e permissões pela identidade autorizada; não troque para `SalaGestDb` ou desative a validação do certificado para contornar o erro.
+- Falha de manifesto ou identidade em `Homologation`: interrompa a execução e siga os checks de [SG-etapa6B](../docs/tasks/SG-etapa6B.md); não edite o manifesto aprovado silenciosamente.
+- `401`/`403`: confirme autenticação, papel e titularidade pelo fluxo normal. Não atribua Admin diretamente no banco como atalho.

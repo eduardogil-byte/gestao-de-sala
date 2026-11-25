@@ -1,19 +1,32 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
   Bell,
+  BookOpen,
+  Presentation,
   CalendarDays,
+  CalendarRange,
   ChevronDown,
   ClipboardList,
   DoorOpen,
+  Download,
   GraduationCap,
   Handshake,
+  Import,
   LayoutDashboard,
   Link2,
-  FileSpreadsheet,
+  LockKeyhole,
   Layers3,
   LogOut,
   Menu,
+  Moon,
+  PanelLeftClose,
+  PanelLeftOpen,
   RefreshCcw,
+  SearchCheck,
+  Settings,
+  Sun,
+  Table2,
+  UserRound,
   Users,
   X,
 } from "lucide-react";
@@ -39,39 +52,75 @@ import { post, read, tokenStore } from "./lib/api";
 import { localDate, nextDate, resultMessage } from "./lib/utils";
 import { getNavigationSections, type NavigationItem, type Page } from "./lib/navigation";
 import { Busy, Notice } from "./components/UI";
-import type { User, Occupation } from "./types";
+import { weekStart } from "./components/BookingCalendars";
+import type { User, AgendaOccupation } from "./types";
 
 const navIcons = {
   dashboard: LayoutDashboard,
   calendar: CalendarDays,
+  timeline: CalendarRange,
+  instructor: UserRound,
+  planning: Layers3,
+  schedule: Table2,
   door: DoorOpen,
-  spreadsheet: FileSpreadsheet,
-  catalog: Layers3,
-  people: Users,
+  opportunity: SearchCheck,
+  spreadsheet: Table2,
+  import: Import,
+  export: Download,
+  catalog: BookOpen,
+  people: Presentation,
   booking: ClipboardList,
   loan: Handshake,
   bell: Bell,
-  course: GraduationCap,
+  course: CalendarDays,
 } satisfies Record<NavigationItem["icon"], typeof LayoutDashboard>;
 
-function Workspace({ user, onLogout, institutionalNotice = "", institutionalError = "" }: { user: User; onLogout: () => void; institutionalNotice?: string; institutionalError?: string }) {
+function Workspace({ user, onLogout, onPasswordChanged, institutionalNotice = "", institutionalError = "" }: { user: User; onLogout: () => void; onPasswordChanged: () => void; institutionalNotice?: string; institutionalError?: string }) {
   const { data, loading, error, reload } = useData();
   const [page, setPage] = useState<Page>("dashboard");
   const [related, setRelated] = useState<{ page: Page; id: number } | null>(null);
+  const [agendaFocus, setAgendaFocus] = useState<{ date: string; roomId: number; occupationId: number } | null>(null);
   const [timelineFilter, setTimelineFilter] = useState<{ semesterId: number; roomId: number; anchor: string; shiftId?: number } | null>(null);
   const [opportunityFilter, setOpportunityFilter] = useState<{ semesterId: number; roomId: number } | null>(null);
   const [exportFilter, setExportFilter] = useState<{ semesterId: number; secondSemesterId: number | null; roomId: number | null } | null>(null);
+  const [importKind, setImportKind] = useState<"Ambientes" | "Recursos" | "Docentes">("Ambientes");
   const [menu, setMenu] = useState(false);
+  const [collapsed, setCollapsed] = useState(false);
+  const [expandedGroups, setExpandedGroups] = useState<Record<string, boolean>>({});
+  const [accountOpen, setAccountOpen] = useState(false);
+  const [darkMode, setDarkMode] = useState(() => localStorage.getItem("salagest-theme") !== "light");
   const menuButtonRef = useRef<HTMLButtonElement>(null);
+  const accountHeaderRef = useRef<HTMLButtonElement>(null);
+  const menuReturnFocusRef = useRef<HTMLButtonElement | null>(null);
   const menuRef = useRef<HTMLElement>(null);
-  const [occupations, setOccupations] = useState<Occupation[]>([]);
+  const accountAreaRef = useRef<HTMLDivElement>(null);
+  const firstAccountActionRef = useRef<HTMLButtonElement>(null);
+  const [occupations, setOccupations] = useState<AgendaOccupation[]>([]);
+  const [agendaLoading, setAgendaLoading] = useState(true);
   const [agendaError, setAgendaError] = useState("");
-  const [unread, setUnread] = useState(0);
+  const [unread, setUnread] = useState<number | null>(null);
   const [ssoEnabled, setSsoEnabled] = useState(false);
   const [linkBusy, setLinkBusy] = useState(false);
   const [linking, setLinking] = useState(false);
   const [linkPassword, setLinkPassword] = useState("");
   const [linkError, setLinkError] = useState("");
+  const [changingPassword, setChangingPassword] = useState(false);
+  const [currentPassword, setCurrentPassword] = useState("");
+  const [newPassword, setNewPassword] = useState("");
+  const [passwordError, setPasswordError] = useState("");
+  const [passwordBusy, setPasswordBusy] = useState(false);
+  useEffect(() => {
+    document.documentElement.dataset.theme = darkMode ? "dark" : "light";
+    localStorage.setItem("salagest-theme", darkMode ? "dark" : "light");
+  }, [darkMode]);
+  async function changePassword(event: React.FormEvent) {
+    event.preventDefault(); setPasswordError(""); setPasswordBusy(true);
+    try {
+      await post("/auth/change-password", { currentPassword, newPassword });
+      setCurrentPassword(""); setNewPassword(""); onPasswordChanged();
+    } catch (reason) { setPasswordError(resultMessage(reason)); }
+    finally { setPasswordBusy(false); }
+  }
   useEffect(() => {
     let active = true;
     const refresh = async () => {
@@ -81,7 +130,7 @@ function Workspace({ user, onLogout, institutionalNotice = "", institutionalErro
         );
         if (active) setUnread(result.count);
       } catch {
-        /* A consulta pode ser repetida na próxima atualização. */
+        if (active) setUnread(null);
       }
     };
     void refresh();
@@ -122,6 +171,11 @@ function Workspace({ user, onLogout, institutionalNotice = "", institutionalErro
   }
   const admin = user.roles.includes("Admin");
   useEffect(() => {
+    if (!admin) return;
+    const group = getNavigationSections(true).find((section) => section.icon && section.items.some((item) => item.page === page));
+    if (group) setExpandedGroups((previous) => ({ ...previous, [group.title]: true }));
+  }, [admin, page]);
+  useEffect(() => {
     if (!menu) return;
     const menuElement = menuRef.current;
     const focusable = () => Array.from(menuElement?.querySelectorAll<HTMLElement>(
@@ -149,95 +203,142 @@ function Workspace({ user, onLogout, institutionalNotice = "", institutionalErro
     document.addEventListener("keydown", onKeyDown);
     return () => {
       document.removeEventListener("keydown", onKeyDown);
-      menuButtonRef.current?.focus();
+      const returnFocus = menuReturnFocusRef.current ?? menuButtonRef.current;
+      if (returnFocus?.isConnected) returnFocus.focus();
     };
   }, [menu]);
+  useEffect(() => {
+    if (!accountOpen) return;
+    const onPointerDown = (event: PointerEvent) => {
+      if (!accountAreaRef.current?.contains(event.target as Node)) setAccountOpen(false);
+    };
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setAccountOpen(false);
+        window.requestAnimationFrame(() => accountHeaderRef.current?.focus());
+      }
+    };
+    document.addEventListener("pointerdown", onPointerDown);
+    document.addEventListener("keydown", onKeyDown);
+    return () => {
+      document.removeEventListener("pointerdown", onPointerDown);
+      document.removeEventListener("keydown", onKeyDown);
+    };
+  }, [accountOpen]);
   const reloadAgenda = useCallback(async () => {
+    setAgendaLoading(true);
     try {
       const from = localDate(new Date());
-      const rows = await read<Occupation[]>(
-        `/agenda?from=${from}T00:00:00&to=${nextDate(from, 30)}T00:00:00`,
+      const rows = await read<AgendaOccupation[]>(
+        `/agenda?from=${weekStart(from)}T00:00:00&to=${nextDate(from, 30)}T00:00:00`,
       );
       setOccupations(rows);
       setAgendaError("");
     } catch (e) {
       setAgendaError(resultMessage(e));
+    } finally {
+      setAgendaLoading(false);
     }
   }, []);
   useEffect(() => {
     void reloadAgenda();
   }, [reloadAgenda]);
+  const scrollToTop = () => window.scrollTo({ top: 0, behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth" });
   const open = (p: string) => {
+    setAccountOpen(false);
     setRelated(null);
+    setAgendaFocus(null);
     setTimelineFilter(null);
     setOpportunityFilter(null);
     setExportFilter(null);
+    if (p === "imports") setImportKind("Ambientes");
     setPage(p as Page);
     setMenu(false);
-    window.scrollTo({ top: 0, behavior: "smooth" });
+    scrollToTop();
   };
   const openTimeline = (semesterId: number, roomId: number, anchor?: string, shiftId?: number) => {
     const semester = data.semesters.find((item) => item.id === semesterId);
     setTimelineFilter({ semesterId, roomId, anchor: anchor ?? semester?.startDate ?? localDate(new Date()), shiftId });
     setPage("room-timeline");
-    window.scrollTo({ top: 0, behavior: "smooth" });
+    scrollToTop();
   };
   const openOpportunity = (semesterId: number, roomId: number) => {
     setOpportunityFilter({ semesterId, roomId });
     setPage("opportunities");
-    window.scrollTo({ top: 0, behavior: "smooth" });
+    scrollToTop();
   };
   const openDashboardExport = (semesterId: number, secondSemesterId: number | null, roomId: number | null) => {
     setExportFilter({ semesterId, secondSemesterId, roomId });
     setPage("exports");
-    window.scrollTo({ top: 0, behavior: "smooth" });
+    scrollToTop();
   };
   const navigation = getNavigationSections(admin);
   const current = navigation.flatMap((section) => section.items).find((item) => item.page === page);
+  const openAccount = () => {
+    const next = !accountOpen;
+    setAccountOpen(next);
+    if (next) window.requestAnimationFrame(() => firstAccountActionRef.current?.focus());
+  };
   return (
-    <div className="min-h-screen bg-[#f7f9fc] flex">
+    <div className="app-workspace min-h-screen bg-canvas flex">
+      <a href="#main-content" className="sr-only focus:not-sr-only focus:fixed focus:top-2 focus:left-2 focus:z-[60] focus:rounded-lg focus:bg-skybrand-600 focus:px-4 focus:py-2 focus:text-white">Ir para o conteúdo</a>
       {menu && (
         <div
           aria-hidden="true"
           className="fixed inset-0 bg-slate-900/60 z-30 lg:hidden"
-          onClick={() => setMenu(false)}
+          onClick={() => { setAccountOpen(false); setMenu(false); }}
         />
       )}
       <aside
         id="primary-navigation"
         ref={menuRef}
         aria-label="Menu principal"
-        className={`fixed top-0 bottom-0 left-0 z-40 w-[255px] bg-navy-900 text-white flex flex-col transition-transform lg:translate-x-0 ${menu ? "visible translate-x-0" : "invisible -translate-x-full lg:visible"}`}
+        className={`salagest-sidebar fixed top-0 bottom-0 left-0 z-40 w-[256px] ${collapsed ? "lg:w-[76px]" : "lg:w-[256px]"} bg-[#0e172a] text-white flex flex-col border-r border-[#2b3b57] transition-[width,transform] lg:translate-x-0 ${menu ? "visible translate-x-0" : "invisible -translate-x-full lg:visible"}`}
       >
-        <div className="h-[83px] flex items-center justify-between px-6 border-b border-white/10">
-          <div className="flex items-center gap-2.5">
-            <div className="h-10 w-10 rounded-xl bg-skybrand-500 flex items-center justify-center">
-              <Layers3 size={23} />
-            </div>
-            <span className="text-[22px] font-bold tracking-tight">
-              SalaGest
-            </span>
+        <div className={`h-[90px] shrink-0 flex items-center justify-between ${collapsed ? "px-4 lg:px-3 lg:justify-center" : "pl-6 pr-2"}`}>
+          <div className={collapsed ? "lg:hidden" : ""}>
+            <span className="block text-[35px] leading-none font-black italic tracking-[-.075em] text-white">SalaGest</span>
+            <span className="sr-only">Gestão de ambientes</span>
           </div>
           <button
             type="button"
             aria-label="Fechar menu"
-            className="lg:hidden"
-            onClick={() => setMenu(false)}
+            className="lg:hidden min-w-11 min-h-11 flex items-center justify-center rounded-lg text-slate-200 hover:bg-white/10 focus-visible:outline-2 focus-visible:outline-sky-300"
+            onClick={() => { setAccountOpen(false); setMenu(false); }}
           >
             <X size={20} />
           </button>
+          <button type="button" aria-label={collapsed ? "Expandir menu lateral" : "Recolher menu lateral"}
+            aria-expanded={!collapsed} aria-controls="primary-navigation"
+            className="hidden lg:flex min-w-10 min-h-10 items-center justify-center rounded-lg border border-[#32435f] bg-[#111d32] text-slate-200 hover:bg-white/10 hover:text-white"
+            onClick={() => { setAccountOpen(false); setCollapsed(!collapsed); }}>
+            {collapsed ? <PanelLeftOpen size={19} /> : <PanelLeftClose size={19} />}
+          </button>
         </div>
-        <div className="px-4 py-7 flex-1 overflow-y-auto">
-          <p className="text-[11px] font-semibold tracking-[.15em] text-slate-400 px-4 mb-3 uppercase">
-            Menu principal
-          </p>
-          <nav aria-label="Navegação principal" className="space-y-5">
-            {navigation.map((section) => (
+        <div className={`salagest-sidebar-scroll ${collapsed ? "lg:px-2" : ""} min-h-0 px-3 pt-2 pb-4 flex-1 overflow-y-auto overflow-x-hidden`}>
+          <nav aria-label="Navegação principal" className={admin ? "space-y-1" : "space-y-4"}>
+            {navigation.map((section) => {
+              const GroupIcon = section.icon ? navIcons[section.icon] : null;
+              const expanded = !!expandedGroups[section.title];
+              const groupId = `nav-group-${section.items[0].page}`;
+              const groupActive = section.items.some((item) => item.page === page);
+              return (
               <section key={section.title} aria-label={section.title}>
-                <p className="text-[11px] font-semibold tracking-[.12em] text-slate-400 px-4 mb-2 uppercase">
+                {admin && GroupIcon ? <button type="button" aria-expanded={expanded} aria-controls={groupId}
+                  aria-label={section.title} title={collapsed ? section.title : undefined}
+                  onClick={() => {
+                    const expandSidebar = collapsed && window.matchMedia("(min-width: 1024px)").matches;
+                    setCollapsed(false);
+                    setExpandedGroups((previous) => ({ ...previous, [section.title]: expandSidebar || !expanded }));
+                  }}
+                  className={`flex min-h-11 w-full items-center gap-3 rounded-[9px] px-4 py-2 text-left text-sm font-medium focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-sky-300 ${collapsed ? "lg:justify-center lg:px-2" : ""} ${groupActive ? "text-white bg-white/[.07]" : "text-[#d4e0f2] hover:bg-white/[.07] hover:text-white"}`}>
+                  <GroupIcon aria-hidden="true" size={19} strokeWidth={1.8} className="shrink-0" />
+                  <span className={collapsed ? "lg:sr-only" : ""}>{section.title}</span>
+                  <ChevronDown aria-hidden="true" size={16} className={`ml-auto shrink-0 transition-transform ${expanded ? "" : "-rotate-90"} ${collapsed ? "lg:hidden" : ""}`} />
+                </button> : !admin && <p className={`mb-1.5 px-4 text-[10px] font-bold uppercase tracking-[.14em] text-[#94a8c8] ${collapsed ? "lg:sr-only" : ""}`}>
                   {section.title}
-                </p>
-                <div className="space-y-1">
+                </p>}
+                <div id={groupId} hidden={!!GroupIcon && !expanded} className={`${admin ? "space-y-0.5" : "space-y-1.5"} ${GroupIcon ? `ml-4 border-l border-[#32435f] pl-1 ${collapsed ? "lg:hidden" : ""}` : ""}`}>
                   {section.items.map((item) => {
                     const Icon = navIcons[item.icon];
                     const active = page === item.page;
@@ -245,84 +346,68 @@ function Workspace({ user, onLogout, institutionalNotice = "", institutionalErro
                       <button
                         type="button"
                         key={item.page}
+                        aria-label={item.teacherLabel && !admin ? item.teacherLabel : item.label}
+                        title={collapsed ? (item.teacherLabel && !admin ? item.teacherLabel : item.label) : undefined}
                         aria-current={active ? "page" : undefined}
                         onClick={() => open(item.page)}
-                        className={`w-full flex items-center gap-3 rounded-xl px-4 py-3 text-[13px] text-left font-medium transition ${active ? "bg-skybrand-600 text-white shadow-lg shadow-sky-900/20" : "text-slate-300 hover:bg-white/10 hover:text-white"}`}
+                        className={`w-full ${admin ? "min-h-11 gap-3 py-2" : "min-h-[50px] gap-4 py-2.5"} flex items-center rounded-[9px] px-4 text-[14px] leading-5 text-left font-medium transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-sky-300 ${collapsed ? "lg:justify-center lg:px-2" : ""} ${active ? "bg-[#12377e] text-white font-semibold" : "text-[#d4e0f2] hover:bg-white/[.07] hover:text-white"}`}
                       >
-                        <Icon aria-hidden="true" size={19} />
-                        {item.teacherLabel && !admin ? item.teacherLabel : item.label}
+                        <Icon aria-hidden="true" size={19} strokeWidth={1.8} className="shrink-0" />
+                        <span className={collapsed ? "lg:sr-only" : ""}>{item.teacherLabel && !admin ? item.teacherLabel : item.label}</span>
                       </button>
                     );
                   })}
                 </div>
               </section>
-            ))}
+              );
+            })}
+            {admin && <button type="button" aria-label="Configurações" title={collapsed ? "Configurações" : undefined}
+              aria-expanded={accountOpen} aria-controls="account-actions"
+              onClick={() => { menuReturnFocusRef.current = accountHeaderRef.current; setMenu(false); setAccountOpen(true); window.requestAnimationFrame(() => firstAccountActionRef.current?.focus()); }}
+              className={`flex min-h-11 w-full items-center gap-3 rounded-[9px] px-4 py-2 text-left text-sm font-medium text-[#d4e0f2] hover:bg-white/[.07] hover:text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-sky-300 ${collapsed ? "lg:justify-center lg:px-2" : ""}`}>
+              <Settings aria-hidden="true" size={19} strokeWidth={1.8} className="shrink-0" />
+              <span className={collapsed ? "lg:sr-only" : ""}>Configurações</span>
+            </button>}
           </nav>
         </div>
-        <div className="px-4 pb-5">
-          <div className="p-3 bg-white/5 border border-white/10 rounded-xl">
-            <p className="text-sm font-semibold">{user.displayName}</p>
-            <p className="text-xs text-slate-400 mt-1">
-              {admin ? "Administrador" : "Professor"}
-            </p>
-            <button
-              className="mt-3 flex items-center text-xs font-semibold gap-2 text-slate-300 hover:text-white"
-              onClick={onLogout}
-            >
-              <LogOut size={14} />
-              Sair da conta
-            </button>
-            {ssoEnabled && !linking && <button type="button"
-              className="mt-3 flex items-center text-xs font-semibold gap-2 text-slate-300 hover:text-white"
-              onClick={() => { setLinkError(""); setLinking(true); }}>
-              <Link2 size={14} />Vincular conta institucional
-            </button>}
-            {ssoEnabled && linking && <div className="mt-3 space-y-2">
-              <label className="block text-xs text-slate-300" htmlFor="institutional-link-password">Confirme sua senha local</label>
-              <input id="institutional-link-password" type="password" autoComplete="current-password"
-                className="w-full rounded-lg px-2 py-2 text-sm text-slate-900" value={linkPassword}
-                onChange={(event) => setLinkPassword(event.target.value)} disabled={linkBusy} />
-              <div className="flex gap-2">
-                <button type="button" className="text-xs underline text-slate-300" disabled={linkBusy}
-                  onClick={() => { setLinking(false); setLinkPassword(""); setLinkError(""); }}>Cancelar</button>
-                <button type="button" className="text-xs font-semibold text-white underline disabled:opacity-60"
-                  disabled={linkBusy || !linkPassword} onClick={() => void beginInstitutionalLink()}>
-                  {linkBusy ? "Abrindo provedor..." : "Continuar"}
-                </button>
-              </div>
-            </div>}
-            {linkError && <p role="alert" className="mt-2 text-xs text-rose-200">{linkError}</p>}
-          </div>
-        </div>
       </aside>
-      <div className="flex-1 min-w-0 lg:pl-[255px]">
-        <header className="h-[83px] bg-white border-b border-slate-200/80 px-5 md:px-9 flex items-center justify-between gap-3 sticky top-0 z-20">
+      <div className={`flex-1 min-w-0 ${collapsed ? "lg:pl-[76px]" : "lg:pl-[256px]"}`}>
+        <header className="h-[76px] bg-[#0e172a] border-b border-[#2b3b57] px-3 sm:px-5 md:px-8 flex items-center justify-between gap-3 sticky top-0 z-20">
           <div className="flex min-w-0 items-center gap-3">
             <button
               type="button"
               ref={menuButtonRef}
-              className="lg:hidden p-2 text-slate-600"
+              className="lg:hidden min-w-11 min-h-11 flex items-center justify-center rounded-lg text-slate-200 hover:bg-white/10"
               aria-label="Abrir menu"
               aria-expanded={menu}
               aria-controls="primary-navigation"
-              onClick={() => setMenu(true)}
+              onClick={() => { menuReturnFocusRef.current = menuButtonRef.current; setMenu(true); }}
             >
               <Menu size={23} />
             </button>
             <div>
-              <p className="text-[11px] uppercase font-bold tracking-wide text-slate-400">
-                Plataforma institucional
+              <p className="text-[10px] uppercase font-bold tracking-[.12em] text-slate-400">
+                SalaGest · Plataforma institucional
               </p>
-              <p className="text-sm font-semibold text-slate-700 mt-1 truncate max-w-[42vw] sm:max-w-none">
+              <p className="text-sm font-semibold text-white mt-1 truncate max-w-[28vw] sm:max-w-none">
                 {(current?.teacherLabel && !admin ? current.teacherLabel : current?.label) || "Painel"}
               </p>
             </div>
           </div>
           <div className="flex items-center gap-3">
+            {page === "dashboard" && !accountOpen && <button
+              type="button"
+              aria-label={darkMode ? "Ativar modo claro" : "Ativar modo escuro"}
+              title={darkMode ? "Ativar modo claro" : "Ativar modo escuro"}
+              className="rounded-xl min-w-11 min-h-11 flex items-center justify-center text-slate-200 hover:bg-white/10"
+              onClick={() => setDarkMode((current) => !current)}
+            >
+              {darkMode ? <Sun size={19} aria-hidden="true" /> : <Moon size={19} aria-hidden="true" />}
+            </button>}
             <button
               aria-label="Atualizar dados"
               title="Atualizar"
-              className="rounded-xl p-2.5 text-slate-500 hover:bg-slate-100"
+              className="hidden sm:flex rounded-xl min-w-11 min-h-11 items-center justify-center text-slate-200 hover:bg-white/10"
               onClick={() => {
                 void reload();
                 void reloadAgenda();
@@ -338,31 +423,60 @@ function Workspace({ user, onLogout, institutionalNotice = "", institutionalErro
                   : "Ver notificações"
               }
               onClick={() => open("notifications")}
-              className="rounded-xl p-2.5 text-slate-500 hover:bg-slate-100 relative"
+              className="rounded-xl min-w-11 min-h-11 flex items-center justify-center text-slate-200 hover:bg-white/10 relative"
             >
               <Bell size={19} />
-              {unread > 0 && (
+              {unread !== null && unread > 0 && (
                 <span className="absolute -right-1 -top-1 rounded-full bg-rose-600 text-white text-[10px] font-bold min-w-5 h-5 px-1 flex items-center justify-center">
                   {unread > 99 ? "99+" : unread}
                 </span>
               )}
             </button>
-            <div className="h-9 w-px bg-slate-200" />
-            <div className="flex items-center gap-2">
-              <div className="w-9 h-9 rounded-full bg-skybrand-100 text-skybrand-700 font-bold flex items-center justify-center">
-                {user.displayName.charAt(0).toUpperCase()}
-              </div>
-              <span className="hidden sm:block text-sm font-semibold text-slate-700 max-w-32 truncate">
-                {user.displayName}
-              </span>
-              <ChevronDown
-                size={15}
-                className="hidden sm:block text-slate-400"
-              />
+            <div className="hidden sm:block h-9 w-px bg-[#32435f]" />
+            <div ref={accountAreaRef} className="relative">
+              <button ref={accountHeaderRef} type="button" onClick={openAccount} aria-label="Opções da conta" aria-expanded={accountOpen} aria-controls="account-actions" className="flex min-h-11 min-w-11 items-center justify-center rounded-full bg-[#17243a] text-sm font-bold text-white hover:bg-[#243754] focus-visible:outline-2 focus-visible:outline-sky-300">
+                {user.displayName.trim().split(/\s+/).slice(0, 2).map((part) => part.charAt(0).toUpperCase()).join("")}
+              </button>
+              {accountOpen && <div id="account-actions" role="group" aria-label="Ações da conta" className="absolute right-0 top-[calc(100%+8px)] z-50 w-[min(260px,calc(100vw-24px))] max-h-[min(70dvh,440px)] overflow-y-auto rounded-xl border border-[#32435f] bg-[#111d32] p-2 text-white shadow-2xl shadow-black/40">
+                <div className="px-2 py-2.5">
+                  <p className="truncate text-sm font-bold" title={user.displayName}>{user.displayName}</p>
+                  <p className="text-xs text-[#93a6c6]">{admin ? "Administrador" : "Instrutor"}</p>
+                </div>
+                <div className="my-1 border-t border-[#32435f]" />
+                <button ref={firstAccountActionRef} type="button" aria-pressed={darkMode} className="flex w-full min-h-11 items-center gap-3 rounded-lg px-3 text-left text-sm font-semibold hover:bg-white/[.08] focus-visible:outline-2 focus-visible:outline-sky-300" onClick={() => setDarkMode(!darkMode)}>
+                  {darkMode ? <Moon size={18} aria-hidden="true" /> : <Sun size={18} aria-hidden="true" />}Modo escuro<span className="ml-auto text-xs text-[#93a6c6]">{darkMode ? "Ativado" : "Desativado"}</span>
+                </button>
+                <button type="button" className="flex w-full min-h-11 items-center gap-3 rounded-lg px-3 text-left text-sm font-semibold hover:bg-white/[.08] focus-visible:outline-2 focus-visible:outline-sky-300" onClick={() => { setChangingPassword(!changingPassword); setPasswordError(""); }}>
+                  <LockKeyhole size={18} aria-hidden="true" />Alterar senha
+                </button>
+                {changingPassword && <form className="space-y-2 border-b border-white/10 px-2 pb-3" onSubmit={(event) => void changePassword(event)}>
+                  <label className="block text-xs text-slate-300">Senha atual
+                    <input className="field mt-1" type="password" autoComplete="current-password" required value={currentPassword} onChange={(event) => setCurrentPassword(event.target.value)} /></label>
+                  <label className="block text-xs text-slate-300">Nova senha
+                    <input className="field mt-1" type="password" autoComplete="new-password" required minLength={8} value={newPassword} onChange={(event) => setNewPassword(event.target.value)} /></label>
+                  <button type="submit" className="min-h-10 text-xs font-semibold text-white underline" disabled={passwordBusy}>Salvar senha</button>
+                  {passwordError && <p role="alert" className="text-xs text-rose-200">{passwordError}</p>}
+                </form>}
+                {ssoEnabled && !linking && <button type="button" className="flex w-full min-h-11 items-center gap-3 rounded-lg px-3 text-left text-sm font-semibold hover:bg-white/[.08]" onClick={() => { setLinkError(""); setLinking(true); }}>
+                  <Link2 size={18} aria-hidden="true" />Vincular conta institucional
+                </button>}
+                {ssoEnabled && linking && <div className="space-y-2 px-2 pb-3">
+                  <label className="block text-xs text-slate-300" htmlFor="institutional-link-password">Confirme sua senha local</label>
+                  <input id="institutional-link-password" type="password" autoComplete="current-password" className="field" value={linkPassword} onChange={(event) => setLinkPassword(event.target.value)} disabled={linkBusy} />
+                  <div className="flex gap-2">
+                    <button type="button" className="min-h-10 text-xs underline text-slate-300" disabled={linkBusy} onClick={() => { setLinking(false); setLinkPassword(""); setLinkError(""); }}>Cancelar</button>
+                    <button type="button" className="min-h-10 text-xs font-semibold text-white underline disabled:opacity-60" disabled={linkBusy || !linkPassword} onClick={() => void beginInstitutionalLink()}>{linkBusy ? "Abrindo provedor..." : "Continuar"}</button>
+                  </div>
+                </div>}
+                {linkError && <p role="alert" className="px-2 text-xs text-rose-200">{linkError}</p>}
+                <button type="button" className="flex w-full min-h-11 items-center gap-3 rounded-lg px-3 text-left text-sm font-semibold hover:bg-white/[.08] focus-visible:outline-2 focus-visible:outline-sky-300" onClick={onLogout}>
+                  <LogOut size={18} aria-hidden="true" />Sair
+                </button>
+              </div>}
             </div>
           </div>
         </header>
-        <main className="max-w-[1500px] mx-auto p-5 md:p-8 lg:p-9">
+        <main id="main-content" tabIndex={-1} className="max-w-[1540px] mx-auto p-4 sm:p-6 lg:p-8 xl:p-10">
           {institutionalNotice && <div className="mb-5"><Notice type="success" message={institutionalNotice} /></div>}
           {institutionalError && <div className="mb-5"><Notice type="error" message={institutionalError} /></div>}
           {error && (
@@ -378,31 +492,34 @@ function Workspace({ user, onLogout, institutionalNotice = "", institutionalErro
           {loading ? (
             <Busy />
           ) : page === "dashboard" ? (
-            <Dashboard user={user} navigate={open} occupations={occupations} openTimeline={openTimeline} openOpportunity={openOpportunity} onExport={openDashboardExport} />
+            <Dashboard user={user} navigate={open} occupations={occupations} openTimeline={openTimeline} openOpportunity={openOpportunity} onExport={openDashboardExport} unread={unread}
+              agendaLoading={agendaLoading} agendaError={agendaError}
+              onOpenOccupation={(item) => { setAgendaFocus({ date: item.date, roomId: item.roomId, occupationId: item.id }); setPage("agenda"); }} />
           ) : page === "agenda" ? (
             <Agenda
               user={user}
               occupations={occupations}
               reloadAgenda={reloadAgenda}
+              focus={agendaFocus}
             />
           ) : page === "room-timeline" ? (
             <RoomTimeline user={user} openBookings={() => open("bookings")} initialFilter={timelineFilter} />
           ) : page === "opportunities" && admin ? (
             <RoomOpportunities initial={opportunityFilter} onTimeline={openTimeline} />
           ) : page === "imports" && admin ? (
-            <InstitutionalImport />
+            <InstitutionalImport key={importKind} initialKind={importKind} />
           ) : page === "exports" && admin ? (
-            <ExportData initial={exportFilter} />
+            <ExportData initial={exportFilter} onInstructorAgenda={() => open("instructor-agenda")} />
           ) : page === "instructor-agenda" ? (
-            <InstructorAgenda user={user} />
+            <InstructorAgenda user={user} onOpenRelated={(type, id) => { const target = type === "Booking" ? "bookings" : "loans"; setRelated({ page: target, id }); setPage(target); }} onManage={(date, roomId, occupationId) => { setAgendaFocus({ date, roomId, occupationId }); setPage("agenda"); }} />
           ) : page === "rooms" ? (
-            <Rooms user={user} />
+            <Rooms user={user} onImport={admin ? (kind) => { setImportKind(kind); setPage("imports"); scrollToTop(); } : undefined} />
           ) : page === "academic" && admin ? (
             <Academic user={user} />
           ) : page === "pedagogical-catalog" ? (
             <PedagogicalCatalog user={user} />
           ) : page === "teachers" ? (
-            <Teachers user={user} />
+            <Teachers user={user} onImport={admin ? () => { setImportKind("Docentes"); setPage("imports"); scrollToTop(); } : undefined} />
           ) : page === "schedules" && admin ? (
             <Schedules user={user} reloadAgenda={reloadAgenda} />
           ) : page === "semester-planning" ? (
@@ -422,8 +539,8 @@ function Workspace({ user, onLogout, institutionalNotice = "", institutionalErro
             }} />
           ) : null}
         </main>
-        <footer className="py-5 px-8 text-center text-xs text-slate-400">
-          SalaGest · MVP institucional · React + ASP.NET Core
+        <footer className="py-5 px-8 text-center text-xs text-slate-600">
+          SalaGest · Gestão institucional de ambientes
         </footer>
       </div>
     </div>
@@ -446,7 +563,7 @@ export default function App() {
     let active = true;
     const onInvalid = () => {
       logout();
-      setAuthMessage("Sua sessão expirou ou foi invalidada. Entre novamente.");
+      setAuthMessage("Sua sessão expirou ou foi invalidada. Entre novamente. Formulários ainda não enviados podem precisar ser preenchidos de novo.");
     };
     window.addEventListener("salagest:unauthorized", onInvalid);
     const params = new URLSearchParams(window.location.search);
@@ -498,7 +615,9 @@ export default function App() {
     );
   return user ? (
     <DataProvider>
-      <Workspace user={user} onLogout={logout} institutionalNotice={institutionalNotice} institutionalError={authMessage} />
+      <Workspace user={user} onLogout={logout} onPasswordChanged={() => {
+        logout(); setAuthMessage("Senha alterada. Entre novamente para continuar.");
+      }} institutionalNotice={institutionalNotice} institutionalError={authMessage} />
     </DataProvider>
   ) : (
     <Access onLogin={acceptLogin} initialMessage={authMessage} />

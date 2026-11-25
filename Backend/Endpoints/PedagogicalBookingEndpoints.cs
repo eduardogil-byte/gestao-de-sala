@@ -11,9 +11,14 @@ public static partial class ApiEndpoints
 {
     private static void MapPedagogicalBookingOptions(IEndpointRouteBuilder app)
     {
-        app.MapGet("/api/bookings/pedagogical-options", async (ClaimsPrincipal current, AppDbContext db) =>
+        app.MapGet("/api/bookings/pedagogical-options", async (string? teacherId, ClaimsPrincipal current, AppDbContext db) =>
         {
-            var teacherId = UserId(current);
+            if (current.IsInRole("Admin"))
+            {
+                if (string.IsNullOrWhiteSpace(teacherId)) return Results.Ok(Array.Empty<object>());
+            }
+            else if (teacherId is not null && teacherId != UserId(current)) return Results.Forbid();
+            teacherId ??= UserId(current);
             var assignments = await db.Assignments.AsNoTracking()
                 .Include(x => x.ClassGroup).Include(x => x.CurricularUnit)
                 .Where(x => x.EndedAtUtc == null && x.CurricularUnitId != null &&
@@ -66,7 +71,9 @@ public static partial class ApiEndpoints
         var days = BookingPeriods.Expand(booking).Select(p => (int)p.Start.DayOfWeek).Distinct().ToArray();
         var assigned = await db.Assignments.AsNoTracking()
             .Where(x => x.TeacherId == booking.TeacherId && x.ClassGroupId == booking.ClassGroupId &&
-                x.CurricularUnitId == booking.CurricularUnitId && x.PreferredShiftId == shiftId &&
+                x.CurricularUnitId == booking.CurricularUnitId &&
+                (x.PreferredShiftId == shiftId || (booking.TurnExceptionConfirmed &&
+                    booking.Recurrence == BookingRecurrence.Nenhuma)) &&
                 x.EndedAtUtc == null && x.Weekday != null)
             .Select(x => x.Weekday!.Value).Distinct().ToListAsync();
         return days.All(assigned.Contains);

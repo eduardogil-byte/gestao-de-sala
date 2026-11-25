@@ -1,51 +1,29 @@
-# SalaGest — Frontend v0.2 (início do desenvolvimento)
+# Frontend do SalaGest
 
-React 18 + TypeScript + Vite + Tailwind CSS. Esta versão foi alinhada aos endpoints do arquivo **SalaGest_Backend_v02_Inicio_Desenvolvimento.zip**. Não é compatível com todas as rotas de empréstimos da versão antiga `SalaGest_Backend_MVP.zip`.
+React 18, TypeScript, Vite, Tailwind CSS e ícones Lucide. As páginas ficam em `src/pages/`, componentes compartilhados em `src/components/`, cliente HTTP em `src/lib/api.ts`, tipos em `src/types.ts` e navegação em `src/App.tsx`.
 
-## Requisitos
+## Pré-requisitos e comandos
 
-- Node.js 20+ (recomendado 22) e npm;
-- .NET 8 + backend **v0.2** configurado e em execução;
-- SQL Server operacional e migrações aplicadas ao backend.
-
-## Executar no Windows
-
-Na pasta `Frontend`, onde está o `package.json`:
+Use Node.js 20+ e npm. Na pasta `Frontend/`:
 
 ```powershell
-npm install
+npm ci
+npx tsc -b
 npm run build
-npm run dev
+npm test
+npm run dev -- --host 127.0.0.1
 ```
 
-Abra **http://localhost:5173**. O proxy do Vite redireciona `/api` para **http://localhost:5108**. Se o backend estiver em outra porta, copie `.env.example` para `.env.local` e altere `VITE_API_TARGET`; reinicie o frontend.
+O Vite mostra a URL local, normalmente `http://localhost:5173`. Seu proxy encaminha `/api` para `http://localhost:5108` por padrão. Se a API autorizada usar outra porta, defina `VITE_API_TARGET` na sessão **antes** de iniciar o Vite ou use `.env.local` privado; reinicie após alterar. Essa variável só afeta o servidor de desenvolvimento. Em implantação, sirva o build com `/api` encaminhado à API e fallback de SPA. Nunca coloque connection string, senha ou token em `VITE_*`.
 
-As credenciais e connection string do SQL Server devem permanecer **somente no backend**. O frontend usa token da API via `sessionStorage`.
+O frontend não provisiona banco nem Admin. Só inicie a API depois de confirmar ambiente e destino; veja o [README principal](../README.md) e [SG-etapa6B](../docs/tasks/SG-etapa6B.md).
 
-## Funcionalidades implementadas na interface
+## Telas e segurança
 
-- Login e registro de professores; navegação por perfil.
-- Cadastros de ambientes, grupos de computadores, softwares, finalidade da sala, semestres e turmas (admin).
-- Reservas por turno completo, em data única ou dias selecionados de uma semana, com extensão até uma data final e dia semanal de EAD opcional.
-- Quantidade de alunos e alunos por computador (uso em duplas/grupos).
-- Seleção ordenada de salas, incluindo as ocupadas/incompatíveis; especificações técnicas, ocupantes e conflitos por data.
-- Confirmação direta pelo professor, inclusive apenas datas disponíveis quando há conflitos; opção de substituir alocação própria da turma após confirmação.
-- Empréstimos: oferta de datas/turnos próprios para outro professor (até 150 por oferta), aceite do destinatário com requisitos da aula e finalização do titular (EAD, não letivo ou outra sala).
-- Agenda semanal; alterar status letivo, trocar sala, liberar uma data ou liberar em lote; bloqueio administrativo.
-- Notificações internas e painel de uso por dia, turno e turma, com salas mais/menos utilizadas.
+O Admin dispõe de cadastros pedagógicos, docentes, ambientes/inventário, calendário, planejamento, cronograma, indicadores, importação e exportação. Professores podem acessar suas agendas, reservas, propostas, empréstimos e notificações conforme autorização da API. O menu oculta ações não permitidas, mas a segurança depende das verificações do backend.
 
-**Regra ainda em aberto:** marcar um dia como EAD ou não letivo **não libera automaticamente a sala**. A liberação continua uma ação separada, como definido provisoriamente no backend v0.2.
+O token Bearer fica em `sessionStorage` e é revalidado pela API; logout remove a sessão local. Não trate presença de token como prova de permissão. A interface distingue compatibilidade técnica de disponibilidade em horário, e aprovação de proposta de publicação.
 
-## Atenção à implementação
+Na Etapa 11, `npx tsc -b`, `npm run build` e 83/83 testes passaram. Os testes de navegador utilizam respostas sintéticas e não demonstram integração real com SQL Server. A [matriz de pendências](../docs/deployment/pendencias-etapa12.md) registra lacunas funcionais e de acessibilidade. Para os fluxos a validar após implantação, consulte [Etapa 13](../docs/deployment/etapa13.md).
 
-- A reserva é criada primeiro com status `Pendente`, mas **não depende de aprovação**. O próprio professor seleciona uma sala e usa `/api/bookings/{id}/confirm`.
-- Em uma recorrência parcial, o sistema mostra conflitos e permite confirmar somente as datas viáveis. A API revalida tudo no salvamento.
-- A coordenação pode visualizar reservas e agir sobre ocorrências pelo calendário. Transferências são sempre validadas pela API.
-- Em empréstimos com várias datas, a API gera uma oferta por ocorrência; os aceites e finalizações são por ocorrência, não por série inteira.
-- A área antiga de geração global de grade foi removida do menu principal, sem apagar seus arquivos de origem. Não é prioridade do novo MVP.
-
-## Validação antes de usar na instituição
-
-Este pacote passou por verificação estática de sintaxe TypeScript/TSX, mas **não teve build completo nem execução integrada comprovados aqui**, pois a instalação das dependências npm não foi concluída neste ambiente. No seu computador, executar `npm install`, `npm run build`, `npm run dev` e testar com a API v0.2 e um SQL Server real.
-
-Consulte `TESTES_MANUAIS.md` para testar os fluxos com dois professores e um administrador.
+Se a página abrir mas `/api` falhar, confira primeiro se a API autorizada está em execução e se `VITE_API_TARGET` corresponde à URL dela; reinicie o Vite após corrigir a variável. Porta 5173 ocupada pode impedir a inicialização com `strictPort` no servidor de desenvolvimento. Erros de login não devem ser contornados editando `sessionStorage` ou permissões locais: verifique a resposta da API e use uma conta de teste autorizada.

@@ -98,6 +98,82 @@ public sealed class AcademicCalendarTests
     }
 
     [Fact]
+    public async Task LegacySchedulePublishesOnlyPresentialDatesOfItsClass()
+    {
+        await using var host = await CalendarHost.CreateAsync();
+        host.AsAdmin();
+        int scheduleId;
+        using (var scope = host.App.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+            var classGroup = await db.Classes.SingleAsync(c => c.Id == host.ClassId);
+            classGroup.EadWeekday = 1;
+            classGroup.EadStartDate = new(2027, 3, 22);
+            classGroup.EadEndDate = new(2027, 3, 22);
+            db.AcademicCalendarEvents.AddRange(
+                new AcademicCalendarEvent { SemesterId = host.SemesterId, StartDate = new(2027, 3, 8),
+                    EndDate = new(2027, 3, 8), Kind = AcademicDayKind.Holiday, Description = "Feriado" },
+                new AcademicCalendarEvent { SemesterId = host.SemesterId, StartDate = new(2027, 3, 15),
+                    EndDate = new(2027, 3, 15), Kind = AcademicDayKind.Recess, Description = "Recesso" });
+            db.ClassCalendarExceptions.Add(new ClassCalendarException { ClassGroupId = host.ClassId,
+                Date = new(2027, 3, 29), Kind = AcademicDayKind.NonTeaching, Description = "Suspensa" });
+            var assignment = new TeachingAssignment { ClassGroupId = host.ClassId,
+                TeacherId = await db.Assignments.OrderBy(a => a.Id).Select(a => a.TeacherId).FirstAsync(),
+                DisciplineName = "Aula de segunda" };
+            var shiftId = await db.Shifts.OrderBy(s => s.Id).Select(s => s.Id).FirstAsync();
+            var roomId = await db.Rooms.OrderBy(r => r.Id).Select(r => r.Id).FirstAsync();
+            var schedule = new Schedule { SemesterId = host.SemesterId };
+            schedule.WeeklyClasses.Add(new WeeklyClass { Assignment = assignment, Weekday = 1,
+                ShiftId = shiftId, RoomId = roomId });
+            db.Schedules.Add(schedule);
+            await db.SaveChangesAsync();
+            scheduleId = schedule.Id;
+        }
+        var response = await host.Client.PostAsync($"/api/schedules/{scheduleId}/publish", null);
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        using var verifyScope = host.App.Services.CreateScope();
+        var verifyDb = verifyScope.ServiceProvider.GetRequiredService<AppDbContext>();
+        var dates = await verifyDb.Occupations.Where(o => o.WeeklyClassId != null)
+            .OrderBy(o => o.StartsAt).Select(o => o.StartsAt).ToListAsync();
+        Assert.Equal(new[] { new DateTime(2027, 3, 1, 8, 0, 0) }, dates);
+    }
+
+    [Fact]
+    public async Task OrdinaryBookingPreviewDetectsTeacherAndClassWithoutBlockingAnotherShift()
+    {
+        await using var host = await CalendarHost.CreateAsync();
+        int roomId, morningBookingId, afternoonBookingId;
+        using (var scope = host.App.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+            var teacherId = await db.Assignments.OrderBy(a => a.Id).Select(a => a.TeacherId).FirstAsync();
+            var room = new Room { Name = "Outra sala", Seats = 30, Active = true };
+            var morning = new BookingRequest { TeacherId = teacherId, ClassGroupId = host.ClassId,
+                StartsAt = new(2027, 3, 12, 8, 0, 0), EndsAt = new(2027, 3, 12, 12, 0, 0),
+                Students = 25, Reason = "Outra reserva" };
+            var afternoon = new BookingRequest { TeacherId = teacherId, ClassGroupId = host.ClassId,
+                StartsAt = new(2027, 3, 12, 13, 0, 0), EndsAt = new(2027, 3, 12, 17, 0, 0),
+                Students = 25, Reason = "Outro turno" };
+            db.Rooms.Add(room);
+            db.Bookings.AddRange(morning, afternoon);
+            await db.SaveChangesAsync();
+            roomId = room.Id;
+            morningBookingId = morning.Id;
+            afternoonBookingId = afternoon.Id;
+        }
+        host.AsTeacher();
+        var blocked = await host.Client.GetFromJsonAsync<JsonElement>(
+            $"/api/bookings/{morningBookingId}/suggestions");
+        var morningRoom = blocked.EnumerateArray().Single(r => r.GetProperty("id").GetInt32() == roomId);
+        Assert.False(morningRoom.GetProperty("available").GetBoolean());
+        Assert.Equal(1, morningRoom.GetProperty("conflicts").GetArrayLength());
+        var free = await host.Client.GetFromJsonAsync<JsonElement>(
+            $"/api/bookings/{afternoonBookingId}/suggestions");
+        var afternoonRoom = free.EnumerateArray().Single(r => r.GetProperty("id").GetInt32() == roomId);
+        Assert.True(afternoonRoom.GetProperty("available").GetBoolean());
+    }
+
+    [Fact]
     public async Task AdminManagesInstitutionalEventsAndOverlapsAreRejected()
     {
         await using var host = await CalendarHost.CreateAsync();
@@ -251,6 +327,7 @@ public sealed class AcademicCalendarTests
             await connection.OpenAsync();
             var builder = WebApplication.CreateBuilder();
             builder.WebHost.UseTestServer();
+            builder.Logging.ClearProviders();
             builder.Services.AddDbContext<AppDbContext>(o => o.UseSqlite(connection));
             builder.Services.AddIdentityCore<AppUser>()
                 .AddRoles<IdentityRole>().AddEntityFrameworkStores<AppDbContext>().AddSignInManager();

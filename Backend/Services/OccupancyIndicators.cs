@@ -7,6 +7,18 @@ namespace SalaGest.Api.Services;
 
 public static class OccupancyIndicators
 {
+    public static IndicatorThresholds? Thresholds(IConfiguration configuration)
+    {
+        var bottleneck = configuration.GetValue<decimal?>("OccupancyIndicators:BottleneckPercent") ?? 80m;
+        var opportunity = configuration.GetValue<decimal?>("OccupancyIndicators:OpportunityPercent") ?? 40m;
+        return opportunity >= 0 && bottleneck <= 100 && opportunity < bottleneck
+            ? new IndicatorThresholds(bottleneck, opportunity) : null;
+    }
+
+    public static DateOnly InstitutionDate(IConfiguration? configuration = null, DateTimeOffset? instant = null) =>
+        DateOnly.FromDateTime(TimeZoneInfo.ConvertTimeBySystemTimeZoneId(instant ?? DateTimeOffset.UtcNow,
+            configuration?["OccupancyIndicators:TimeZone"] ?? "America/Sao_Paulo").DateTime);
+
     public static IQueryable<RoomOccupation> EffectiveOccupations(AppDbContext db) =>
         db.Occupations.AsNoTracking().Where(o => o.CancelledAtUtc == null &&
             (o.BookingRequestId == null || db.Bookings.Any(b => b.Id == o.BookingRequestId &&
@@ -26,8 +38,9 @@ public static class OccupancyIndicators
                     Seconds(TimeOnly.FromDateTime(o.EndsAt))))).Sum(s => (long)s.To - s.From)));
 
     public static async Task<SemesterOccupancyIndicators?> ForSemester(AppDbContext db,
-        int semesterId, int? roomId, IndicatorThresholds thresholds)
+        int semesterId, int? roomId, IndicatorThresholds thresholds, DateOnly? referenceDate = null)
     {
+        var today = referenceDate ?? InstitutionDate();
         var semester = await db.Semesters.AsNoTracking().FirstOrDefaultAsync(s => s.Id == semesterId);
         if (semester is null) return null;
         var rooms = await db.Rooms.AsNoTracking().Where(r => roomId == null || r.Id == roomId)
@@ -65,6 +78,7 @@ public static class OccupancyIndicators
         foreach (var room in rooms)
         {
             var uses = occupied.Where(o => o.RoomId == room.Id).ToList();
+            var occupiedDates = uses.Select(o => o.Date).ToHashSet();
             var valid = uses.Where(o => o.ShiftId is not null && o.From < o.To).ToList();
             var byDate = valid.GroupBy(o => o.Date).ToDictionary(g => g.Key,
                 g => Union(g.Select(o => new Span(o.From, o.To))));
@@ -98,6 +112,7 @@ public static class OccupancyIndicators
             var withinMinutes = 0;
             var capacitySlots = 0;
             var occupiedCapacitySlots = 0;
+            var eligibleDates = new HashSet<DateOnly>();
             var shiftResults = new List<ShiftOccupancyIndicator>();
             foreach (var shift in shifts)
             {
@@ -115,6 +130,7 @@ public static class OccupancyIndicators
                     for (var date = semester.StartDate; date <= semester.EndDate; date = date.AddDays(1))
                     {
                         if (!Eligible(date, offering!.WeekdaysMask, events)) continue;
+                        eligibleDates.Add(date);
                         var slot = new Span(Seconds(shift.StartsAt), Seconds(shift.EndsAt));
                         shiftCapacity += slot.To - slot.From;
                         shiftSlots++;
@@ -159,7 +175,15 @@ public static class OccupancyIndicators
                 uses.Select(o => o.Date).Distinct().Count(),
                 valid.Select(o => (o.Date, o.ShiftId)).Distinct().Count(),
                 known ? capacitySlots - occupiedCapacitySlots : null,
-                conflictPairs, unclassified, Classification(percent, thresholds), warning, shiftResults));
+                conflictPairs, unclassified, Classification(percent, thresholds), warning, shiftResults)
+            {
+                EligibleDays = known ? eligibleDates.Count : null,
+                OccupiedEligibleDays = known ? occupiedDates.Count(eligibleDates.Contains) : null,
+                UnoccupiedDays = known ? eligibleDates.Count(date => !occupiedDates.Contains(date)) : null,
+                PastOccupiedDays = occupiedDates.Count(date => date < today),
+                TodayOccupiedDays = occupiedDates.Count(date => date == today),
+                FutureOccupiedDays = occupiedDates.Count(date => date > today)
+            });
         }
         var unknownRooms = roomResults.Count(r => r.CapacityHours is null);
         var totalKnown = unknownRooms == 0 && roomResults.Count > 0;
@@ -186,7 +210,17 @@ public static class OccupancyIndicators
             roomResults.Sum(r => r.OccupiedSlots),
             totalKnown ? roomResults.Sum(r => r.UnoccupiedSlots ?? 0) : null,
             unknownRooms, roomResults.Sum(r => r.ConflictPairs),
-            Classification(totalPercent, thresholds), roomResults, months, reportWarnings);
+            Classification(totalPercent, thresholds), roomResults, months, reportWarnings)
+        {
+            ReferenceDate = today,
+            OccupiedRoomDays = roomResults.Sum(r => r.DaysWithOccupations),
+            EligibleRoomDays = totalKnown ? roomResults.Sum(r => r.EligibleDays ?? 0) : null,
+            OccupiedEligibleRoomDays = totalKnown ? roomResults.Sum(r => r.OccupiedEligibleDays ?? 0) : null,
+            UnoccupiedRoomDays = totalKnown ? roomResults.Sum(r => r.UnoccupiedDays ?? 0) : null,
+            PastOccupiedRoomDays = roomResults.Sum(r => r.PastOccupiedDays),
+            TodayOccupiedRoomDays = roomResults.Sum(r => r.TodayOccupiedDays),
+            FutureOccupiedRoomDays = roomResults.Sum(r => r.FutureOccupiedDays)
+        };
     }
 
     private static bool Eligible(DateOnly date, int mask, List<AcademicCalendarEvent> events) =>
@@ -198,7 +232,7 @@ public static class OccupancyIndicators
     private static decimal Hours(long seconds) => decimal.Round(seconds / 3600m, 4);
     private static decimal Percent(int used, int capacity) => decimal.Round(used * 100m / capacity, 2);
     private static string Classification(decimal? percent, IndicatorThresholds thresholds) => percent is null
-        ? "Unknown" : percent >= thresholds.BottleneckPercent ? "Bottleneck" :
+        ? "Unknown" : percent > thresholds.BottleneckPercent ? "Bottleneck" :
             percent < thresholds.OpportunityPercent ? "Opportunity" : "Intermediate";
 
     private static List<Span> Union(IEnumerable<Span> source)

@@ -14,7 +14,7 @@ type OccupationRow = {
 };
 
 const labels: Record<string, string> = {
-  TeacherId: "Professor", OwnerId: "Titular", BorrowerId: "Destinatário",
+  TeacherId: "Instrutor", OwnerId: "Titular", BorrowerId: "Destinatário",
   ClassGroupId: "Turma", CurricularUnitId: "UC", CurricularCapabilityId: "Capacidade",
   ApprovedRoomId: "Ambiente aprovado", RoomId: "Ambiente", RoomOccupationId: "Ocupação",
   StartsAt: "Início", EndsAt: "Fim", Status: "Estado", Recurrence: "Recorrência",
@@ -51,7 +51,7 @@ export function AuditHistory({ type, id, onReverse }: { type: "Occupation" | "Bo
     if (typeof item === "boolean") return item ? "Sim" : "Não";
     if (Array.isArray(item)) return item.length ? item.map((part) => value(key, part)).join("; ") : "Nenhum";
     if (key === "TeacherId" || key === "OwnerId" || key === "BorrowerId")
-      return data.teachers.find((teacher) => teacher.id === item)?.displayName ?? "Professor identificado no registro";
+      return data.teachers.find((teacher) => teacher.id === item)?.displayName ?? "Instrutor identificado no registro";
     if (key === "ClassGroupId") return data.classes.find((group) => group.id === item)?.name ?? "Turma nº " + item;
     if (key === "RoomId" || key === "ApprovedRoomId") return data.rooms.find((room) => room.id === item)?.name ?? "Ambiente nº " + item;
     if (key === "PreferredShiftId") return data.shifts.find((shift) => shift.id === item)?.name ?? "Turno nº " + item;

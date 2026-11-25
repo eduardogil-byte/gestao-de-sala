@@ -15,12 +15,122 @@ using Microsoft.Extensions.Options;
 using SalaGest.Api.Data;
 using SalaGest.Api.Endpoints;
 using SalaGest.Api.Models;
+using SalaGest.Api.Services;
+using SalaGest.Api.Contracts;
 using Xunit;
 
 namespace SalaGest.Backend.Tests;
 
 public sealed class OccupancyIndicatorTests
 {
+    [Fact]
+    public async Task RoomDaysUseDistinctDatesEligibleCalendarAndInstitutionDate()
+    {
+        await using var host = await Host.CreateAsync();
+        await host.Configure(host.RoomAId);
+        Assert.Equal(HttpStatusCode.NoContent, (await host.Client.PutAsJsonAsync(
+            $"/api/semesters/{host.SemesterId}/rooms/{host.RoomBId}/operating-shifts",
+            new[] { new { shiftId = host.MorningId, weekdaysMask = 6 } })).StatusCode);
+        using var scope = host.App.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+        db.Occupations.AddRange(host.Occ(host.RoomAId, 1, 8, 12), host.Occ(host.RoomAId, 1, 8, 12),
+            host.Occ(host.RoomAId, 1, 13, 16), host.Occ(host.RoomAId, 2, 8, 12),
+            host.Occ(host.RoomAId, 8, 8, 12), host.Occ(host.RoomBId, 1, 8, 12));
+        await db.SaveChangesAsync();
+        var report = (await OccupancyIndicators.ForSemester(db, host.SemesterId, null,
+            new IndicatorThresholds(80, 40), new DateOnly(2027, 3, 2)))!;
+        Assert.Equal(33m, report.CapacityHours);
+        Assert.Equal(19m, report.PhysicalOccupiedHours);
+        Assert.Equal(15m, report.OccupiedWithinCapacityHours);
+        Assert.Equal(18m, report.AvailableHours);
+        Assert.Equal(45.45m, report.OccupancyPercent);
+        Assert.Equal(4, report.OccupiedRoomDays);
+        Assert.Equal(3, report.DaysWithOccupations); // Contrato anterior: datas de calendário.
+        Assert.Equal(6, report.EligibleRoomDays);
+        Assert.Equal(3, report.OccupiedEligibleRoomDays);
+        Assert.Equal(3, report.UnoccupiedRoomDays);
+        Assert.Equal(2, report.PastOccupiedRoomDays);
+        Assert.Equal(1, report.TodayOccupiedRoomDays);
+        Assert.Equal(1, report.FutureOccupiedRoomDays);
+        var room = report.Rooms.Single(r => r.RoomId == host.RoomAId);
+        Assert.Equal(3, room.EligibleDays);
+        Assert.Equal(1, room.UnoccupiedDays);
+        Assert.Equal(1, room.ConflictPairs);
+        Assert.Equal(room.OccupiedWithinCapacityHours,
+            room.Shifts.Sum(s => s.CapacityHours - s.AvailableHours));
+    }
+
+    [Theory]
+    [InlineData(80, "Intermediate")]
+    [InlineData(81, "Bottleneck")]
+    [InlineData(90, "Bottleneck")]
+    public async Task DefaultBottleneckIsStrictlyAboveEightyPercent(int usedDays, string classification)
+    {
+        await using var host = await Host.CreateAsync();
+        using (var scope = host.App.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+            var semester = (await db.Semesters.FindAsync(host.SemesterId))!;
+            semester.EndDate = semester.StartDate.AddDays(99);
+            db.AcademicCalendarEvents.RemoveRange(db.AcademicCalendarEvents);
+            db.RoomOperatingShifts.Add(new RoomOperatingShift { RoomId = host.RoomAId,
+                SemesterId = host.SemesterId, ShiftId = host.MorningId, WeekdaysMask = 127 });
+            for (var day = 0; day < usedDays; day++)
+            {
+                var date = semester.StartDate.AddDays(day);
+                db.Occupations.Add(new RoomOccupation { RoomId = host.RoomAId,
+                    StartsAt = date.ToDateTime(new TimeOnly(8, 0)), EndsAt = date.ToDateTime(new TimeOnly(12, 0)),
+                    Kind = OccupationKind.Avulsa });
+            }
+            await db.SaveChangesAsync();
+        }
+        var report = await host.Report(host.RoomAId);
+        Assert.Equal(80m, report.GetProperty("thresholds").GetProperty("bottleneckPercent").GetDecimal());
+        Assert.Equal(classification, report.GetProperty("classification").GetString());
+    }
+
+    [Fact]
+    public void InstitutionDateUsesConfiguredTimeZoneInsteadOfServerOrBrowserDate()
+    {
+        var instant = new DateTimeOffset(2027, 3, 2, 1, 0, 0, TimeSpan.Zero);
+        Assert.Equal(new DateOnly(2027, 3, 1), OccupancyIndicators.InstitutionDate(instant: instant));
+        var config = new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>
+            { ["OccupancyIndicators:TimeZone"] = "UTC" }).Build();
+        Assert.Equal(new DateOnly(2027, 3, 2), OccupancyIndicators.InstitutionDate(config, instant));
+        Assert.Equal(new IndicatorThresholds(80, 40), OccupancyIndicators.Thresholds(config));
+    }
+
+    [Fact]
+    public async Task OfferedShiftConfigurationIsAdminOnlyScopedAndCanBeClearedWithoutDeletingOccupations()
+    {
+        await using var host = await Host.CreateAsync();
+        var path = $"/api/semesters/{host.SemesterId}/rooms/{host.RoomAId}/operating-shifts";
+        host.AsTeacher();
+        Assert.Equal(HttpStatusCode.Forbidden, (await host.Client.GetAsync(path)).StatusCode);
+        Assert.Equal(HttpStatusCode.Forbidden, (await host.Client.PutAsJsonAsync(path,
+            new[] { new { shiftId = host.MorningId, weekdaysMask = 2 } })).StatusCode);
+        host.AsAdmin();
+        await host.Configure(host.RoomAId);
+        var configured = await host.Client.GetFromJsonAsync<System.Text.Json.JsonElement>(path);
+        Assert.Equal(2, configured.GetArrayLength());
+        Assert.True((await host.Report(host.RoomAId)).GetProperty("capacityHours").GetDecimal() > 0);
+        var otherSemester = await host.Client.GetFromJsonAsync<System.Text.Json.JsonElement>(
+            $"/api/semesters/{host.SecondSemesterId}/rooms/{host.RoomAId}/operating-shifts");
+        Assert.Equal(0, otherSemester.GetArrayLength());
+        using (var scope = host.App.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+            db.Occupations.Add(host.Occ(host.RoomAId, 1, 8, 12));
+            await db.SaveChangesAsync();
+        }
+        Assert.Equal(HttpStatusCode.NoContent, (await host.Client.PutAsJsonAsync(path, Array.Empty<object>())).StatusCode);
+        var report = await host.Report(host.RoomAId);
+        Assert.Equal(System.Text.Json.JsonValueKind.Null, report.GetProperty("capacityHours").ValueKind);
+        Assert.Equal(System.Text.Json.JsonValueKind.Null, report.GetProperty("occupancyPercent").ValueKind);
+        Assert.Equal(4m, report.GetProperty("physicalOccupiedHours").GetDecimal());
+        Assert.Equal(0, (await host.Client.GetFromJsonAsync<System.Text.Json.JsonElement>(path)).GetArrayLength());
+    }
+
     [Fact]
     public async Task CapacityUsesConfiguredDaysAndDifferentDurationsWithoutDoubleCounting()
     {
@@ -62,6 +172,9 @@ public sealed class OccupancyIndicatorTests
         Assert.Equal(1, a.GetProperty("conflictPairs").GetInt32());
         Assert.Equal(System.Text.Json.JsonValueKind.Null, b.GetProperty("capacityHours").ValueKind);
         Assert.Equal("Unknown", b.GetProperty("classification").GetString());
+        Assert.Equal(System.Text.Json.JsonValueKind.Null, b.GetProperty("eligibleDays").ValueKind);
+        Assert.Equal(System.Text.Json.JsonValueKind.Null, b.GetProperty("unoccupiedDays").ValueKind);
+        Assert.Equal(1, b.GetProperty("daysWithOccupations").GetInt32());
         var shifts = a.GetProperty("shifts").EnumerateArray().ToArray();
         Assert.Equal(12m, shifts.Single(s => s.GetProperty("shiftId").GetInt32() == host.MorningId)
             .GetProperty("capacityHours").GetDecimal());
@@ -277,6 +390,7 @@ public sealed class OccupancyIndicatorTests
         Assert.Equal(1, room.GetProperty("daysWithOccupations").GetInt32());
         Assert.Equal(1, room.GetProperty("unclassifiedOccupations").GetInt32());
         Assert.Contains("sem turno", room.GetProperty("warnings").ToString());
+        Assert.Equal(2, room.GetProperty("unoccupiedDays").GetInt32());
     }
 
     [Fact]

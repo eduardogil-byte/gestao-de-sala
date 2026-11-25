@@ -13,6 +13,24 @@ export function nextDate(date: string, n: number) {
   d.setDate(d.getDate() + n);
   return localDate(d);
 }
+export function formatMonthWeek(date: string) {
+  const anchor = new Date(`${date}T12:00:00`);
+  if (Number.isNaN(anchor.getTime())) return "—";
+  const start = nextDate(date, -anchor.getDay());
+  const end = nextDate(start, 6);
+  const crossesYear = start.slice(0, 4) !== end.slice(0, 4);
+  // Cada mês conta todas as semanas de domingo a sábado que o intersectam.
+  const label = (value: string) => {
+    const current = new Date(`${value}T12:00:00`);
+    const first = new Date(current.getFullYear(), current.getMonth(), 1, 12);
+    const last = new Date(current.getFullYear(), current.getMonth() + 1, 0, 12);
+    const week = Math.ceil((current.getDate() + first.getDay()) / 7);
+    const total = Math.ceil((last.getDate() + first.getDay()) / 7);
+    const month = current.toLocaleDateString("pt-BR", { month: "long", ...(crossesYear ? { year: "numeric" } : {}) });
+    return `${month[0].toLocaleUpperCase("pt-BR")}${month.slice(1)} · Semana ${week}/${total}`;
+  };
+  return start.slice(0, 7) === end.slice(0, 7) ? label(start) : `${label(start)} / ${label(end)}`;
+}
 export function resultMessage(err: unknown) {
   return err instanceof Error ? err.message : "Ocorreu um erro inesperado.";
 }
@@ -21,6 +39,7 @@ export const roomKind = (k: string) =>
     Comum: "Sala comum",
     Laboratorio: "Laboratório",
     Hibrida: "Sala híbrida",
+    Oficina: "Oficina",
   })[k] || k;
 export const statusText = (s: string) =>
   ({

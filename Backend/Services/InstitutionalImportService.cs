@@ -32,7 +32,7 @@ public sealed class InstitutionalImportService
         {
             ImportKind.Capacidades => new[] { "CodigoCurso", "OrdemModulo", "CodigoUC", "Capacidade", "Conteudos", "CargaHoraria", "Ordem" },
             ImportKind.Recursos => new[] { "CodigoAmbiente", "Recurso", "Categoria", "Quantidade" },
-            ImportKind.Ambientes => new[] { "Codigo", "Nome", "Tipo", "CapacidadeAlunos", "Carteiras" },
+            ImportKind.Ambientes => new[] { "Codigo", "Nome", "Tipo", "CapacidadeAlunos" },
             _ => new[] { "CPF", "Nome" }
         };
         var missing = required.Where(name => !columns.ContainsKey(name)).ToArray();
@@ -217,7 +217,8 @@ public sealed class InstitutionalImportService
             if (!TryRoomKind(Cell(row, columns, "Tipo"), out var kind) ||
                 !Enum.IsDefined(kind)) errors.Add("Tipo de ambiente inválido.");
             var seats = PositiveInt(Cell(row, columns, "CapacidadeAlunos"), "CapacidadeAlunos", errors);
-            var desks = PositiveInt(Cell(row, columns, "Carteiras"), "Carteiras", errors);
+            var desksText = Cell(row, columns, "Carteiras");
+            int? desks = desksText.Length == 0 ? null : PositiveInt(desksText, "Carteiras", errors);
             if (seats > 1000 || desks > 1000) errors.Add("CapacidadeAlunos e Carteiras devem ser até 1.000.");
             var idText = Cell(row, columns, "IdAmbiente");
             int? id = null;
@@ -248,14 +249,18 @@ public sealed class InstitutionalImportService
             if (errors.Count > 0) { plans.Add(Invalid(row.Line, code, errors)); continue; }
             var target = existing ?? new Room { Active = true };
             var changes = new List<string>();
-            if (existing is null) changes.AddRange(["Codigo", "Nome", "Tipo", "CapacidadeAlunos", "Carteiras"]);
+            if (existing is null)
+            {
+                changes.AddRange(["Codigo", "Nome", "Tipo", "CapacidadeAlunos"]);
+                if (desks.HasValue) changes.Add("Carteiras");
+            }
             else
             {
                 if (existing.Code != code) changes.Add("Codigo");
                 if (existing.Name != name) changes.Add("Nome");
                 if (existing.Kind != kind) changes.Add("Tipo");
                 if (existing.Seats != seats) changes.Add("CapacidadeAlunos");
-                if (existing.Desks != desks) changes.Add("Carteiras");
+                if (desks.HasValue && existing.Desks != desks) changes.Add("Carteiras");
             }
             if ((existing is null && location.Length > 0) ||
                 (existing is not null && location.Length > 0 && existing.Location != location)) changes.Add("Localizacao");
@@ -271,7 +276,8 @@ public sealed class InstitutionalImportService
             {
                 if (existing is null) _db.Rooms.Add(target);
                 target.Code = code; target.NormalizedCode = key;
-                target.Name = name; target.Kind = kind; target.Seats = seats; target.Desks = desks;
+                target.Name = name; target.Kind = kind; target.Seats = seats;
+                if (desks.HasValue) target.Desks = desks.Value;
                 if (location.Length > 0) target.Location = location;
                 if (purpose.Length > 0) target.Purpose = purpose;
                 if (projector.HasValue) target.HasProjector = projector.Value;

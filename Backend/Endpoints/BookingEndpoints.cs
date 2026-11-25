@@ -19,6 +19,7 @@ public static partial class ApiEndpoints
             var error = BookingPeriods.ValidationError(input.StartsAt, input.EndsAt,
                 input.Recurrence, input.RepeatUntil, input.WeekdaysMask);
             if (error is not null) return Error(error);
+            if (input.StartsAt.Date < DateTime.Today) return Error("Não é permitido solicitar datas passadas");
             if (input.RecurringEadWeekday is int ed && (ed < 0 || ed > 6 ||
                 input.Recurrence == BookingRecurrence.Nenhuma ||
                 (input.Recurrence == BookingRecurrence.Semanal &&
@@ -37,9 +38,30 @@ public static partial class ApiEndpoints
                 (input.ClassGroupId is int classId && !await db.Classes.AnyAsync(c => c.Id == classId)))
                 return Error("Dados inválidos: confira turma, alunos, computadores e recursos");
 
+            var isAdmin = current.IsInRole("Admin");
+            var responsibleId = UserId(current);
+            if (isAdmin)
+            {
+                if (string.IsNullOrWhiteSpace(input.TeacherId))
+                    return Error("Selecione o instrutor responsável pela reserva.");
+                responsibleId = input.TeacherId;
+                var responsible = await db.Users.AnyAsync(u => u.Id == responsibleId);
+                var hasTeacherRole = await db.UserRoles.Join(db.Roles,
+                    link => link.RoleId, role => role.Id, (link, role) => new { link.UserId, role.Name })
+                    .AnyAsync(x => x.UserId == responsibleId && x.Name == "Professor");
+                if (!responsible || !hasTeacherRole)
+                    return Error("Instrutor responsável não encontrado.");
+            }
+            else if (input.TeacherId is not null && input.TeacherId != responsibleId)
+                return Results.Forbid();
+
+            var turnError = await ValidateBookingTurn(db, input, shift.Id);
+            if (turnError is not null) return turnError;
+
             var booking = new BookingRequest
             {
-                TeacherId = UserId(current),
+                TeacherId = responsibleId,
+                TurnExceptionConfirmed = input.TurnExceptionConfirmed,
                 ClassGroupId = input.ClassGroupId,
                 CurricularUnitId = input.CurricularUnitId,
                 CurricularCapabilityId = input.CurricularCapabilityId,
@@ -89,7 +111,7 @@ public static partial class ApiEndpoints
             AuditTrail.Add(db, "Booking", booking.Id.ToString(), "Criada", UserId(current), null,
                 new { booking.TeacherId, booking.ClassGroupId, booking.CurricularUnitId,
                     booking.CurricularCapabilityId, booking.StartsAt, booking.EndsAt,
-                    booking.Recurrence, booking.RepeatUntil, booking.Status });
+                    booking.Recurrence, booking.RepeatUntil, booking.Status, booking.TurnExceptionConfirmed });
             await db.SaveChangesAsync();
             await createTx.CommitAsync();
             return Results.Created($"/api/bookings/{booking.Id}", new
@@ -115,6 +137,8 @@ public static partial class ApiEndpoints
             return Results.Ok(bookings.Select(b => new
             {
                 b.Id,
+                Version = b.Revision.ToString("D"),
+                b.TurnExceptionConfirmed,
                 b.TeacherId,
                 b.ClassGroupId,
                 b.CurricularUnitId,
@@ -143,6 +167,86 @@ public static partial class ApiEndpoints
             }));
         });
 
+        api.MapPut("/{id:int}", async (int id, BookingUpdate update, ClaimsPrincipal current, AppDbContext db) =>
+        {
+            await using var tx = await db.Database.BeginTransactionAsync(IsolationLevel.Serializable);
+            var booking = await db.Bookings.Include(b => b.Software).FirstOrDefaultAsync(b => b.Id == id);
+            if (booking is null) return Results.NotFound();
+            if (booking.TeacherId != UserId(current) && !current.IsInRole("Admin")) return Results.Forbid();
+            if (booking.Status != BookingStatus.Pendente) return Results.Conflict(new ApiError("Somente solicitações pendentes podem ser editadas"));
+            if (!Guid.TryParse(update.Version, out var version)) return Error("Versão da solicitação inválida");
+            if (booking.Revision != version)
+                return Results.Conflict(new ApiError("A solicitação mudou. Recarregue antes de salvar."));
+            var input = update.Booking;
+            var validation = BookingPeriods.ValidationError(input.StartsAt, input.EndsAt,
+                input.Recurrence, input.RepeatUntil, input.WeekdaysMask);
+            if (validation is not null) return Error(validation);
+            if (input.StartsAt.Date < DateTime.Today) return Error("Não é permitido solicitar datas passadas");
+            if (input.RecurringEadWeekday is int ed && (ed < 0 || ed > 6 ||
+                input.Recurrence == BookingRecurrence.Nenhuma ||
+                (input.Recurrence == BookingRecurrence.Semanal &&
+                    (input.WeekdaysMask == 0 ? (int)input.StartsAt.DayOfWeek != ed :
+                        (input.WeekdaysMask & (1 << ed)) == 0))))
+                return Error("Dia recorrente de EAD inválido");
+            var shift = await db.Shifts.FirstOrDefaultAsync(s => s.StartsAt == TimeOnly.FromDateTime(input.StartsAt)
+                && s.EndsAt == TimeOnly.FromDateTime(input.EndsAt));
+            if (shift is null) return Error("A reserva deve ocupar um turno cadastrado");
+            if (input.TeacherId is not null && input.TeacherId != booking.TeacherId) return Results.Forbid();
+            if (input.Students is < 1 or > 500 || input.StudentsPerComputer is < 1 or > 20 ||
+                !Enum.IsDefined(input.MinTier) || input.MinRamGb is < 0 or > 512 ||
+                string.IsNullOrWhiteSpace(input.Reason) || input.SoftwareIds is null ||
+                !await SoftwareExists(db, input.SoftwareIds) ||
+                (input.ClassGroupId is int classId && !await db.Classes.AnyAsync(c => c.Id == classId)))
+                return Error("Dados inválidos: confira turma, alunos, computadores e recursos");
+            var turnError = await ValidateBookingTurn(db, input, shift.Id);
+            if (turnError is not null) return turnError;
+            var pedagogical = input.CurricularUnitId is not null || input.CurricularCapabilityId is not null;
+            if (pedagogical)
+            {
+                if (input.ClassGroupId is null || input.CurricularUnitId is null || input.CurricularCapabilityId is null)
+                    return Error("Turma, UC e capacidade são obrigatórias na reserva pedagógica");
+                var group = await db.Classes.FirstAsync(c => c.Id == input.ClassGroupId);
+                if (!await db.CurricularUnits.AnyAsync(u => u.Id == input.CurricularUnitId && u.CourseModule.CourseId == group.CourseId) ||
+                    !await db.CurricularCapabilities.AnyAsync(c => c.Id == input.CurricularCapabilityId && c.CurricularUnitId == input.CurricularUnitId))
+                    return Error("UC ou capacidade não pertence à turma");
+                if (!await db.Assignments.AnyAsync(a => a.TeacherId == booking.TeacherId && a.ClassGroupId == input.ClassGroupId &&
+                    a.CurricularUnitId == input.CurricularUnitId && a.EndedAtUtc == null)) return Results.Forbid();
+                var candidate = new BookingRequest { TeacherId = booking.TeacherId, ClassGroupId = input.ClassGroupId,
+                    CurricularUnitId = input.CurricularUnitId, StartsAt = input.StartsAt, EndsAt = input.EndsAt,
+                    Recurrence = input.Recurrence, RepeatUntil = input.RepeatUntil, WeekdaysMask = input.WeekdaysMask,
+                    TurnExceptionConfirmed = input.TurnExceptionConfirmed };
+                if (!await PedagogicalAssignmentValid(db, candidate, shift.Id))
+                    return Error("Dia e turno não correspondem à atribuição ativa");
+            }
+            var before = new { booking.ClassGroupId, booking.StartsAt, booking.EndsAt, booking.Recurrence,
+                booking.RepeatUntil, booking.TurnExceptionConfirmed };
+            booking.ClassGroupId = input.ClassGroupId;
+            booking.CurricularUnitId = input.CurricularUnitId;
+            booking.CurricularCapabilityId = input.CurricularCapabilityId;
+            booking.StartsAt = input.StartsAt; booking.EndsAt = input.EndsAt;
+            booking.Recurrence = input.Recurrence; booking.RepeatUntil = input.RepeatUntil;
+            booking.WeekdaysMask = input.WeekdaysMask; booking.RecurringEadWeekday = input.RecurringEadWeekday;
+            booking.Students = input.Students; booking.StudentsPerComputer = input.StudentsPerComputer;
+            booking.NeedsProjector = input.NeedsProjector; booking.NeedsTeacherComputer = input.NeedsTeacherComputer;
+            booking.NeedsStudentComputers = input.NeedsStudentComputers; booking.MinTier = input.MinTier;
+            booking.MinRamGb = input.MinRamGb; booking.NeedsDedicatedGpu = input.NeedsDedicatedGpu;
+            booking.Reason = input.Reason.Trim(); booking.LessonPlanLink = input.LessonPlanLink;
+            booking.TurnExceptionConfirmed = input.TurnExceptionConfirmed; booking.ApprovedRoomId = null;
+            booking.Revision = Guid.NewGuid();
+            var requestedSoftware = input.SoftwareIds.ToHashSet();
+            db.BookingSoftware.RemoveRange(booking.Software.Where(s => !requestedSoftware.Contains(s.SoftwareId)));
+            foreach (var softwareId in requestedSoftware.Where(softwareId =>
+                booking.Software.All(s => s.SoftwareId != softwareId)))
+                booking.Software.Add(new BookingSoftware { SoftwareId = softwareId });
+            AuditTrail.Add(db, "Booking", id.ToString(), "Alterada", UserId(current), before,
+                new { booking.ClassGroupId, booking.StartsAt, booking.EndsAt, booking.Recurrence,
+                    booking.RepeatUntil, booking.TurnExceptionConfirmed });
+            try { await db.SaveChangesAsync(); }
+            catch (DbUpdateConcurrencyException) { return Results.Conflict(new ApiError("A solicitação mudou. Recarregue antes de salvar.")); }
+            await tx.CommitAsync();
+            return Results.Ok(new { booking.Id, Version = booking.Revision.ToString("D") });
+        });
+
         // Apresenta TODAS as salas, inclusive ocupadas ou incompatíveis.
         // A classificação prioriza compatibilidade e capacidade ANTES da disponibilidade.
         api.MapGet("/{id:int}/suggestions", async (int id, ClaimsPrincipal current, AppDbContext db) =>
@@ -155,6 +259,8 @@ public static partial class ApiEndpoints
             {
                 var calendar = await CalendarForBooking(db, booking);
                 var requirement = await RequirementQuery(db).FirstOrDefaultAsync(x => x.CurricularCapabilityId == capabilityId);
+                var unitResources = booking.CurricularUnitId is int unitId
+                    ? await UnitResourcesQuery(db, unitId).ToListAsync() : [];
                 var technicalRooms = await RoomQuery(db).ToListAsync();
                 var fromDate = periods.Min(p => p.Start);
                 var toDate = periods.Max(p => p.End);
@@ -167,7 +273,7 @@ public static partial class ApiEndpoints
                 var choices = technicalRooms.Select(room =>
                 {
                     var technical = EnvironmentCompatibility.Evaluate(requirement, room, booking.Students,
-                        DateOnly.FromDateTime(periods.Max(p => p.Start)));
+                        DateOnly.FromDateTime(periods.Max(p => p.Start)), unitResources: unitResources);
                     bool Blocks(RoomOccupation o, (DateTime Start, DateTime End) p)
                     {
                         if (!ScheduleGenerator.Overlap(o.StartsAt, o.EndsAt, p.Start, p.End)) return false;
@@ -215,21 +321,32 @@ public static partial class ApiEndpoints
                 .Where(o => o.CancelledAtUtc == null && o.StartsAt < to && o.EndsAt > from)
                 .ToListAsync();
             var ids = occupations.Select(o => o.Id).ToArray();
-            var activeLoans = await db.Loans.AsNoTracking()
+            var activeLoans = await db.Loans.AsNoTracking().Include(l => l.BookingRequest)
                 .Where(l => l.Status == LoanStatus.Aprovado && ids.Contains(l.RoomOccupationId))
                 .ToListAsync();
             var need = Need(booking);
+            var lastDate = DateOnly.FromDateTime(periods.Max(p => p.Start));
             var list = rooms.Select(room =>
             {
-                var mismatch = RoomCompatibility.Incompatibility(room, need);
-                var conflicts = occupations.Where(o => o.RoomId == room.Id &&
-                    periods.Any(p => ScheduleGenerator.Overlap(o.StartsAt, o.EndsAt, p.Start, p.End)))
+                var mismatch = RoomCompatibility.Incompatibility(room, need, lastDate);
+                int? ActualClass(RoomOccupation o)
+                {
+                    var loan = activeLoans.FirstOrDefault(l => l.RoomOccupationId == o.Id);
+                    return loan is null ? o.ClassGroupId : loan.BookingRequest.ClassGroupId;
+                }
+                bool Blocks(RoomOccupation o, (DateTime Start, DateTime End) p) =>
+                    ScheduleGenerator.Overlap(o.StartsAt, o.EndsAt, p.Start, p.End) &&
+                    (o.RoomId == room.Id ||
+                        (activeLoans.FirstOrDefault(l => l.RoomOccupationId == o.Id)?.BorrowerId ?? o.TeacherId) == booking.TeacherId ||
+                        (booking.ClassGroupId.HasValue && ActualClass(o) == booking.ClassGroupId));
+                var conflicts = occupations.Where(o =>
+                    periods.Any(p => Blocks(o, p)))
                     .OrderBy(o => o.StartsAt).Select(o => new
                     {
                         o.Id,
                         o.StartsAt,
                         o.EndsAt,
-                        o.ClassGroupId,
+                        ClassGroupId = ActualClass(o),
                         TeacherId = activeLoans.FirstOrDefault(l => l.RoomOccupationId == o.Id)?.BorrowerId ?? o.TeacherId
                     }).ToArray();
                 return new
@@ -258,15 +375,14 @@ public static partial class ApiEndpoints
                     Incompatibility = mismatch,
                     Available = conflicts.Length == 0,
                     Conflicts = conflicts,
-                    AvailableOccurrences = periods.Count(p => !occupations.Any(o => o.RoomId == room.Id &&
-                        ScheduleGenerator.Overlap(o.StartsAt, o.EndsAt, p.Start, p.End))),
+                    AvailableOccurrences = periods.Count(p => !occupations.Any(o => Blocks(o, p))),
                     TotalOccurrences = periods.Count,
                     Score = RoomCompatibility.Score(room, need)
                 };
             }).OrderByDescending(x => x.Compatible)
-                .ThenByDescending(x => x.Compatible ? x.Score : x.Seats >= booking.Students ? 1 : 0)
                 .ThenByDescending(x => x.Available)
                 .ThenByDescending(x => x.AvailableOccurrences)
+                .ThenByDescending(x => x.Compatible ? x.Score : x.Seats >= booking.Students ? 1 : 0)
                 .ToList();
             return Results.Ok(list);
         });
@@ -286,8 +402,7 @@ public static partial class ApiEndpoints
             var occ = await db.Occupations.AsNoTracking().Where(o => o.CancelledAtUtc == null
                 && o.StartsAt < to && o.EndsAt > from).ToListAsync();
             var occIds = occ.Select(o => o.Id).ToArray();
-            var loans = booking.CurricularCapabilityId is null ? new List<RoomLoan>() :
-                await db.Loans.AsNoTracking().Include(l => l.BookingRequest)
+            var loans = await db.Loans.AsNoTracking().Include(l => l.BookingRequest)
                     .Where(l => l.Status == LoanStatus.Aprovado && occIds.Contains(l.RoomOccupationId)).ToListAsync();
             var result = periods.Select(p =>
             {
@@ -343,6 +458,19 @@ public static partial class ApiEndpoints
                 ? (await AllRooms(db)).FirstOrDefault(r => r.Id == input.RoomId)
                 : await RoomQuery(db).FirstOrDefaultAsync(r => r.Id == input.RoomId);
             if (room is null) return Results.NotFound();
+            var bookingShift = await db.Shifts.Where(s => s.StartsAt == TimeOnly.FromDateTime(booking.StartsAt)
+                && s.EndsAt == TimeOnly.FromDateTime(booking.EndsAt)).Select(s => s.Id).FirstOrDefaultAsync();
+            if (bookingShift == 0) return Error("Turno da solicitação não encontrado");
+            var currentTurnError = await ValidateBookingTurn(db, new BookingCreate(booking.ClassGroupId,
+                booking.StartsAt, booking.EndsAt, booking.Students, booking.NeedsProjector,
+                booking.NeedsTeacherComputer, booking.NeedsStudentComputers, booking.MinTier,
+                booking.Software.Select(s => s.SoftwareId).ToList(), booking.Reason, booking.LessonPlanLink,
+                booking.Recurrence, booking.RepeatUntil, booking.MinRamGb, booking.NeedsDedicatedGpu,
+                booking.WeekdaysMask, booking.StudentsPerComputer, booking.RecurringEadWeekday,
+                booking.CurricularUnitId, booking.CurricularCapabilityId, booking.TeacherId,
+                booking.TurnExceptionConfirmed), bookingShift);
+            if (currentTurnError is not null) return currentTurnError;
+            string[]? technicalReasons = [];
             Dictionary<DateOnly, CalendarDateResult>? calendar = null;
             if (booking.CurricularCapabilityId is int capabilityId)
             {
@@ -351,24 +479,45 @@ public static partial class ApiEndpoints
                 if (shiftId == 0 || !await PedagogicalAssignmentValid(db, booking, shiftId))
                     return Results.Forbid();
                 var requirement = await RequirementQuery(db).FirstOrDefaultAsync(x => x.CurricularCapabilityId == capabilityId);
+                var unitResources = booking.CurricularUnitId is int unitId
+                    ? await UnitResourcesQuery(db, unitId).ToListAsync() : [];
                 var technical = EnvironmentCompatibility.Evaluate(requirement, room, booking.Students,
-                    DateOnly.FromDateTime(BookingPeriods.Expand(booking).Max(p => p.Start)));
+                    DateOnly.FromDateTime(BookingPeriods.Expand(booking).Max(p => p.Start)), unitResources: unitResources);
                 if (technical.Classification != "Compatible")
-                    return Results.Conflict(new { Error = "Compatibilidade técnica não comprovada",
-                        technical.Classification, technical.Findings });
+                {
+                    technicalReasons = BookingTechnicalException.Pedagogical(requirement, room, technical);
+                    if (technicalReasons is null)
+                        return Results.Conflict(new { Error = "Compatibilidade técnica não comprovada",
+                            technical.Classification, technical.Findings });
+                }
                 calendar = await CalendarForBooking(db, booking);
             }
             if (booking.CurricularCapabilityId is null)
             {
-                var mismatch = RoomCompatibility.Incompatibility(room, Need(booking));
-                if (mismatch is not null) return Error($"A sala não atende aos requisitos: {mismatch}");
+                var mismatch = RoomCompatibility.Incompatibility(room, Need(booking),
+                    DateOnly.FromDateTime(BookingPeriods.Expand(booking).Max(p => p.Start)));
+                if (mismatch is not null)
+                {
+                    technicalReasons = BookingTechnicalException.Common(room, Need(booking),
+                        DateOnly.FromDateTime(BookingPeriods.Expand(booking).Max(p => p.Start)));
+                    if (technicalReasons is null) return Error($"A sala não atende aos requisitos: {mismatch}");
+                }
             }
             else if (!room.Active) return Results.Conflict(new ApiError("Sala inativa"));
+            if (technicalReasons.Length > 0 && (input.AcceptedTechnicalReasons is null ||
+                !technicalReasons.SequenceEqual(input.AcceptedTechnicalReasons)))
+                return Results.Conflict(new { Error = "Este ambiente não atende a todos os requisitos",
+                    TechnicalReasons = technicalReasons });
             var free = new List<(DateTime Start, DateTime End)>();
             var unavailable = new List<object>();
             var replaced = new List<int>();
             foreach (var period in BookingPeriods.Expand(booking))
             {
+                if (period.Start.Date < DateTime.Today)
+                {
+                    unavailable.Add(new { period.Start, period.End, Reason = "Data passada" });
+                    continue;
+                }
                 if (calendar is not null &&
                     !calendar[DateOnly.FromDateTime(period.Start)].CountsAsPresential)
                 {
@@ -445,7 +594,7 @@ public static partial class ApiEndpoints
             AuditTrail.Add(db, "Booking", booking.Id.ToString(), "Confirmada", UserId(current),
                 new { Status = BookingStatus.Pendente, ApprovedRoomId = (int?)null },
                 new { booking.Status, booking.ApprovedRoomId, ReservedCount = free.Count,
-                    ReplacedOccupationIds = replaced.ToArray() });
+                    ReplacedOccupationIds = replaced.ToArray(), AcceptedTechnicalReasons = technicalReasons });
             AuditTrail.Notify(db, booking.TeacherId, UserId(current), "Reserva confirmada",
                 $"Sua reserva foi confirmada em {room.Name} para {free.Count} data(s).",
                 "Booking", booking.Id);
@@ -484,5 +633,20 @@ public static partial class ApiEndpoints
             await db.SaveChangesAsync();
             return Results.Ok(new { booking.Id, booking.Status });
         });
+    }
+
+    private static async Task<IResult?> ValidateBookingTurn(AppDbContext db, BookingCreate input, int shiftId)
+    {
+        if (input.ClassGroupId is not int classId)
+            return input.TurnExceptionConfirmed ? Error("Exceção de turno exige turma vinculada") : null;
+        var official = await db.Classes.Where(c => c.Id == classId).Select(c => c.ShiftId).FirstOrDefaultAsync();
+        if (official is null)
+            return input.TurnExceptionConfirmed ? Error("Regularize o turno oficial da turma antes da exceção") : null;
+        if (official == shiftId)
+            return input.TurnExceptionConfirmed ? Error("A reserva já usa o turno oficial da turma") : null;
+        if (!input.TurnExceptionConfirmed) return Error("Confirme explicitamente a exceção ao turno oficial da turma");
+        if (input.Recurrence != BookingRecurrence.Nenhuma || input.RepeatUntil is not null || input.WeekdaysMask != 0)
+            return Error("Exceção de turno permitida apenas para uma data, sem recorrência");
+        return null;
     }
 }

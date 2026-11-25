@@ -9,14 +9,18 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : Ident
     public DbSet<Room> Rooms => Set<Room>();
     public DbSet<RoomOperatingShift> RoomOperatingShifts => Set<RoomOperatingShift>();
     public DbSet<RoomResource> RoomResources => Set<RoomResource>();
+    public DbSet<ResourceCatalogItem> ResourceCatalog => Set<ResourceCatalogItem>();
     public DbSet<ComputerGroup> ComputerGroups => Set<ComputerGroup>();
     public DbSet<Software> SoftwareCatalog => Set<Software>();
     public DbSet<GroupSoftware> GroupSoftware => Set<GroupSoftware>();
     public DbSet<Semester> Semesters => Set<Semester>();
     public DbSet<SchoolShift> Shifts => Set<SchoolShift>();
     public DbSet<ClassGroup> Classes => Set<ClassGroup>();
+    public DbSet<ClassUnitOffering> ClassUnitOfferings => Set<ClassUnitOffering>();
     public DbSet<TeacherAvailability> Availabilities => Set<TeacherAvailability>();
     public DbSet<TeachingAssignment> Assignments => Set<TeachingAssignment>();
+    public DbSet<ScheduleUnitPlan> ScheduleUnitPlans => Set<ScheduleUnitPlan>();
+    public DbSet<ScheduleUnitMeeting> ScheduleUnitMeetings => Set<ScheduleUnitMeeting>();
     public DbSet<AssignmentSoftware> AssignmentSoftware => Set<AssignmentSoftware>();
     public DbSet<Schedule> Schedules => Set<Schedule>();
     public DbSet<WeeklyClass> WeeklyClasses => Set<WeeklyClass>();
@@ -35,6 +39,7 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : Ident
     public DbSet<CurricularCapability> CurricularCapabilities => Set<CurricularCapability>();
     public DbSet<CapabilityEnvironmentRequirement> CapabilityEnvironmentRequirements => Set<CapabilityEnvironmentRequirement>();
     public DbSet<CapabilityResourceRequirement> CapabilityResourceRequirements => Set<CapabilityResourceRequirement>();
+    public DbSet<CurricularUnitResourceRequirement> CurricularUnitResourceRequirements => Set<CurricularUnitResourceRequirement>();
     public DbSet<CapabilitySoftwareRequirement> CapabilitySoftwareRequirements => Set<CapabilitySoftwareRequirement>();
     public DbSet<TeacherCourseQualification> TeacherCourseQualifications => Set<TeacherCourseQualification>();
     public DbSet<TeacherUnitQualification> TeacherUnitQualifications => Set<TeacherUnitQualification>();
@@ -76,6 +81,15 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : Ident
         b.Entity<ComputerGroup>().ToTable(t => t.HasCheckConstraint("CK_ComputerGroups_OperationalQuantity",
             "[OperationalQuantity] IS NULL OR ([OperationalQuantity] >= 0 AND [OperationalQuantity] <= [Quantity])"));
         b.Entity<RoomResource>().Property(x => x.Name).IsRequired().HasMaxLength(120);
+        b.Entity<ResourceCatalogItem>().Property(x => x.Name).IsRequired().HasMaxLength(120);
+        b.Entity<ResourceCatalogItem>().Property(x => x.NormalizedName).IsRequired().HasMaxLength(120);
+        b.Entity<ResourceCatalogItem>().Property(x => x.Category).IsRequired().HasMaxLength(80);
+        b.Entity<ResourceCatalogItem>().Property(x => x.Description).HasMaxLength(500);
+        b.Entity<ResourceCatalogItem>().HasIndex(x => x.NormalizedName).IsUnique();
+        b.Entity<RoomResource>().HasOne(x => x.ResourceCatalogItem).WithMany()
+            .HasForeignKey(x => x.ResourceCatalogItemId).OnDelete(DeleteBehavior.Restrict);
+        b.Entity<CapabilityResourceRequirement>().HasOne(x => x.ResourceCatalogItem).WithMany()
+            .HasForeignKey(x => x.ResourceCatalogItemId).OnDelete(DeleteBehavior.Restrict);
         b.Entity<RoomResource>().Property(x => x.NormalizedName).IsRequired().HasMaxLength(120);
         b.Entity<RoomResource>().Property(x => x.Type).IsRequired().HasMaxLength(80);
         b.Entity<RoomResource>().Property(x => x.NormalizedType).IsRequired().HasMaxLength(80);
@@ -99,13 +113,52 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : Ident
             "[InstalledQuantity] >= 1 AND ([LicenseQuantity] IS NULL OR [LicenseQuantity] >= 1)"));
         b.Entity<SchoolShift>().Property(x => x.Name).HasMaxLength(60);
         b.Entity<ClassGroup>().Property(x => x.Name).HasMaxLength(100);
+        b.Entity<ClassGroup>().Property(x => x.Code).HasMaxLength(30);
+        b.Entity<ClassGroup>().Property(x => x.NormalizedCode).HasMaxLength(30);
+        b.Entity<ClassGroup>().HasOne(x => x.Shift).WithMany()
+            .HasForeignKey(x => x.ShiftId).OnDelete(DeleteBehavior.Restrict);
+        b.Entity<ClassGroup>().HasIndex(x => new { x.SemesterId, x.NormalizedCode }).IsUnique()
+            .HasFilter("[NormalizedCode] IS NOT NULL");
         b.Entity<ClassGroup>().HasOne(x => x.Course).WithMany()
             .HasForeignKey(x => x.CourseId).OnDelete(DeleteBehavior.Restrict);
+        b.Entity<ClassGroup>().HasOne(x => x.CourseModule).WithMany()
+            .HasForeignKey(x => x.CourseModuleId).OnDelete(DeleteBehavior.Restrict);
+        b.Entity<ClassUnitOffering>().HasKey(x => new { x.ClassGroupId, x.CurricularUnitId });
+        b.Entity<ClassUnitOffering>().HasOne(x => x.ClassGroup).WithMany(x => x.UnitOfferings)
+            .HasForeignKey(x => x.ClassGroupId).OnDelete(DeleteBehavior.Restrict);
+        b.Entity<ClassUnitOffering>().HasOne(x => x.CurricularUnit).WithMany()
+            .HasForeignKey(x => x.CurricularUnitId).OnDelete(DeleteBehavior.Restrict);
+        b.Entity<ClassUnitOffering>().HasOne(x => x.Teacher).WithMany()
+            .HasForeignKey(x => x.TeacherId).OnDelete(DeleteBehavior.Restrict);
+        b.Entity<ClassUnitOffering>().ToTable(t => t.HasCheckConstraint("CK_ClassUnitOfferings_Delivery",
+            "([DeliveryMode] = 1 AND [EadScheduleMode] IS NULL) OR ([DeliveryMode] = 2 AND [EadScheduleMode] IN (1, 2))"));
         b.Entity<ClassGroup>().ToTable(t => t.HasCheckConstraint("CK_Classes_EadPattern",
             "([EadWeekday] IS NULL AND [EadStartDate] IS NULL AND [EadEndDate] IS NULL) OR " +
             "([EadWeekday] IS NOT NULL AND [EadWeekday] BETWEEN 1 AND 5 AND [EadStartDate] IS NOT NULL AND " +
             "[EadEndDate] IS NOT NULL AND [EadStartDate] <= [EadEndDate])"));
         b.Entity<TeachingAssignment>().Property(x => x.DisciplineName).HasMaxLength(140);
+        b.Entity<SchoolShift>().Property(x => x.PedagogicalHours).HasColumnType("decimal(9,2)");
+        b.Entity<SchoolShift>().ToTable(t => t.HasCheckConstraint("CK_Shifts_PedagogicalHours",
+            "[PedagogicalHours] IS NULL OR ([PedagogicalHours] > 0 AND [PedagogicalHours] <= 24)"));
+        b.Entity<ScheduleUnitPlan>().HasOne(x => x.Schedule).WithMany(x => x.UnitPlans)
+            .HasForeignKey(x => x.ScheduleId).OnDelete(DeleteBehavior.Restrict);
+        b.Entity<ScheduleUnitPlan>().HasOne(x => x.Offering).WithMany()
+            .HasForeignKey(x => new { x.ClassGroupId, x.CurricularUnitId }).OnDelete(DeleteBehavior.Restrict);
+        b.Entity<ScheduleUnitPlan>().HasIndex(x => new { x.ScheduleId, x.ClassGroupId, x.CurricularUnitId }).IsUnique();
+        b.Entity<ScheduleUnitPlan>().Property(x => x.PlannedHours).HasColumnType("decimal(9,2)");
+        b.Entity<ScheduleUnitPlan>().Property(x => x.AllocatedHours).HasColumnType("decimal(9,2)");
+        b.Entity<ScheduleUnitPlan>().Property(x => x.PendingReason).HasMaxLength(1000);
+        b.Entity<ScheduleUnitMeeting>().HasOne(x => x.Plan).WithMany(x => x.Meetings)
+            .HasForeignKey(x => x.ScheduleUnitPlanId).OnDelete(DeleteBehavior.Restrict);
+        b.Entity<ScheduleUnitMeeting>().HasOne(x => x.Shift).WithMany()
+            .HasForeignKey(x => x.ShiftId).OnDelete(DeleteBehavior.Restrict);
+        b.Entity<ScheduleUnitMeeting>().HasOne(x => x.Room).WithMany()
+            .HasForeignKey(x => x.RoomId).OnDelete(DeleteBehavior.Restrict);
+        b.Entity<ScheduleUnitMeeting>().Property(x => x.PlannedHours).HasColumnType("decimal(9,2)");
+        b.Entity<ScheduleUnitMeeting>().HasIndex(x => new { x.Date, x.ShiftId, x.RoomId });
+        b.Entity<ScheduleUnitMeeting>().ToTable(t => t.HasCheckConstraint("CK_ScheduleUnitMeetings_Mode",
+            "([Date] IS NULL AND [ShiftId] IS NULL AND [RoomId] IS NULL) OR " +
+            "([Date] IS NOT NULL AND [ShiftId] IS NOT NULL)"));
         b.Entity<TeachingAssignment>().HasOne(x => x.CurricularUnit).WithMany()
             .HasForeignKey(x => x.CurricularUnitId).OnDelete(DeleteBehavior.Restrict);
         b.Entity<TeachingAssignment>().HasIndex(x => new
@@ -118,12 +171,17 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : Ident
         b.Entity<GroupSoftware>().HasKey(x => new { x.ComputerGroupId, x.SoftwareId });
         b.Entity<BookingRequest>().HasOne(x => x.CurricularUnit).WithMany()
             .HasForeignKey(x => x.CurricularUnitId).OnDelete(DeleteBehavior.Restrict);
+        b.Entity<BookingRequest>().Property(x => x.Revision).IsConcurrencyToken();
         b.Entity<BookingRequest>().HasOne(x => x.CurricularCapability).WithMany()
             .HasForeignKey(x => x.CurricularCapabilityId).OnDelete(DeleteBehavior.Restrict);
         b.Entity<AssignmentSoftware>().HasKey(x => new { x.TeachingAssignmentId, x.SoftwareId });
         b.Entity<BookingSoftware>().HasKey(x => new { x.BookingRequestId, x.SoftwareId });
         b.Entity<TeacherAvailability>().HasIndex(x => new { x.TeacherId, x.Weekday, x.ShiftId }).IsUnique();
         b.Entity<RoomOccupation>().HasIndex(x => new { x.RoomId, x.StartsAt, x.EndsAt });
+        b.Entity<RoomOccupation>().HasOne(x => x.ScheduleUnitMeeting).WithMany()
+            .HasForeignKey(x => x.ScheduleUnitMeetingId).OnDelete(DeleteBehavior.Restrict);
+        b.Entity<RoomOccupation>().HasIndex(x => x.ScheduleUnitMeetingId).IsUnique()
+            .HasFilter("[ScheduleUnitMeetingId] IS NOT NULL");
         b.Entity<RoomOccupation>().HasOne<PlanProposal>().WithMany().HasForeignKey(x => x.PlanProposalId)
             .OnDelete(DeleteBehavior.Restrict);
         b.Entity<RoomOccupation>().HasIndex(x => new { x.PlanProposalId, x.StartsAt }).IsUnique()
@@ -201,6 +259,13 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : Ident
         });
 
         b.Entity<CapabilityEnvironmentRequirement>().HasKey(x => x.CurricularCapabilityId);
+        b.Entity<CurricularUnitResourceRequirement>().HasKey(x => new { x.CurricularUnitId, x.ResourceCatalogItemId });
+        b.Entity<CurricularUnitResourceRequirement>().HasOne(x => x.CurricularUnit).WithMany(x => x.ResourceRequirements)
+            .HasForeignKey(x => x.CurricularUnitId).OnDelete(DeleteBehavior.Restrict);
+        b.Entity<CurricularUnitResourceRequirement>().HasOne(x => x.ResourceCatalogItem).WithMany()
+            .HasForeignKey(x => x.ResourceCatalogItemId).OnDelete(DeleteBehavior.Restrict);
+        b.Entity<CurricularUnitResourceRequirement>().ToTable(t => t.HasCheckConstraint(
+            "CK_CurricularUnitResourceRequirements_Quantity", "[Quantity] > 0 AND [Quantity] <= 100000"));
         b.Entity<CapabilityEnvironmentRequirement>().HasOne(x => x.CurricularCapability)
             .WithOne(x => x.EnvironmentRequirement).HasForeignKey<CapabilityEnvironmentRequirement>(x => x.CurricularCapabilityId)
             .OnDelete(DeleteBehavior.Restrict);

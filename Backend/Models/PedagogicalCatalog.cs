@@ -33,6 +33,16 @@ public sealed class CurricularUnit
     public string NormalizedName { get; set; } = "";
     public decimal? PlannedHours { get; set; }
     public List<CurricularCapability> Capabilities { get; set; } = new();
+    public List<CurricularUnitResourceRequirement> ResourceRequirements { get; set; } = new();
+}
+
+public sealed class CurricularUnitResourceRequirement
+{
+    public int CurricularUnitId { get; set; }
+    public CurricularUnit CurricularUnit { get; set; } = null!;
+    public int ResourceCatalogItemId { get; set; }
+    public ResourceCatalogItem ResourceCatalogItem { get; set; } = null!;
+    public int Quantity { get; set; } = 1;
 }
 
 public sealed class CurricularCapability
@@ -64,6 +74,8 @@ public sealed class CapabilityEnvironmentRequirement
 public sealed class CapabilityResourceRequirement
 {
     public int Id { get; set; }
+    public int? ResourceCatalogItemId { get; set; }
+    public ResourceCatalogItem? ResourceCatalogItem { get; set; }
     public int CurricularCapabilityId { get; set; }
     public CapabilityEnvironmentRequirement EnvironmentRequirement { get; set; } = null!;
     public string Name { get; set; } = "";

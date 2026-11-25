@@ -13,7 +13,7 @@ public static partial class ApiEndpoints
     private static void MapTeacherPedagogicalProfiles(IEndpointRouteBuilder app)
     {
         var teachers = app.MapGroup("/api/teachers/{teacherId}/pedagogical-profile")
-            .RequireAuthorization().WithTags("Perfil pedagógico dos professores");
+            .RequireAuthorization().WithTags("Perfil pedagógico dos instrutores");
 
         teachers.MapGet("", async (string teacherId, ClaimsPrincipal current,
             UserManager<AppUser> users, AppDbContext db) =>
@@ -58,13 +58,13 @@ public static partial class ApiEndpoints
             if (await FindTeacher(users, teacherId) is null) return Results.NotFound();
             if (!await db.Courses.AnyAsync(x => x.Id == courseId)) return Results.NotFound();
             if (await db.TeacherCourseQualifications.AnyAsync(x => x.TeacherId == teacherId && x.CourseId == courseId))
-                return CatalogConflict("Professor já habilitado para este curso");
+                return CatalogConflict("Instrutor já habilitado para este curso");
             db.TeacherCourseQualifications.Add(new() { TeacherId = teacherId, CourseId = courseId });
             AuditTrail.Add(db, "TeacherQualification", $"{teacherId}:course:{courseId}", "Habilitada", UserId(current),
                 null, new { TeacherId = teacherId, CourseId = courseId });
             try { await db.SaveChangesAsync(); }
             catch (DbUpdateException ex) when (IsUniqueViolation(ex))
-            { return CatalogConflict("Professor já habilitado para este curso"); }
+            { return CatalogConflict("Instrutor já habilitado para este curso"); }
             return Results.Created($"/api/teachers/{teacherId}/pedagogical-profile/courses/{courseId}",
                 new { CourseId = courseId });
         }).RequireAuthorization("Admin");
@@ -93,15 +93,15 @@ public static partial class ApiEndpoints
                 !await db.CurricularUnits.AnyAsync(x => x.Id == unitId && x.CourseModule.CourseId == courseId))
                 return Results.NotFound();
             if (!await db.TeacherCourseQualifications.AnyAsync(x => x.TeacherId == teacherId && x.CourseId == courseId))
-                return Error("Habilite o professor para o curso antes de vincular a UC");
+                return Error("Habilite o instrutor para o curso antes de vincular a UC");
             if (await db.TeacherUnitQualifications.AnyAsync(x => x.TeacherId == teacherId && x.CurricularUnitId == unitId))
-                return CatalogConflict("Professor já habilitado para esta UC");
+                return CatalogConflict("Instrutor já habilitado para esta UC");
             db.TeacherUnitQualifications.Add(new() { TeacherId = teacherId, CurricularUnitId = unitId });
             AuditTrail.Add(db, "TeacherQualification", $"{teacherId}:unit:{unitId}", "Habilitada", UserId(current),
                 null, new { TeacherId = teacherId, CurricularUnitId = unitId });
             try { await db.SaveChangesAsync(); }
             catch (DbUpdateException ex) when (IsUniqueViolation(ex))
-            { return CatalogConflict("Professor já habilitado para esta UC"); }
+            { return CatalogConflict("Instrutor já habilitado para esta UC"); }
             return Results.Created($"/api/teachers/{teacherId}/pedagogical-profile/courses/{courseId}/curricular-units/{unitId}",
                 new { CourseId = courseId, CurricularUnitId = unitId });
         }).RequireAuthorization("Admin");
@@ -112,6 +112,8 @@ public static partial class ApiEndpoints
             var item = await db.TeacherUnitQualifications.FirstOrDefaultAsync(x => x.TeacherId == teacherId &&
                 x.CurricularUnitId == unitId && x.CurricularUnit.CourseModule.CourseId == courseId);
             if (item is null) return Results.NotFound();
+            if (await db.ClassUnitOfferings.AnyAsync(x => x.TeacherId == teacherId && x.CurricularUnitId == unitId))
+                return CatalogConflict("Reatribua as ofertas desta UC antes de remover a habilitação do instrutor");
             db.TeacherUnitQualifications.Remove(item);
             AuditTrail.Add(db, "TeacherQualification", $"{teacherId}:unit:{unitId}", "Removida", UserId(current),
                 new { TeacherId = teacherId, CurricularUnitId = unitId }, null);
@@ -126,13 +128,13 @@ public static partial class ApiEndpoints
             if (!await db.CurricularCapabilities.AnyAsync(x => x.Id == capabilityId)) return Results.NotFound();
             if (await db.TeacherCapabilityQualifications.AnyAsync(x => x.TeacherId == teacherId &&
                 x.CurricularCapabilityId == capabilityId))
-                return CatalogConflict("Professor já vinculado a esta capacidade");
+                return CatalogConflict("Instrutor já vinculado a esta capacidade");
             db.TeacherCapabilityQualifications.Add(new() { TeacherId = teacherId, CurricularCapabilityId = capabilityId });
             AuditTrail.Add(db, "TeacherQualification", $"{teacherId}:capability:{capabilityId}", "Habilitada",
                 UserId(current), null, new { TeacherId = teacherId, CurricularCapabilityId = capabilityId });
             try { await db.SaveChangesAsync(); }
             catch (DbUpdateException ex) when (IsUniqueViolation(ex))
-            { return CatalogConflict("Professor já vinculado a esta capacidade"); }
+            { return CatalogConflict("Instrutor já vinculado a esta capacidade"); }
             return Results.Created($"/api/teachers/{teacherId}/pedagogical-profile/capabilities/{capabilityId}",
                 new { CurricularCapabilityId = capabilityId });
         }).RequireAuthorization("Admin");

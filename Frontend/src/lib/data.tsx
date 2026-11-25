@@ -50,11 +50,13 @@ const Ctx = createContext<{
   reload: () => Promise<void>;
   loading: boolean;
   error: string;
-}>({ data: blank, reload: async () => {}, loading: false, error: "" });
+  revision: number;
+}>({ data: blank, reload: async () => {}, loading: false, error: "", revision: 0 });
 export function DataProvider({ children }: { children: ReactNode }) {
   const [data, setData] = useState<Catalog>(blank);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [revision, setRevision] = useState(0);
   const reload = useCallback(async () => {
     try {
       const [
@@ -96,6 +98,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
     } catch (e) {
       setError(resultMessage(e));
     } finally {
+      setRevision((value) => value + 1);
       setLoading(false);
     }
   }, []);
@@ -103,7 +106,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
     void reload();
   }, [reload]);
   return (
-    <Ctx.Provider value={{ data, loading, reload, error }}>
+    <Ctx.Provider value={{ data, loading, reload, error, revision }}>
       {children}
     </Ctx.Provider>
   );

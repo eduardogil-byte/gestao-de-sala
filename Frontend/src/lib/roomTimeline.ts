@@ -5,7 +5,7 @@ export type TimelineView = "week" | "month" | "semester";
 
 export function weekStart(date: string) {
   const day = new Date(`${date}T12:00:00`).getDay();
-  return nextDate(date, -(day === 0 ? 6 : day - 1));
+  return nextDate(date, -day);
 }
 
 export function period(view: TimelineView, anchor: string, semester?: Semester) {

@@ -7,13 +7,21 @@ public record LoginRequest(string Email, string Password);
 public record SoftwareCreate(string Name);
 public record GroupSoftwareInput(int SoftwareId, int InstalledQuantity);
 public record ComputerGroupInput(string Description, int Quantity, int RamGb, HardwareTier Tier,
-    bool DedicatedGpu, List<GroupSoftwareInput> Software);
-public record RoomInput(string Name, string Location, RoomKind Kind, int Seats, int Desks,
+    bool DedicatedGpu, List<GroupSoftwareInput> Software, int? Id = null);
+public record RoomInput(string Name, string Location, RoomKind Kind, int Seats, int? Desks,
     bool HasProjector, bool HasTeacherComputer, bool HasInternet, bool Active,
-    List<ComputerGroupInput> ComputerGroups, string? Purpose = null);
+    List<ComputerGroupInput> ComputerGroups, string? Purpose = null, string? Code = null,
+    RoomInventoryInput? Inventory = null);
 public record ShiftInput(string Name, TimeOnly StartsAt, TimeOnly EndsAt);
+public record ShiftPedagogicalHoursInput(decimal Hours);
+public record ScheduleMeetingAdjustmentInput(int? MeetingId, DateOnly Date, int ShiftId, int? RoomId);
 public record SemesterCreate(string Name, DateOnly StartDate, DateOnly EndDate);
-public record ClassCreate(int SemesterId, string Name, int Students, int? CourseId = null);
+public record ClassCreate(int SemesterId, string Name, int Students, int? CourseId = null, string? Code = null,
+    int? ShiftId = null, int? CourseModuleId = null, List<ClassUnitOfferingInput>? UnitOfferings = null);
+public record ClassUnitOfferingInput(int CurricularUnitId, UnitDeliveryMode DeliveryMode,
+    EadScheduleMode? EadScheduleMode = null);
+public record ClassUnitTeacherInput(string TeacherId);
+public record ClassUpdate(string Name, string? Code, int? ShiftId = null);
 public record ClassCourseInput(int CourseId);
 public record AvailabilityInput(int Weekday, int ShiftId);
 public record AssignmentCreate(int ClassGroupId, string TeacherId, string? DisciplineName = null,
@@ -28,9 +36,11 @@ public record BookingCreate(int? ClassGroupId, DateTime StartsAt, DateTime EndsA
     BookingRecurrence Recurrence = BookingRecurrence.Nenhuma, DateOnly? RepeatUntil = null,
     int MinRamGb = 0, bool NeedsDedicatedGpu = false, int WeekdaysMask = 0,
     int StudentsPerComputer = 1, int? RecurringEadWeekday = null,
-    int? CurricularUnitId = null, int? CurricularCapabilityId = null);
+    int? CurricularUnitId = null, int? CurricularCapabilityId = null, string? TeacherId = null,
+    bool TurnExceptionConfirmed = false);
+public record BookingUpdate(BookingCreate Booking, string Version);
 public record ConfirmBooking(int RoomId, bool ConfirmPartial = false, bool ReplaceOwnClassBooking = false,
-    List<DateOnly>? ExpectedAvailableDates = null);
+    List<DateOnly>? ExpectedAvailableDates = null, List<string>? AcceptedTechnicalReasons = null);
 public record DayStatusChange(ClassDayStatus Status);
 public record MoveOccupation(int RoomId, bool NotifyTeachers = true);
 public record LoanOffer(List<int> RoomOccupationIds, string BorrowerId, string Reason);

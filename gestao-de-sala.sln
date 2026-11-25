@@ -1,0 +1,36 @@
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 17
+VisualStudioVersion = 17.5.2.0
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Backend", "Backend", "{1AE8ACA6-933B-BF2A-3671-3E2EAC007D16}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "SalaGest.Api", "Backend\SalaGest.Api.csproj", "{FF2E4C70-1E88-1763-2018-D2A0923A8F5D}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "SalaGest.Backend.Tests", "Backend\SalaGest.Backend.Tests\SalaGest.Backend.Tests.csproj", "{23E339FB-6868-74AA-7D1E-4DEC65F417D8}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Release|Any CPU = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{FF2E4C70-1E88-1763-2018-D2A0923A8F5D}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{FF2E4C70-1E88-1763-2018-D2A0923A8F5D}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{FF2E4C70-1E88-1763-2018-D2A0923A8F5D}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{FF2E4C70-1E88-1763-2018-D2A0923A8F5D}.Release|Any CPU.Build.0 = Release|Any CPU
+		{23E339FB-6868-74AA-7D1E-4DEC65F417D8}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{23E339FB-6868-74AA-7D1E-4DEC65F417D8}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{23E339FB-6868-74AA-7D1E-4DEC65F417D8}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{23E339FB-6868-74AA-7D1E-4DEC65F417D8}.Release|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(NestedProjects) = preSolution
+		{FF2E4C70-1E88-1763-2018-D2A0923A8F5D} = {1AE8ACA6-933B-BF2A-3671-3E2EAC007D16}
+		{23E339FB-6868-74AA-7D1E-4DEC65F417D8} = {1AE8ACA6-933B-BF2A-3671-3E2EAC007D16}
+	EndGlobalSection
+	GlobalSection(ExtensibilityGlobals) = postSolution
+		SolutionGuid = {F1781A52-9F93-4740-A856-CB40598D9C45}
+	EndGlobalSection
+EndGlobal

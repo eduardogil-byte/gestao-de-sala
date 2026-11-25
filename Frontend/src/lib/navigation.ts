@@ -20,11 +20,11 @@ export type NavigationItem = {
   page: Page;
   label: string;
   teacherLabel?: string;
-  icon: "dashboard" | "calendar" | "door" | "spreadsheet" | "catalog" | "people" | "booking" | "loan" | "bell" | "course";
+  icon: "dashboard" | "calendar" | "timeline" | "instructor" | "planning" | "schedule" | "door" | "opportunity" | "spreadsheet" | "import" | "export" | "catalog" | "people" | "booking" | "loan" | "bell" | "course";
   adminOnly?: boolean;
 };
 
-export type NavigationSection = { title: string; items: NavigationItem[] };
+export type NavigationSection = { title: string; items: NavigationItem[]; icon?: NavigationItem["icon"] };
 
 const sections: NavigationSection[] = [
   {
@@ -38,11 +38,10 @@ const sections: NavigationSection[] = [
     title: "Planejamento",
     items: [
       { page: "bookings", label: "Reservas", icon: "booking" },
-      { page: "agenda", label: "Agenda", icon: "calendar" },
-      { page: "room-timeline", label: "Cronograma de Ambientes", icon: "calendar" },
-      { page: "instructor-agenda", label: "Agenda dos Instrutores", teacherLabel: "Minha Agenda", icon: "calendar" },
-      { page: "semester-planning", label: "Planejamento Semestral", icon: "calendar" },
-      { page: "schedules", label: "Grades semanais", icon: "calendar", adminOnly: true },
+      { page: "room-timeline", label: "Cronograma de Ambientes", icon: "timeline" },
+      { page: "instructor-agenda", label: "Agenda dos Instrutores", teacherLabel: "Minha Agenda", icon: "instructor" },
+      { page: "semester-planning", label: "Planejamento Semestral", icon: "planning" },
+      { page: "schedules", label: "Grades semanais", icon: "schedule", adminOnly: true },
     ],
   },
   {
@@ -50,21 +49,21 @@ const sections: NavigationSection[] = [
     items: [
       { page: "pedagogical-catalog", label: "Catálogo Pedagógico", icon: "catalog" },
       { page: "academic", label: "Turmas e disciplinas", icon: "course", adminOnly: true },
-      { page: "teachers", label: "Professores", icon: "people" },
+      { page: "teachers", label: "Instrutores", icon: "people" },
     ],
   },
   {
     title: "Ambientes",
     items: [
       { page: "rooms", label: "Ambientes", icon: "door" },
-      { page: "opportunities", label: "Oportunidades de Ambientes", icon: "door", adminOnly: true },
+      { page: "opportunities", label: "Oportunidades de Ambientes", icon: "opportunity", adminOnly: true },
     ],
   },
   {
     title: "Gestão",
     items: [
-      { page: "imports", label: "Importar Dados", icon: "spreadsheet", adminOnly: true },
-      { page: "exports", label: "Exportar Dados", icon: "spreadsheet", adminOnly: true },
+      { page: "imports", label: "Importar Dados", icon: "import", adminOnly: true },
+      { page: "exports", label: "Exportar Dados", icon: "export", adminOnly: true },
     ],
   },
   {
@@ -74,10 +73,29 @@ const sections: NavigationSection[] = [
 ];
 
 export function getNavigationSections(isAdmin: boolean): NavigationSection[] {
+  if (isAdmin) {
+    const item = (page: Page, label?: string): NavigationItem => {
+      const existing = sections.flatMap((section) => section.items).find((entry) => entry.page === page)!;
+      return label ? { ...existing, label } : { ...existing };
+    };
+    return [
+      { title: "Visão geral", items: [item("dashboard")] },
+      { title: "Cadastros", icon: "catalog", items: [item("pedagogical-catalog", "Cursos"), item("rooms"), item("teachers"), item("academic", "Turmas e semestres")] },
+      { title: "Planejamento", icon: "planning", items: [item("semester-planning"), item("schedules")] },
+      { title: "Agenda", icon: "calendar", items: [item("room-timeline"), item("instructor-agenda"), item("bookings"), item("loans")] },
+      { title: "Gestão", icon: "opportunity", items: [item("opportunities"), item("imports"), item("exports")] },
+      { title: "Notificações", items: [item("notifications")] },
+    ];
+  }
   return sections
-    .map((section) => ({
-      ...section,
-      items: section.items.filter((item) => isAdmin || !item.adminOnly),
-    }))
+    .map((section) => {
+      const items = section.items.filter((item) => isAdmin || !item.adminOnly);
+      const agenda = items.findIndex((item) => item.page === "instructor-agenda");
+      const timeline = items.findIndex((item) => item.page === "room-timeline");
+      if (!isAdmin && agenda > timeline && timeline >= 0) {
+        [items[timeline], items[agenda]] = [items[agenda], items[timeline]];
+      }
+      return { ...section, items };
+    })
     .filter((section) => section.items.length > 0);
 }

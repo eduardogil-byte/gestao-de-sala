@@ -321,7 +321,7 @@ public static partial class ApiEndpoints
             assignment.ClassGroup.SemesterId != plan.SemesterId || assignment.CurricularUnitId is null)
             return "Atribuição pedagógica ativa do semestre não encontrada";
         if (!current.IsInRole("Admin") && assignment.TeacherId != UserId(current))
-            return "A atribuição não pertence ao professor autenticado";
+            return "A atribuição não pertence ao instrutor autenticado";
         if (input.StartDate < plan.Semester.StartDate || input.EndDate > plan.Semester.EndDate ||
             input.StartDate > input.EndDate || input.EndDate.DayNumber - input.StartDate.DayNumber > 370 ||
             !Enumerable.Range(0, input.EndDate.DayNumber - input.StartDate.DayNumber + 1)

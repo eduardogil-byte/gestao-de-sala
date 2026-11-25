@@ -3,13 +3,14 @@ import {
   CalendarPlus,
   Check,
   Eye,
+  Pencil,
   Plus,
   Trash2,
   AlertTriangle,
 } from "lucide-react";
 import { useData } from "../lib/data";
-import { post, read } from "../lib/api";
-import { dateTimeBR, dateBR, resultMessage } from "../lib/utils";
+import { ApiError, post, read } from "../lib/api";
+import { dateTimeBR, dateBR, resultMessage, roomKind } from "../lib/utils";
 import {
   Badge,
   Card,
@@ -18,6 +19,7 @@ import {
   Notice,
   Title,
   Checkbox,
+  useConfirmation,
 } from "../components/UI";
 import { BookingForm } from "../components/BookingForm";
 import { AuditHistory } from "../components/AuditHistory";
@@ -39,8 +41,10 @@ export function Bookings({
   focusId?: number | null;
 }) {
   const { data, reload } = useData();
+  const ask = useConfirmation();
   const [form, setForm] = useState(false),
     [filter, setFilter] = useState("Todos");
+  const [editing, setEditing] = useState<Booking | null>(null);
   const [booking, setBooking] = useState<Booking | null>(null),
     [suggestions, setSuggestions] = useState<Suggestion[]>([]);
   const [selectedRoom, setSelectedRoom] = useState(""),
@@ -52,12 +56,21 @@ export function Bookings({
   const [error, setError] = useState(""),
     [success, setSuccess] = useState("");
   const [historyBookingId, setHistoryBookingId] = useState<number | null>(null);
+  const [createdId, setCreatedId] = useState<number | null>(null);
   useEffect(() => {
     if (!focusId) return;
     setFilter("Todos");
     const timer = window.setTimeout(() => document.getElementById("booking-" + focusId)?.scrollIntoView({ block: "center" }), 0);
     return () => window.clearTimeout(timer);
   }, [focusId, data.bookings]);
+  useEffect(() => {
+    if (createdId === null) return;
+    const created = data.bookings.find((item) => item.id === createdId);
+    if (created) {
+      setCreatedId(null);
+      void choose(created);
+    }
+  }, [createdId, data.bookings]);
   const acceptedDates =
     availability?.days
       .filter(
@@ -74,7 +87,7 @@ export function Bookings({
       .map((d) => d.start.slice(0, 10)) ?? [];
   const teacher = (id: string | null) =>
     data.teachers.find((t) => t.id === id)?.displayName ||
-    "Professor não identificado";
+    "Instrutor não identificado";
   const turma = (id: number | null) =>
     data.classes.find((c) => c.id === id)?.name || "Turma não informada";
   function conflicts(list: ConflictInfo[]) {
@@ -123,25 +136,21 @@ export function Bookings({
   async function confirm() {
     if (!booking || !selectedRoom || !availability) return;
     const chosen = suggestions.find((s) => s.id === Number(selectedRoom));
-    if (!chosen?.compatible) {
-      setError(
-        "A sala não atende aos requisitos. Escolha uma sala compatível ou negocie um empréstimo.",
-      );
-      return;
-    }
+    if (!chosen) return;
     const missing = availability.total - acceptedDates.length;
     const explanation = missing
       ? `${missing} de ${availability.total} datas estão indisponíveis. Confirmar somente as ${acceptedDates.length} datas válidas?`
       : `Confirmar ${acceptedDates.length} data(s) no ${chosen.name}?`;
-    if (!window.confirm(explanation)) return;
+    if (!await ask({ title: "Confirmar reserva", message: explanation, confirmLabel: "Confirmar datas" })) return;
     setBusy(true);
     setError("");
     try {
-      const result = await post<{
+      const send = (acceptedTechnicalReasons?: string[]) => post<{
         reservedCount: number;
         unavailableDates: unknown[];
         replacedOccupationIds: number[];
       }>(`/bookings/${booking.id}/confirm`, {
+        acceptedTechnicalReasons,
         roomId: Number(selectedRoom),
         confirmPartial: missing > 0,
         replaceOwnClassBooking: replace,
@@ -149,6 +158,16 @@ export function Bookings({
           ? acceptedDates
           : undefined,
       });
+      let result;
+      try { result = await send(); }
+      catch (error) {
+        const reasons = error instanceof ApiError ? (error.details as { technicalReasons?: string[] })?.technicalReasons : undefined;
+        if (!reasons?.length) throw error;
+        const accepted = await ask({ title: "Este ambiente não atende a todos os requisitos",
+          message: `A sala selecionada apresenta as seguintes incompatibilidades:\n${reasons.map(r => `\u2022 ${r}`).join("\n")}\nVocê deseja confirmar a reserva mesmo assim?`, confirmLabel: "Confirmar mesmo assim" });
+        if (!accepted) return;
+        result = await send(reasons);
+      }
       await reload();
       await reloadAgenda();
       setBooking(null);
@@ -164,7 +183,7 @@ export function Bookings({
     }
   }
   async function discard(id: number) {
-    if (!window.confirm("Descartar esta solicitação ainda não confirmada?"))
+    if (!await ask({ title: "Descartar solicitação", message: "Esta solicitação ainda não confirmada será descartada. As reservas já confirmadas não serão alteradas.", confirmLabel: "Descartar solicitação", danger: true }))
       return;
     setBusy(true);
     try {
@@ -177,11 +196,12 @@ export function Bookings({
       setBusy(false);
     }
   }
-  const list = data.bookings.filter(
-    (b) => filter === "Todos" || b.status === filter,
-  );
+  const order: Record<string, number> = { Pendente: 0, Aprovada: 1, Rejeitada: 2 };
+  const list = data.bookings.filter((b) => filter === "Todos" || b.status === filter)
+    .sort((a, b) => (order[a.status] ?? 3) - (order[b.status] ?? 3) || a.startsAt.localeCompare(b.startsAt));
   const selected = suggestions.find((s) => s.id === Number(selectedRoom));
   const possiblyAvailable = acceptedDates.length;
+  const roomOptions = new Map(data.rooms.map((room) => [room.id, room]));
   return (
     <>
       <Title
@@ -214,13 +234,15 @@ export function Bookings({
           />
         </div>
       )}
-      <Card className="p-3 mb-5">
-        <div className="flex flex-wrap gap-2">
+      <Card className="p-4 mb-5">
+        <div className="flex flex-wrap gap-2" role="group" aria-label="Filtrar reservas por situação">
           {["Todos", "Pendente", "Aprovada", "Rejeitada"].map((s) => (
             <button
               key={s}
+              type="button"
+              aria-pressed={filter === s}
               onClick={() => setFilter(s)}
-              className={`text-sm font-semibold px-4 py-2 rounded-xl ${filter === s ? "bg-navy-900 text-white" : "text-slate-500 hover:bg-slate-100"}`}
+              className={filter === s ? "btn-primary" : "btn-secondary"}
             >
               {s === "Todos"
                 ? "Todas"
@@ -228,7 +250,7 @@ export function Bookings({
                   ? "Aguardando sala"
                   : s === "Aprovada"
                     ? "Confirmadas"
-                    : "Descartadas"}
+                    : "Rejeitadas / descartadas"}
             </button>
           ))}
         </div>
@@ -259,7 +281,7 @@ export function Bookings({
                     <div className="flex gap-2 flex-wrap mt-2">
                       <span className="pill bg-slate-100">
                         {b.recurrence === "Nenhuma"
-                          ? "Data única"
+                          ? b.repeatUntil ? `Datas específicas até ${dateBR(b.repeatUntil)}` : "Data única"
                           : `Semanal até ${dateBR(b.repeatUntil)}`}
                       </span>
                       {b.classGroupId && (
@@ -289,6 +311,7 @@ export function Bookings({
                 </p>
                 {b.status === "Pendente" && (
                   <div className="flex gap-2">
+                    {(user.roles.includes("Admin") || b.teacherId === user.id) && <button type="button" className="btn-secondary !py-2" onClick={() => { setEditing(b); setError(""); }}><Pencil size={15} aria-hidden="true" />Editar</button>}
                     <button
                       className="btn-secondary !py-2"
                       onClick={() => void choose(b)}
@@ -316,16 +339,21 @@ export function Bookings({
       {form && (
         <Modal title="Criar reserva" onClose={() => setForm(false)}>
           <BookingForm
-            onCreated={(qualificationWarning) => {
+            user={user}
+            onCreated={(id, qualificationWarning) => {
               setForm(false);
+              setCreatedId(id);
               setSuccess(
-                "Reserva criada! Agora selecione uma sala na lista e confirme a alocação." +
+                "Solicitação criada. Escolha uma sala e confira as datas antes de confirmar." +
                   (qualificationWarning ? " Habilitação para esta UC não cadastrada no perfil." : ""),
               );
             }}
           />
         </Modal>
       )}
+      {editing && <Modal title={`Editar solicitação #${editing.id}`} onClose={() => setEditing(null)}>
+        <BookingForm key={editing.id} user={user} editing={editing} onCreated={() => {}} onSaved={() => { setEditing(null); setBooking(null); setAvailability(null); setSuggestions([]); setSuccess("Solicitação atualizada. Consulte novamente a disponibilidade antes de escolher a sala."); }} />
+      </Modal>}
       {booking && (
         <Modal
           title={`Escolher sala · Reserva #${booking.id}`}
@@ -338,24 +366,24 @@ export function Bookings({
           <div className="space-y-4">
             {error && <Notice message={error} />}
             <p className="text-sm text-slate-600">
-              As salas são ordenadas pela adequação. Uma sala ocupada continua
-              visível, mas não pode ser confirmada nas datas em conflito.
+              As salas são ordenadas pela adequação. Compatibilidade técnica e disponibilidade nas datas são verificações distintas; a reserva só é confirmada após validação e persistência no backend.
             </p>
             {busy && (
               <p className="text-sm text-slate-500">
                 Consultando disponibilidade...
               </p>
             )}
-            <div className="grid sm:grid-cols-2 gap-3 max-h-[360px] overflow-y-auto">
+            <div className="grid sm:grid-cols-2 gap-3 max-h-[360px] overflow-y-auto" aria-label="Ambientes sugeridos para a reserva">
               {suggestions.map((s) => (
                 <button
                   key={s.id}
                   type="button"
+                  aria-pressed={selectedRoom === String(s.id)}
                   onClick={() => void selectRoom(String(s.id))}
-                  className={`rounded-xl border p-3 text-left space-y-1 ${selectedRoom === String(s.id) ? "border-sky-500 bg-sky-50" : "border-slate-200 hover:border-slate-400"}`}
+                  className={`rounded-xl border p-3 text-left space-y-1 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-400 ${selectedRoom === String(s.id) ? "border-sky-500 bg-sky-50" : "border-line hover:border-sky-500"}`}
                 >
                   <div className="flex justify-between gap-2">
-                    <b className="text-sm">{s.name}</b>
+                    <b className="text-sm">{roomOptions.get(s.id)?.code ? `${roomOptions.get(s.id)?.code} · ` : ""}{s.name}</b>
                     <span
                       className={`text-[11px] font-bold ${s.compatible ? "text-emerald-700" : "text-rose-700"}`}
                     >
@@ -363,9 +391,8 @@ export function Bookings({
                         s.compatible ? "Compatível" : "Incompatível"}
                     </span>
                   </div>
-                  <p className="text-xs text-slate-500">
-                    {s.location} · {s.seats} lugares · {s.computers}{" "}
-                    computadores
+                  <p className="text-xs text-muted-ink">
+                    {roomOptions.get(s.id) ? `${roomKind(roomOptions.get(s.id)!.kind)} · ` : ""}{s.location} · {s.seats} lugares · {s.computers} computadores informados
                   </p>
                   <p className="text-xs text-slate-600">
                     {s.purpose || "Finalidade não informada"}
@@ -374,18 +401,13 @@ export function Bookings({
                     className={`text-xs font-semibold ${s.available ? "text-emerald-700" : "text-amber-700"}`}
                   >
                     {s.available
-                      ? "Livre"
-                      : s.technicalClassification
-                        ? `${s.availableOccurrences}/${s.totalOccurrences} datas presenciais livres`
-                        : `Ocupada: ${s.availableOccurrences}/${s.totalOccurrences} datas livres`}
+                      ? "Sem conflito indicado nas datas consultadas"
+                      : `${s.availableOccurrences}/${s.totalOccurrences} datas potencialmente livres na prévia`}
                   </p>
                   {s.incompatibility && (
                     <p className="text-xs text-rose-700">{s.incompatibility}</p>
                   )}
-                  {s.technicalClassification && <p className="text-xs text-slate-600">
-                    Técnica: {s.technicalClassification === "Compatible" ? "compatível" :
-                      s.technicalClassification === "Partial" ? "parcial" : "incompatível"}. Disponibilidade em separado.
-                  </p>}
+                  {s.availabilityReason && <p className="text-xs text-amber-800">{s.availabilityReason}</p>}
                   {s.conflicts.length > 0 && (
                     <p className="text-xs text-slate-500 line-clamp-2">
                       {conflicts(s.conflicts)}
@@ -399,10 +421,9 @@ export function Bookings({
             )}
             {selected && (
               <div className="border-t pt-4 space-y-3">
-                <h3 className="text-sm font-bold">
-                  {selected.name}: avaliação detalhada
-                </h3>
+                <h3 className="text-sm font-bold">{selected.name}: requisitos técnicos e disponibilidade</h3>
                 <div className="text-xs text-slate-600">
+                  Inventário informado: {" "}
                   {selected.computerGroups
                     .map(
                       (g) =>
@@ -417,10 +438,10 @@ export function Bookings({
                   </p>)}
                 {availability && (
                   <div className="rounded-xl bg-slate-50 border p-3">
-                    <p className="text-sm font-bold mb-2">
-                      {availability.available} disponíveis /{" "}
-                      {availability.total} solicitadas
+                    <p className="text-sm font-bold mb-2" role="status">
+                      {availability.total} datas solicitadas, {availability.available} disponíveis e {availability.unavailable} indisponíveis.
                     </p>
+                    {replace && acceptedDates.length > availability.available && <p className="text-xs text-amber-800 mb-2">{acceptedDates.length - availability.available} data(s) adicional(is) elegível(is) para substituir uma alocação própria da mesma turma.</p>}
                     <div className="max-h-36 overflow-y-auto space-y-1">
                       {availability.days.map((d) => (
                         <p
@@ -446,7 +467,7 @@ export function Bookings({
                 {replace && (
                   <Notice
                     type="info"
-                    message="Ao confirmar, o backend substituirá apenas ocorrências próprias elegíveis; reservas de outros professores não serão apagadas."
+                    message="Ao confirmar, o backend substituirá apenas ocorrências próprias elegíveis; reservas de outros instrutores não serão apagadas."
                   />
                 )}
                 {availability && availability.unavailable > 0 && (
@@ -460,7 +481,6 @@ export function Bookings({
                   <button
                     disabled={
                       busy ||
-                      !selected.compatible ||
                       !availability ||
                       possiblyAvailable === 0
                     }
@@ -468,7 +488,7 @@ export function Bookings({
                     onClick={() => void confirm()}
                   >
                     <Check size={17} />
-                    Confirmar até {possiblyAvailable} data(s)
+                    Confirmar {possiblyAvailable} data(s) elegível(is)
                   </button>
                 </div>
               </div>

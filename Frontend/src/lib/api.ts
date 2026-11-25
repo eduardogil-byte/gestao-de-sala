@@ -10,6 +10,7 @@ export class ApiError extends Error {
   constructor(
     message: string,
     public status: number,
+    public details?: unknown,
   ) {
     super(message);
   }
@@ -59,6 +60,7 @@ export async function api<T>(path: string, init: RequestInit = {}): Promise<T> {
           ? "Sem permissão para executar esta ação."
           : `Erro na solicitação (${res.status}).`),
       res.status,
+      data,
     );
   }
   return data as T;

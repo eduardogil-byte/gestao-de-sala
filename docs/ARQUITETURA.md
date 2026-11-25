@@ -1,52 +1,25 @@
-# SalaGest — Mapa técnico curto para desenvolvimento
+# Arquitetura atual do SalaGest
 
-Documento de navegação, **não** substitui leitura do código. A árvore abaixo se baseia no ZIP inicial e nos relatórios do Codex; confirme o estado atual antes de alterar arquivos.
+```text
+React/TypeScript (Vite) → /api → ASP.NET Core Minimal APIs → serviços/regras → EF Core → SQL Server
+```
 
-## Stack
-- Backend: C#, ASP.NET Core 8 (Minimal APIs), Identity/JWT, EF Core 8, SQL Server.
-- Frontend: React, TypeScript, Vite e Tailwind CSS.
-- Persistência oficial: SQL Server. Banco pode estar indisponível no PC da escola; **não afirmar testes integrados sem executá-los**.
+O frontend está em `Frontend/src/`: `App.tsx` seleciona páginas e navegação por perfil; `pages/` implementa telas; `components/` contém elementos visuais compartilhados; `lib/api.ts` envia HTTP e trata sessão; `types.ts` descreve contratos usados pelo cliente. O Vite usa proxy `/api` apenas em desenvolvimento. Em implantação, um host/proxy deve encaminhar `/api` e fornecer fallback para rotas da SPA. O build não incorpora uma URL privada do banco.
 
-## Pontos de entrada e convenções existentes
-- `Backend/Models/`: entidades e enums do domínio.
-- `Backend/Contracts/`: DTOs de requisição/resposta.
-- `Backend/Data/AppDbContext.cs`: mapeamento EF Core, relacionamentos e índices.
-- `Backend/Endpoints/ApiEndpoints.cs`: registro de rotas/endpoints existentes; há endpoints divididos em arquivos próprios nas novas SGs.
-- `Backend/Services/`: regras e serviços de aplicação já existentes.
-- `Backend/Migrations/`: migrations geradas oficialmente pelo EF Core.
-- `Backend/SalaGest.Backend.Tests/`: testes do backend.
-- `Frontend/src/pages/`, `src/lib/`, `src/types.ts`, `src/App.tsx`: telas, funções utilitárias, contratos e navegação.
-- `Frontend/tests/`: testes do frontend.
+O backend é `Backend/SalaGest.Api.csproj` (.NET 8). `Program.cs` monta autenticação, CORS, serviços e endpoints. `Endpoints/` valida entradas, papéis e titularidade e coordena ações; `Contracts/` define DTOs; `Services/` concentra regras de reservas, compatibilidade, indicadores, importação/exportação e segurança; `Models/` define entidades; `Data/AppDbContext.cs` mapeia relações e índices; `Migrations/` contém alterações versionadas do esquema. Os endpoints usam `AppDbContext`, Identity e transações onde necessário. `Backend/SalaGest.Backend.Tests/` cobre comportamento de serviços e HTTP em ambiente de teste.
 
-## Domínio existente no ZIP inicial
-`AppUser`, `Room`, `ComputerGroup`, `Software`, `Semester`, `SchoolShift`, `ClassGroup`, `TeachingAssignment`, `Schedule`, `WeeklyClass`, `BookingRequest`, `RoomOccupation`, `RoomLoan`, `UserNotification` e `OccupationChange`.
+## Autenticação, autorização e dados
 
-## Mudanças recentes relatadas pelo Codex (revisar no repositório atual)
-- SG-07: `Course`, `Module`, `CurricularUnit` e endpoints do catálogo.
-- SG-08: `Capability`, `plannedHours` da UC, endpoints de capacidades e resumo.
-- SG-09: página `PedagogicalCatalog.tsx` e navegação do frontend.
-- SG-10: professor continua `AppUser` (papel Professor), com formação/habilidades e tabelas de habilitação para curso/UC/capacidade. Migration SG-10 pendente no último relatório.
-- SG-11: implementar **atribuição da aula** a professor+turma+UC+semestre, **reutilizando `TeachingAssignment` ou estrutura atual equivalente**. Não duplicar o cadastro de professor nem confundir habilitação com atribuição.
+Login local usa ASP.NET Core Identity e Bearer Token. O frontend guarda o token em `sessionStorage`; a API revalida conta, bloqueio, security stamp e papéis nas requisições protegidas. `Admin` cadastra professores e administra cadastros/indicadores; `Professor` acessa somente operações e dados autorizados, incluindo suas reservas e propostas. A autorização é feita no backend, não pelo menu. OIDC institucional é opcional, exige configuração real e não está homologado com provedor. A separação futura de Gestor/Coordenador depende da D-08.
 
-## Fluxo lógico esperado, sem antecipar funcionalidades
-1. Cadastro institucional: cursos, módulos, UCs, capacidades; turmas e docentes; ambientes e recursos.
-2. Habilitação professor↔curso/UC/capacidade (SG-10) é uma informação sobre aptidão, não uma aula agendada.
-3. Atribuição professor↔turma↔UC↔semestre (SG-11) informa quem ministrará a aula, sem criar reservas automaticamente.
-4. Calendário e inventário detalhado (SG-12/13), compatibilidade (SG-14), ligação pedagógica às reservas (SG-15).
-5. Planejamento visual, métricas, relatórios e publicação seguem em etapas futuras.
+O EF Core usa SQL Server no produto. A configuração vem de `appsettings`, variáveis de ambiente e User Secrets em Development. Não há migration automática no startup; DbSeed só pode ser opt-in em Development. Em `Homologation`, `Program.cs` exige manifesto externo válido, conexão explícita e verificações do destino antes de iniciar. Os scripts de `tools/homologacao/` separam instalador, manutenção e aplicação. O nome do banco isolado não é prova suficiente de segurança; consulte [Etapa 6B](tasks/SG-etapa6B.md).
 
-## Antes de tocar o banco
-1. Verificar `git status` e quais migrations já existem; nunca recriar `InitialCreate`.
-2. Mudança de modelo: gerar migration incremental **apenas pela CLI oficial** quando possível e revisar SQL/relacionamentos; não editar snapshot manualmente.
-3. Sem SQL Server: testar compilação e regras isoladas, registrar integração pendente.
-4. Não alterar reservas, empréstimos, autenticação ou horários além do escopo da Issue.
+## Tratamento de falhas e integrações
 
-## Testes por ambiente
-- Backend (pasta `Backend`): `dotnet restore`, `dotnet build`, `dotnet test`.
-- EF: `dotnet tool restore` apenas com autorização de restauração de ferramentas, `dotnet ef migrations has-pending-model-changes --context AppDbContext`.
-- Frontend (pasta `Frontend`): `npm ci`, `npm run build`, `npm test` conforme scripts presentes.
-- Revisão: `git diff --check`, `git status --short` e leitura cuidadosa de cada mudança.
-- Integração HTTP e SQL Server **dependem do ambiente**: registrar explicitamente pendência quando indisponível.
+A API retorna respostas HTTP de validação/conflito e Problem Details genérico para exceções inesperadas fora de Development. `GET /health/live` indica processo e `GET /health/ready` verifica conectividade com o banco. O frontend apresenta estados de carregamento, vazio e erro conforme a tela; a resposta da API é a fonte para permissão, compatibilidade e conflitos. Operações relevantes registram auditoria e podem gerar notificações internas, mas a cobertura integral de auditoria ainda exige verificação.
 
-## Regra de ouro
-Sempre leia `REGRAS_NEGOCIO.md`, `DECISOES.md` e a Issue específica antes de mudar regras ou relacionamentos. Em caso de divergência, **não invente uma decisão institucional**: descreva o conflito e implemente somente o trecho que não depende dele.
+Integrações encontradas: arquivos CSV/XLSX para importação institucional, XLSX para exportação gerencial, OIDC opcional, SQL Server e scripts operacionais de backup/restore. Não há prova de integração automática com sistema acadêmico externo nem de SSO institucional ativo. A interface não deve tratar números do protótipo como dados reais.
+
+## Estado de validação
+
+Na Etapa 11 passaram 83 testes frontend e 200 backend, além de TypeScript/build. Testes usam fixtures sintéticas ou SQLite em memória; **o caminho completo frontend → API → SQL Server → frontend ainda não foi ensaiado**. A [matriz de pendências](deployment/pendencias-etapa12.md) distingue lacunas funcionais, decisões institucionais e validações pendentes. O [guia da Etapa 13](deployment/etapa13.md) organiza a implantação futura.

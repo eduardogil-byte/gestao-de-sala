@@ -1,5 +1,5 @@
 import { useRef, useState } from "react";
-import { Card, Checkbox, Field, Notice, Title } from "../components/UI";
+import { Card, Checkbox, Field, MetricCard, Notice, SectionHeading, Title } from "../components/UI";
 import { downloadFile, upload } from "../lib/api";
 import { useData } from "../lib/data";
 import { resultMessage } from "../lib/utils";
@@ -60,9 +60,9 @@ function errorsCsv(rows: Row[]) {
   )].join("\r\n");
 }
 
-export function InstitutionalImport() {
+export function InstitutionalImport({ initialKind = "Ambientes" }: { initialKind?: Kind } = {}) {
   const { reload } = useData();
-  const [kind, setKind] = useState<Kind>("Ambientes");
+  const [kind, setKind] = useState<Kind>(initialKind);
   const [file, setFile] = useState<File | null>(null);
   const [preview, setPreview] = useState<Preview | null>(null);
   const [report, setReport] = useState<Report | null>(null);
@@ -127,10 +127,11 @@ export function InstitutionalImport() {
   return (
     <div className="space-y-6">
       <Title title="Importar Dados" subtitle="Analise o arquivo antes de confirmar. A prévia não altera os cadastros." />
-      <Card className="space-y-5">
+      <Card className="p-5 space-y-5">
+        <SectionHeading title="Arquivo e tipo de cadastro" subtitle="Baixe o modelo correspondente e analise o conteúdo antes de confirmar qualquer alteração." />
         <div className="grid gap-4 md:grid-cols-2">
           <Field label="Tipo de cadastro">
-            <select className="input" value={kind} disabled={busy} onChange={(event) => {
+            <select className="field" value={kind} disabled={busy} onChange={(event) => {
               setKind(event.target.value as Kind); setFile(null);
               if (fileInput.current) fileInput.current.value = "";
               reset();
@@ -140,7 +141,7 @@ export function InstitutionalImport() {
             </select>
           </Field>
           <Field label="Arquivo CSV ou Excel (.xlsx). Limites padrão: 2 MB e 1.000 registros">
-            <input ref={fileInput} className="input" type="file" accept=".csv,.xlsx" disabled={busy}
+            <input ref={fileInput} className="field" type="file" accept=".csv,.xlsx" disabled={busy}
               onChange={(event) => { setFile(event.target.files?.[0] ?? null); reset(); }} />
           </Field>
         </div>
@@ -163,21 +164,16 @@ export function InstitutionalImport() {
         {error && <Notice type="error" message={error} />}
       </Card>
 
-      {preview && <Card className="space-y-5">
-        <div>
-          <h2 className="text-lg font-semibold text-slate-800">Prévia da importação</h2>
-          <p className="text-sm text-slate-500">{preview.fileName} · {preview.total} linhas analisadas</p>
-        </div>
-        <div className="grid grid-cols-2 gap-3 md:grid-cols-5 text-sm">
+      {preview && <Card className="p-5 space-y-5">
+        <SectionHeading title="Prévia da importação" subtitle={`${preview.fileName} · ${preview.total} linhas analisadas`} />
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-5">
           {[["Novos", preview.newCount], ["Atualizações", preview.updateCount],
             ["Sem alterações", preview.unchangedCount], ["Inválidos", preview.invalidCount],
             ["Duplicados", preview.duplicateCount]].map(([label, count]) =>
-            <div key={label} className="rounded-lg bg-slate-50 border border-slate-200 p-3">
-              <p className="text-slate-500">{label}</p><p className="text-xl font-semibold">{count}</p>
-            </div>)}
+            <MetricCard key={label} label={String(label)} value={count} tone={label === "Inválidos" || label === "Duplicados" ? "rose" : label === "Novos" ? "emerald" : "slate"} />)}
         </div>
         {preview.total === 0 && <p className="text-sm text-slate-600">O arquivo não possui registros para analisar.</p>}
-        <div className="max-h-[460px] overflow-auto border border-slate-200 rounded-lg">
+        <div className="data-table-wrap max-h-[460px] overflow-auto">
           <table className="w-full text-sm text-left">
             <thead className="bg-slate-50 sticky top-0"><tr>
               <th className="p-3">Linha</th><th className="p-3">Registro</th><th className="p-3">Situação</th><th className="p-3">Alterações ou problemas</th>
@@ -202,11 +198,20 @@ export function InstitutionalImport() {
           onClick={() => void confirm()}>Confirmar importação</button>
       </Card>}
 
-      {report && <Card className="space-y-3">
-        <h2 className="text-lg font-semibold text-slate-800">Importação concluída</h2>
-        <p className="text-sm text-slate-600">{report.kind}: {report.total} analisados · {report.created} criados · {report.updated} atualizados · {report.unchanged} sem alterações · {report.skipped} ignorados.</p>
+      {report && <Card className="p-5 space-y-3">
+        <SectionHeading title="Importação concluída" subtitle="Confira o resumo e baixe os erros quando a operação tiver sido parcial." />
+        <p className="muted">{report.kind}: {report.total} registros analisados.</p>
+        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+          <MetricCard label="Criados" value={report.created} tone="emerald" />
+          <MetricCard label="Atualizados" value={report.updated} tone="blue" />
+          <MetricCard label="Sem alterações" value={report.unchanged} tone="slate" />
+          <MetricCard label="Ignorados" value={report.skipped} tone={report.skipped ? "rose" : "slate"} />
+        </div>
         {report.skipped > 0 && <>
           <Notice type="error" message="A importação foi parcial. Consulte as linhas ignoradas no relatório de erros." />
+          {report.errors.length > 0 && <ul className="max-h-44 overflow-y-auto space-y-1 text-sm text-rose-200" aria-label="Erros de validação">
+            {report.errors.map((row) => <li key={row.line}>Linha {row.line}: {row.errors.join("; ")}</li>)}
+          </ul>}
           <button className="btn-secondary" type="button" onClick={() => downloadErrors(report.errors)}>Baixar erros CSV</button>
         </>}
       </Card>}

@@ -6,13 +6,14 @@ namespace SalaGest.Api.Services;
 public static class EnvironmentCompatibility
 {
     public static EnvironmentCompatibilityResponse Evaluate(CapabilityEnvironmentRequirement? requirement,
-        Room room, int? students, DateOnly today, bool oneComputerPerStudent = false)
+        Room room, int? students, DateOnly today, bool oneComputerPerStudent = false,
+        IReadOnlyList<CurricularUnitResourceRequirement>? unitResources = null)
     {
         var findings = new List<RequirementFinding>();
-        if (requirement is null || (requirement.RoomKind is null && !requirement.RequiresProjector &&
-            requirement.RequiredComputers is null && requirement.Resources.Count == 0 && requirement.Software.Count == 0))
+        if ((unitResources is null || unitResources.Count == 0) && (requirement is null || (requirement.RoomKind is null && !requirement.RequiresProjector &&
+            requirement.RequiredComputers is null && requirement.Resources.Count == 0 && requirement.Software.Count == 0)))
             findings.Add(new("requirements", "Unknown", "Requisitos técnicos não cadastrados"));
-        else
+        if (requirement is not null)
         {
             if (requirement.RoomKind is RoomKind kind)
                 findings.Add(new("roomKind", room.Kind == kind ? "Met" : "UnmetCritical",
@@ -33,27 +34,41 @@ public static class EnvironmentCompatibility
             }
             foreach (var required in requirement.Resources)
             {
-                var resource = room.Resources.FirstOrDefault(r => r.NormalizedName == required.NormalizedName &&
-                    r.NormalizedType == required.NormalizedType);
-                var available = resource?.OperationalQuantity;
-                var total = resource?.Quantity ?? 0;
-                var status = resource is null || total < required.Quantity || available < required.Quantity
-                    ? required.Critical ? "UnmetCritical" : "Partial"
-                    : available is null ? "Unknown" : "Met";
-                var detail = resource is null ? $"{required.Name}: não cadastrado; necessários {required.Quantity}" :
-                    available is null ? $"{required.Name}: {total} cadastrados, quantidade operacional desconhecida; necessários {required.Quantity}" :
-                    $"{required.Name}: {available} operacionais; necessários {required.Quantity}";
-                findings.Add(new($"resource:{required.Type}:{required.Name}", status, detail));
+                AddResourceFinding(findings, room, required.ResourceCatalogItemId,
+                    required.NormalizedName, required.NormalizedType, required.Name, required.Type,
+                    required.Quantity, required.Critical);
             }
             EvaluateComputers(requirement, room, today, findings,
                 oneComputerPerStudent ? students : null);
         }
+        foreach (var required in unitResources ?? [])
+            AddResourceFinding(findings, room, required.ResourceCatalogItemId,
+                required.ResourceCatalogItem.NormalizedName,
+                string.Join(' ', required.ResourceCatalogItem.Category.Trim().Split(' ', StringSplitOptions.RemoveEmptyEntries)).ToUpperInvariant(),
+                required.ResourceCatalogItem.Name, required.ResourceCatalogItem.Category,
+                required.Quantity, true);
         if (students is int count)
             findings.Add(new("seats", room.Seats >= count ? "Met" : "UnmetCritical",
                 $"Lugares: {room.Seats}; alunos: {count}"));
         var classification = findings.Any(x => x.Status == "UnmetCritical") ? "Incompatible" :
             findings.All(x => x.Status == "Met") ? "Compatible" : "Partial";
         return new(room.Id, room.Name, classification, findings);
+    }
+
+    private static void AddResourceFinding(List<RequirementFinding> findings, Room room, int? catalogId,
+        string normalizedName, string normalizedType, string name, string type, int quantity, bool critical)
+    {
+        var resource = room.Resources.FirstOrDefault(r => catalogId is int id && r.ResourceCatalogItemId == id)
+            ?? room.Resources.FirstOrDefault(r => (catalogId is null || r.ResourceCatalogItemId is null) &&
+                r.NormalizedName == normalizedName && r.NormalizedType == normalizedType);
+        var available = resource?.OperationalQuantity;
+        var total = resource?.Quantity ?? 0;
+        var status = resource is null || total < quantity || available < quantity
+            ? critical ? "UnmetCritical" : "Partial" : available is null ? "Unknown" : "Met";
+        var detail = resource is null ? $"{name}: não cadastrado; necessários {quantity}" :
+            available is null ? $"{name}: {total} cadastrados, quantidade disponível desconhecida; necessários {quantity}" :
+            $"{name}: {available} disponíveis; necessários {quantity}";
+        findings.Add(new($"resource:{type}:{name}", status, detail));
     }
 
     private static void EvaluateComputers(CapabilityEnvironmentRequirement requirement, Room room,

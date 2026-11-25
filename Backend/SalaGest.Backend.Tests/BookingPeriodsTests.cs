@@ -7,6 +7,22 @@ namespace SalaGest.Backend.Tests;
 public class BookingPeriodsTests
 {
     [Fact]
+    public void SpecificDates_AreLimitedToOneWeek_WithoutRecurrence()
+    {
+        var booking = new BookingRequest { StartsAt = new(2027, 3, 3, 8, 0, 0),
+            EndsAt = new(2027, 3, 3, 12, 0, 0), Recurrence = BookingRecurrence.Nenhuma,
+            RepeatUntil = new(2027, 3, 5), WeekdaysMask = (1 << 3) | (1 << 5) };
+        Assert.Null(BookingPeriods.ValidationError(booking.StartsAt, booking.EndsAt,
+            booking.Recurrence, booking.RepeatUntil, booking.WeekdaysMask));
+        Assert.Equal(new[] { 3, 5 }, BookingPeriods.Expand(booking).Select(p => p.Start.Day));
+        Assert.NotNull(BookingPeriods.ValidationError(booking.StartsAt, booking.EndsAt,
+            booking.Recurrence, new(2027, 3, 12), booking.WeekdaysMask));
+        Assert.NotNull(BookingPeriods.ValidationError(booking.StartsAt, booking.EndsAt,
+            booking.Recurrence, booking.RepeatUntil, 1 << 5));
+        Assert.NotNull(BookingPeriods.ValidationError(booking.StartsAt, booking.EndsAt,
+            booking.Recurrence, booking.RepeatUntil, booking.WeekdaysMask | 1));
+    }
+    [Fact]
     public void Weekly_MultipleDays_Respects_ChosenWeekdays_And_FinalDate()
     {
         var booking = new BookingRequest

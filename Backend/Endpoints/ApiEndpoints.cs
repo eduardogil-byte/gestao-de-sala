@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Data.SqlClient;
 using System.Data.Common;
+using System.Data;
 using SalaGest.Api.Contracts;
 using SalaGest.Api.Data;
 using SalaGest.Api.Models;
@@ -18,8 +19,11 @@ public static partial class ApiEndpoints
         MapPasswords(app);
         MapCatalog(app);
         MapEnvironmentInventory(app);
+        MapResourceCatalog(app);
         MapEnvironmentCompatibility(app);
         MapPedagogicalCatalog(app);
+        MapCurricularUnitResources(app);
+        MapClassUnitOfferings(app);
         MapCurricularWorkload(app);
         MapTeacherPedagogicalProfiles(app);
         MapAssignments(app);
@@ -71,20 +75,11 @@ public static partial class ApiEndpoints
         r.HasTeacherComputer,
         r.HasInternet,
         r.Active,
-        ComputerGroups = r.ComputerGroups.Select(g => new
-        {
-            g.Id,
-            g.Description,
-            g.Quantity,
-            g.RamGb,
-            g.Tier,
-            g.DedicatedGpu,
-            Software = g.Software.Select(s => new { s.SoftwareId, Name = s.Software.Name, s.InstalledQuantity })
-        })
+        ComputerGroups = r.ComputerGroups.Select(GroupView)
     };
 
     private static async Task<List<Room>> AllRooms(AppDbContext db)
-        => await db.Rooms.AsNoTracking().Include(r => r.ComputerGroups)
+        => await db.Rooms.AsNoTracking().Include(r => r.Resources).Include(r => r.ComputerGroups)
             .ThenInclude(g => g.Software).ThenInclude(s => s.Software).ToListAsync();
 
     private static void MapAccounts(IEndpointRouteBuilder app)
@@ -108,7 +103,7 @@ public static partial class ApiEndpoints
                 }
                 var roleResult = await manager.AddToRoleAsync(user, "Professor");
                 if (!roleResult.Succeeded)
-                    return Results.Problem("Não foi possível concluir o cadastro do professor.");
+                    return Results.Problem("Não foi possível concluir o cadastro do instrutor.");
                 await transaction.CommitAsync();
                 return Results.Created("/api/me", new { user.Id, user.DisplayName, user.Email, Role = "Professor" });
             }
@@ -153,7 +148,7 @@ public static partial class ApiEndpoints
                 u.DisplayName,
                 Email = isAdmin ? u.Email : null
             }));
-        }).RequireAuthorization().WithTags("Professores");
+        }).RequireAuthorization().WithTags("Instrutores");
     }
 
     private static void MapCatalog(IEndpointRouteBuilder app)
@@ -179,9 +174,28 @@ public static partial class ApiEndpoints
             var item = await db.Shifts.FindAsync(id);
             if (item is null) return Results.NotFound();
             if (await db.WeeklyClasses.AnyAsync(w => w.ShiftId == id &&
-                w.Schedule.Status == ScheduleStatus.Publicada))
+                w.Schedule.Status == ScheduleStatus.Publicada) ||
+                await db.ScheduleUnitMeetings.AnyAsync(m => m.ShiftId == id &&
+                    m.Plan.Schedule.Status == ScheduleStatus.Publicada))
                 return Results.Conflict(new ApiError("Não altere turnos utilizados por uma grade publicada"));
             item.Name = input.Name.Trim(); item.StartsAt = input.StartsAt; item.EndsAt = input.EndsAt;
+            await db.SaveChangesAsync();
+            return Results.NoContent();
+        }).RequireAuthorization("Admin");
+        api.MapPut("/shifts/{id:int}/pedagogical-hours", async (int id,
+            ShiftPedagogicalHoursInput input, AppDbContext db, ClaimsPrincipal current) =>
+        {
+            if (!PedagogicalCatalogRules.ValidHoursPerShift(input.Hours))
+                return Error("Carga pedagógica por turno deve ser positiva e ter até duas casas decimais");
+            var shift = await db.Shifts.FindAsync(id);
+            if (shift is null) return Results.NotFound();
+            if (await db.ScheduleUnitMeetings.AnyAsync(x => x.ShiftId == id &&
+                x.Plan.Schedule.Status == ScheduleStatus.Publicada))
+                return CatalogConflict("Turno utilizado por uma grade publicada não pode mudar de carga pedagógica");
+            var previous = shift.PedagogicalHours;
+            shift.PedagogicalHours = input.Hours;
+            AuditTrail.Add(db, "SchoolShift", id.ToString(), "Carga pedagógica alterada", UserId(current),
+                new { PedagogicalHours = previous }, new { shift.PedagogicalHours });
             await db.SaveChangesAsync();
             return Results.NoContent();
         }).RequireAuthorization("Admin");
@@ -209,12 +223,21 @@ public static partial class ApiEndpoints
         {
             var validation = await ValidateRoom(db, input);
             if (validation is not null) return Error(validation);
+            var normalizedCode = string.IsNullOrWhiteSpace(input.Code) ? null : input.Code.Trim().ToUpperInvariant();
+            if (!string.IsNullOrEmpty(normalizedCode) && await db.Rooms.AnyAsync(r => r.NormalizedCode == normalizedCode))
+                return Results.Conflict(new ApiError("Já existe um ambiente com este código."));
             var room = CreateRoom(input);
+            if (input.ComputerGroups.Any(g => g.Id.HasValue)) return Error("Grupos novos não devem informar IDs existentes.");
+            if (input.Inventory is not null && await ValidateInventory(db, input.Inventory, room) is string inventoryError)
+                return Error(inventoryError);
             await using var createTx = await db.Database.BeginTransactionAsync();
             db.Rooms.Add(room);
+            if (input.Inventory is not null) ApplyInventory(db, room, input.Inventory, UserId(current));
+            SyncLegacyResourceFlags(room);
             await db.SaveChangesAsync();
+            if (input.Inventory is not null) AuditNewInventory(db, room, UserId(current));
             AuditTrail.Add(db, "Room", room.Id.ToString(), "Criado", UserId(current), null,
-                new { room.Name, room.Location, room.Kind, room.Seats, room.Desks,
+                new { room.Code, room.Name, room.Location, room.Kind, room.Seats, room.Desks,
                     room.HasProjector, room.HasTeacherComputer, room.HasInternet, room.Active,
                     ComputerGroups = room.ComputerGroups.Select(g => new { g.Quantity, g.RamGb, g.Tier,
                         Software = g.Software.Select(s => new { s.SoftwareId, s.InstalledQuantity }).ToArray() }).ToArray() });
@@ -227,23 +250,44 @@ public static partial class ApiEndpoints
         {
             var validation = await ValidateRoom(db, input);
             if (validation is not null) return Error(validation);
-            var existing = await db.Rooms.Include(r => r.ComputerGroups)
+            var existing = await db.Rooms.Include(r => r.Resources).Include(r => r.ComputerGroups)
                 .ThenInclude(g => g.Software).FirstOrDefaultAsync(r => r.Id == id);
             if (existing is null) return Results.NotFound();
-            var before = new { existing.Name, existing.Location, existing.Purpose, existing.Kind,
+            if (input.Inventory is not null && await ValidateInventory(db, input.Inventory, existing) is string inventoryError)
+                return Error(inventoryError);
+            if (input.ComputerGroups.Any(g => g.Id.HasValue && !existing.ComputerGroups.Any(x => x.Id == g.Id)))
+                return Error("O grupo de computadores não pertence ao ambiente.");
+            if (input.ComputerGroups.Any(g => !g.Id.HasValue && existing.ComputerGroups.Any(x =>
+                string.Equals(x.Description.Trim(), g.Description.Trim(), StringComparison.OrdinalIgnoreCase))))
+                return Error("Para editar um grupo existente, informe seu ID ou utilize o inventário técnico.");
+            if (input.ComputerGroups.Any(g => g.Id.HasValue && existing.ComputerGroups.Any(x => x.Id == g.Id &&
+                (x.OperationalQuantity > g.Quantity || x.Software.Any(s => s.InstalledQuantity > g.Quantity)))))
+                return Error("A quantidade do grupo não pode ficar abaixo dos computadores operacionais ou instalações preservadas.");
+            await using var updateTx = await db.Database.BeginTransactionAsync();
+            var normalizedCode = string.IsNullOrWhiteSpace(input.Code) ? null : input.Code.Trim().ToUpperInvariant();
+            if (!string.IsNullOrEmpty(normalizedCode) && await db.Rooms.AnyAsync(r => r.Id != id && r.NormalizedCode == normalizedCode))
+                return Results.Conflict(new ApiError("Já existe um ambiente com este código."));
+            var before = new { existing.Code, existing.Name, existing.Location, existing.Purpose, existing.Kind,
                 existing.Seats, existing.Desks, existing.HasProjector, existing.HasTeacherComputer,
                 existing.HasInternet, existing.Active,
                 ComputerGroups = existing.ComputerGroups.Select(g => new { g.Quantity, g.RamGb, g.Tier,
                     Software = g.Software.Select(s => new { s.SoftwareId, s.InstalledQuantity }).ToArray() }).ToArray() };
+            existing.Code = string.IsNullOrWhiteSpace(input.Code) ? null : input.Code.Trim();
+            existing.NormalizedCode = normalizedCode;
             existing.Name = input.Name.Trim(); existing.Location = input.Location.Trim();
             existing.Purpose = input.Purpose?.Trim() ?? "";
-            existing.Kind = input.Kind; existing.Seats = input.Seats; existing.Desks = input.Desks;
+            existing.Kind = input.Kind; existing.Seats = input.Seats;
+            if (input.Desks.HasValue) existing.Desks = input.Desks.Value;
             existing.HasProjector = input.HasProjector;
             existing.HasTeacherComputer = input.HasTeacherComputer;
             existing.HasInternet = input.HasInternet; existing.Active = input.Active;
             UpdateComputerGroups(existing.ComputerGroups, input.ComputerGroups);
+            if (input.Inventory is not null) ApplyInventory(db, existing, input.Inventory, UserId(current));
+            SyncLegacyResourceFlags(existing);
+            var newGroups = existing.ComputerGroups.Where(g => g.Id == 0).ToList();
+            var newResources = existing.Resources.Where(r => r.Id == 0).ToList();
             AuditTrail.Add(db, "Room", existing.Id.ToString(), "Alterado", UserId(current), before,
-                new { existing.Name, existing.Location, existing.Purpose, existing.Kind,
+                new { existing.Code, existing.Name, existing.Location, existing.Purpose, existing.Kind,
                     existing.Seats, existing.Desks, existing.HasProjector, existing.HasTeacherComputer,
                     existing.HasInternet, existing.Active,
                     ComputerGroups = existing.ComputerGroups.Select(g => new { g.Quantity, g.RamGb, g.Tier,
@@ -260,11 +304,23 @@ public static partial class ApiEndpoints
                         "Room", existing.Id);
             }
             await db.SaveChangesAsync();
+            foreach (var group in newGroups)
+                AuditTrail.Add(db, "ComputerGroup", group.Id.ToString(), "Criado", UserId(current), null, InventoryGroupAudit(group));
+            foreach (var resource in newResources)
+                AuditTrail.Add(db, "Resource", resource.Id.ToString(), "Criado", UserId(current), null, ResourceAudit(resource));
+            if (newGroups.Count > 0 || newResources.Count > 0) await db.SaveChangesAsync();
+            await updateTx.CommitAsync();
             return Results.NoContent();
         }).RequireAuthorization("Admin");
 
-        api.MapGet("/semesters", async (AppDbContext db) =>
-            Results.Ok(await db.Semesters.OrderByDescending(s => s.StartDate).ToListAsync()));
+        api.MapGet("/semesters", async (AppDbContext db, ILoggerFactory loggerFactory) =>
+        {
+            var semesters = await db.Semesters.OrderByDescending(s => s.StartDate).ToListAsync();
+            if (semesters.Count == 0)
+                loggerFactory.CreateLogger("SalaGest.Academic").LogWarning(
+                    "Nenhum semestre cadastrado para consultar. Acesse Turmas e disciplinas > Novo semestre para cadastrar.");
+            return Results.Ok(semesters);
+        });
         api.MapPost("/semesters", async (SemesterCreate input, AppDbContext db) =>
         {
             if (string.IsNullOrWhiteSpace(input.Name) || input.StartDate > input.EndDate ||
@@ -279,20 +335,91 @@ public static partial class ApiEndpoints
                 .Where(c => semesterId == null || c.SemesterId == semesterId).ToListAsync()));
         api.MapPost("/classes", async (ClassCreate input, AppDbContext db) =>
         {
-            if (input.Students < 1 || input.Students > 500 || string.IsNullOrWhiteSpace(input.Name))
+            if (input.Students < 1 || input.Students > 500 || string.IsNullOrWhiteSpace(input.Name) ||
+                input.Name.Trim().Length > 100 || (input.Code?.Trim().Length ?? 0) > 30)
                 return Error("Turma deve ter nome e quantidade de alunos válida");
             if (!await db.Semesters.AnyAsync(s => s.Id == input.SemesterId)) return Error("Semestre não encontrado");
+            if (input.ShiftId is not int shiftId || !await db.Shifts.AnyAsync(s => s.Id == shiftId))
+                return Error("Selecione um turno cadastrado para a turma");
             if (input.CourseId is int courseId && !await db.Courses.AnyAsync(c => c.Id == courseId))
                 return Error("Curso não encontrado");
+            if (input.CourseModuleId is null && input.UnitOfferings is { Count: > 0 })
+                return Error("Selecione um módulo para ofertar UCs na turma.");
+            List<CurricularUnit> moduleUnits = [];
+            if (input.CourseModuleId is int moduleId)
+            {
+                if (input.CourseId is not int selectedCourseId || !await db.CourseModules.AnyAsync(m =>
+                    m.Id == moduleId && m.CourseId == selectedCourseId))
+                    return Error("O módulo deve pertencer ao curso selecionado.");
+                moduleUnits = await db.CurricularUnits.Where(u => u.CourseModuleId == moduleId).ToListAsync();
+            }
+            var offered = input.UnitOfferings ?? moduleUnits.Select(u =>
+                new ClassUnitOfferingInput(u.Id, UnitDeliveryMode.Presencial)).ToList();
+            if (offered.Any(x => x is null) || offered.Count != moduleUnits.Count ||
+                offered.Select(x => x.CurricularUnitId).Distinct().Count() != offered.Count ||
+                offered.Any(x => !moduleUnits.Any(u => u.Id == x.CurricularUnitId) ||
+                    !Enum.IsDefined(x.DeliveryMode) ||
+                    x.DeliveryMode == UnitDeliveryMode.Presencial && x.EadScheduleMode is not null ||
+                    x.DeliveryMode == UnitDeliveryMode.Ead && x.EadScheduleMode is not
+                        (EadScheduleMode.SemHorarioFixo or EadScheduleMode.HorarioDefinido)))
+                return Error("As UCs da turma devem corresponder ao módulo e ter modalidade válida.");
+            var normalizedCode = string.IsNullOrWhiteSpace(input.Code) ? null : input.Code.Trim().ToUpperInvariant();
+            if (!string.IsNullOrEmpty(normalizedCode) && await db.Classes.AnyAsync(c => c.SemesterId == input.SemesterId && c.NormalizedCode == normalizedCode))
+                return Results.Conflict(new ApiError("Já existe uma turma com este código no semestre."));
             var item = new ClassGroup
             {
                 SemesterId = input.SemesterId,
+                ShiftId = shiftId,
                 CourseId = input.CourseId,
+                CourseModuleId = input.CourseModuleId,
+                UnitOfferings = offered.Select(x => new ClassUnitOffering
+                { CurricularUnitId = x.CurricularUnitId, DeliveryMode = x.DeliveryMode,
+                    EadScheduleMode = x.EadScheduleMode }).ToList(),
+                Code = string.IsNullOrWhiteSpace(input.Code) ? null : input.Code.Trim(),
+                NormalizedCode = normalizedCode,
                 Name = input.Name.Trim(),
                 Students = input.Students
             };
             db.Classes.Add(item); await db.SaveChangesAsync();
-            return Results.Created($"/api/classes/{item.Id}", item);
+            return Results.Created($"/api/classes/{item.Id}", new
+            { item.Id, item.SemesterId, item.CourseId, item.CourseModuleId, item.ShiftId,
+                item.Code, item.Name, item.Students });
+        }).RequireAuthorization("Admin");
+        api.MapPut("/classes/{id:int}", async (int id, ClassUpdate input, AppDbContext db,
+            ClaimsPrincipal current) =>
+        {
+            await using var shiftTx = await db.Database.BeginTransactionAsync(IsolationLevel.Serializable);
+            var item = await db.Classes.FindAsync(id);
+            if (item is null) return Results.NotFound();
+            var oldShiftId = item.ShiftId;
+            if (string.IsNullOrWhiteSpace(input.Name) || input.Name.Trim().Length > 100 ||
+                (input.Code?.Trim().Length ?? 0) > 30)
+                return Error("Informe nome de até 100 caracteres e código de até 30 caracteres.");
+            if (input.ShiftId is int newShiftId && newShiftId != item.ShiftId)
+            {
+                if (!await db.Shifts.AnyAsync(s => s.Id == newShiftId)) return Error("Turno não encontrado");
+                if (await db.Assignments.AnyAsync(a => a.ClassGroupId == id) ||
+                    await db.Bookings.AnyAsync(b => b.ClassGroupId == id) ||
+                    await db.Occupations.AnyAsync(o => o.ClassGroupId == id) ||
+                    await db.ScheduleUnitPlans.AnyAsync(p => p.ClassGroupId == id &&
+                        p.Schedule.Status == ScheduleStatus.Publicada) ||
+                    await db.PlanProposals.AnyAsync(p => p.Assignment.ClassGroupId == id))
+                    return Results.Conflict(new ApiError("A turma possui vínculos; regularize atribuições, reservas e planejamento antes de alterar o turno oficial."));
+                item.ShiftId = newShiftId;
+            }
+            var normalizedCode = string.IsNullOrWhiteSpace(input.Code) ? null : input.Code.Trim().ToUpperInvariant();
+            if (!string.IsNullOrEmpty(normalizedCode) && await db.Classes.AnyAsync(c => c.Id != id &&
+                c.SemesterId == item.SemesterId && c.NormalizedCode == normalizedCode))
+                return Results.Conflict(new ApiError("Já existe uma turma com este código no semestre."));
+            var before = new { item.Name, item.Code, ShiftId = oldShiftId };
+            item.Name = input.Name.Trim();
+            item.Code = string.IsNullOrWhiteSpace(input.Code) ? null : input.Code.Trim();
+            item.NormalizedCode = normalizedCode;
+            AuditTrail.Add(db, "ClassGroup", id.ToString(), "Alterada", UserId(current), before,
+                new { item.Name, item.Code, item.ShiftId });
+            await db.SaveChangesAsync();
+            await shiftTx.CommitAsync();
+            return Results.NoContent();
         }).RequireAuthorization("Admin");
         api.MapPut("/classes/{id:int}/course", async (int id, ClassCourseInput input, AppDbContext db) =>
         {
@@ -333,10 +460,17 @@ public static partial class ApiEndpoints
 
     private static async Task<string?> ValidateRoom(AppDbContext db, RoomInput input)
     {
+        if (input.Inventory is not null && input.ComputerGroups is { Count: > 0 })
+            return "Envie os grupos pelo inventário técnico ou pelo cadastro básico, sem misturar os dois contratos.";
+        if ((input.Code?.Trim().Length ?? 0) > 30) return "O código do ambiente deve ter até 30 caracteres.";
         if (string.IsNullOrWhiteSpace(input.Name) || input.Name.Length > 120 ||
-            !Enum.IsDefined(input.Kind) || input.Seats < 1 || input.Desks < 1 ||
+            !Enum.IsDefined(input.Kind) || input.Seats < 1 || input.Desks < 0 ||
             input.Seats > 1000 || input.Desks > 1000 ||
-            input.ComputerGroups is null || (input.Purpose?.Length ?? 0) > 350) return "Informações da sala inválidas";
+            input.Location is null || input.ComputerGroups is null || (input.Purpose?.Length ?? 0) > 350) return "Informações da sala inválidas";
+        if (input.ComputerGroups.Any(g => g is null || string.IsNullOrWhiteSpace(g.Description)) ||
+            input.ComputerGroups.Select(g => g.Description.Trim()).Distinct(StringComparer.OrdinalIgnoreCase).Count() != input.ComputerGroups.Count ||
+            input.ComputerGroups.Where(g => g.Id.HasValue).Select(g => g.Id).Distinct().Count() != input.ComputerGroups.Count(g => g.Id.HasValue))
+            return "Grupos devem ter descrições e IDs distintos.";
         foreach (var group in input.ComputerGroups)
         {
             if (group.Quantity < 1 || group.Quantity > 1000 || group.RamGb < 1 ||
@@ -351,12 +485,14 @@ public static partial class ApiEndpoints
 
     private static Room CreateRoom(RoomInput input) => new()
     {
+        Code = string.IsNullOrWhiteSpace(input.Code) ? null : input.Code.Trim(),
+        NormalizedCode = string.IsNullOrWhiteSpace(input.Code) ? null : input.Code.Trim().ToUpperInvariant(),
         Name = input.Name.Trim(),
         Location = input.Location.Trim(),
         Purpose = input.Purpose?.Trim() ?? "",
         Kind = input.Kind,
         Seats = input.Seats,
-        Desks = input.Desks,
+        Desks = input.Desks ?? 0,
         HasProjector = input.HasProjector,
         HasTeacherComputer = input.HasTeacherComputer,
         HasInternet = input.HasInternet,
@@ -381,8 +517,7 @@ public static partial class ApiEndpoints
     {
         foreach (var input in inputs)
         {
-            var group = existing.FirstOrDefault(g => string.Equals(g.Description.Trim(),
-                input.Description.Trim(), StringComparison.OrdinalIgnoreCase));
+            var group = input.Id is int id ? existing.FirstOrDefault(g => g.Id == id) : null;
             if (group is null)
             {
                 existing.Add(NewComputerGroups(new[] { input })[0]);

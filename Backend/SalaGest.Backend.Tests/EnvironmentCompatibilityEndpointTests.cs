@@ -22,6 +22,64 @@ namespace SalaGest.Backend.Tests;
 public sealed class EnvironmentCompatibilityEndpointTests
 {
     [Fact]
+    public async Task UnitResourcesAreSharedWithRoomInventoryAndAdminOnly()
+    {
+        await using var host = await Host.CreateAsync();
+        var catalogId = await host.AddCatalogResourceAsync();
+        var path = host.Route[..host.Route.LastIndexOf("/capabilities/", StringComparison.Ordinal)] + "/resources";
+        var request = new[] { new UnitResourceInput(catalogId, 2) };
+        Assert.Equal(HttpStatusCode.Unauthorized, (await host.Client.GetAsync(path)).StatusCode);
+        host.AsTeacher();
+        Assert.Equal(HttpStatusCode.Forbidden, (await host.Client.PutAsJsonAsync(path, request)).StatusCode);
+        host.AsAdmin();
+        Assert.Equal(HttpStatusCode.BadRequest, (await host.Client.PutAsJsonAsync(path,
+            new[] { new UnitResourceInput(catalogId, 0) })).StatusCode);
+        Assert.Equal(HttpStatusCode.NoContent, (await host.Client.PutAsJsonAsync(path, request)).StatusCode);
+        var saved = await host.Client.GetFromJsonAsync<System.Text.Json.JsonElement>(path);
+        Assert.Equal(catalogId, saved[0].GetProperty("resourceCatalogItemId").GetInt32());
+        host.AsTeacher();
+        var before = await host.Client.GetFromJsonAsync<List<EnvironmentCompatibilityResponse>>(host.Route + "/compatibility/rooms");
+        Assert.Contains(before!, x => x.RoomName == "A" && x.Classification == "Incompatible");
+        await host.AddRoomResourceAsync(catalogId, 2);
+        var after = await host.Client.GetFromJsonAsync<List<EnvironmentCompatibilityResponse>>(host.Route + "/compatibility/rooms");
+        Assert.Contains(after!, x => x.RoomName == "A" && x.Classification == "Compatible");
+        host.AsAdmin();
+        Assert.Equal(HttpStatusCode.NoContent, (await host.Client.PutAsJsonAsync(path, Array.Empty<UnitResourceInput>())).StatusCode);
+        Assert.Equal(0, (await host.Client.GetFromJsonAsync<System.Text.Json.JsonElement>(path)).GetArrayLength());
+    }
+
+    [Fact]
+    public async Task EditingAndRemovingIndividualRequirementsChangesCompatibilityAndPreservesCapability()
+    {
+        await using var host = await Host.CreateAsync();
+        host.AsAdmin();
+        var path = host.Route + "/environment-requirements";
+        var input = new CapabilityEnvironmentInput(RoomKind.Laboratorio, false, 30, 16, true, [], []);
+        Assert.Equal(HttpStatusCode.Created, (await host.Client.PostAsJsonAsync(path, input)).StatusCode);
+        async Task<List<EnvironmentCompatibilityResponse>> Results() =>
+            (await host.Client.GetFromJsonAsync<List<EnvironmentCompatibilityResponse>>(host.Route + "/compatibility/rooms"))!;
+        Assert.DoesNotContain(await Results(), r => r.Classification == "Compatible");
+        host.AsTeacher();
+        Assert.Equal(HttpStatusCode.Forbidden, (await host.Client.PutAsJsonAsync(path, input with { RequiredComputers = 20 })).StatusCode);
+        host.AsAdmin();
+        Assert.Equal(HttpStatusCode.NoContent, (await host.Client.PutAsJsonAsync(path, input with { RequiredComputers = 20 })).StatusCode);
+        Assert.Contains(await Results(), r => r.RoomName == "A" && r.Classification == "Compatible");
+        var withItems = input with { RequiredComputers = 20, Resources = [new("Máquina", "Equipamento", 1, true)],
+            Software = [new(host.SoftwareId, 20, true)] };
+        Assert.Equal(HttpStatusCode.NoContent, (await host.Client.PutAsJsonAsync(path, withItems)).StatusCode);
+        Assert.DoesNotContain(await Results(), r => r.Classification == "Compatible");
+        Assert.Equal(HttpStatusCode.NoContent, (await host.Client.PutAsJsonAsync(path, input with { RequiredComputers = 20 })).StatusCode);
+        var saved = await host.Client.GetFromJsonAsync<System.Text.Json.JsonElement>(path);
+        Assert.Equal(0, saved.GetProperty("resources").GetArrayLength());
+        Assert.Equal(0, saved.GetProperty("software").GetArrayLength());
+        Assert.True(saved.GetProperty("registered").GetBoolean());
+        Assert.Contains(await Results(), r => r.RoomName == "A" && r.Classification == "Compatible");
+        Assert.Equal(HttpStatusCode.OK, (await host.Client.GetAsync(host.Route)).StatusCode);
+        Assert.Equal(HttpStatusCode.BadRequest, (await host.Client.PutAsJsonAsync(path, input with { RequiredComputers = null })).StatusCode);
+        Assert.Equal(HttpStatusCode.NotFound, (await host.Client.PutAsJsonAsync(path.Replace("courses/1", "courses/99999"), input)).StatusCode);
+    }
+
+    [Fact]
     public async Task RequirementsAreScopedValidatedAndAdminOnly()
     {
         await using var host = await Host.CreateAsync();
@@ -118,6 +176,25 @@ public sealed class EnvironmentCompatibilityEndpointTests
         }
 
         public void AsTeacher() => SetRole("Professor");
+        public async Task<int> AddCatalogResourceAsync()
+        {
+            using var scope = app.Services.CreateScope();
+            var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+            var item = new ResourceCatalogItem { Name = "Projetor portátil", NormalizedName = "PROJETOR PORTÁTIL", Category = "Equipamento" };
+            db.ResourceCatalog.Add(item);
+            await db.SaveChangesAsync();
+            return item.Id;
+        }
+        public async Task AddRoomResourceAsync(int catalogId, int available)
+        {
+            using var scope = app.Services.CreateScope();
+            var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+            var room = await db.Rooms.SingleAsync(x => x.Name == "A");
+            db.RoomResources.Add(new RoomResource { RoomId = room.Id, ResourceCatalogItemId = catalogId,
+                Name = "Projetor portátil", NormalizedName = "PROJETOR PORTÁTIL", Type = "Equipamento",
+                NormalizedType = "EQUIPAMENTO", Quantity = available, OperationalQuantity = available });
+            await db.SaveChangesAsync();
+        }
         public void AsAdmin() => SetRole("Admin");
         private void SetRole(string role)
         { Client.DefaultRequestHeaders.Remove("X-Test-Role"); Client.DefaultRequestHeaders.Add("X-Test-Role", role); }

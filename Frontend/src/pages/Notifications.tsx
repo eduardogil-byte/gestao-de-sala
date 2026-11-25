@@ -11,7 +11,7 @@ export function NotificationItem({ row, onMark, openRelated, showHistory, toggle
   showHistory: boolean; toggleHistory: () => void;
 }) {
   const canHistory = row.relatedId && (["Occupation", "Booking", "Loan"] as string[]).includes(row.relatedType ?? "");
-  const canOpen = row.relatedId && (["Occupation", "Booking", "Loan", "Assignment", "Room"] as string[]).includes(row.relatedType ?? "");
+  const canOpen = row.relatedId && (["Booking", "Loan"] as string[]).includes(row.relatedType ?? "");
   return <div className={"p-4 flex gap-3 items-start " + (row.readAtUtc ? "bg-white" : "bg-sky-50")}>
     <Bell size={18} className="text-sky-600 shrink-0" />
     <div className="flex-1">
@@ -20,7 +20,7 @@ export function NotificationItem({ row, onMark, openRelated, showHistory, toggle
       <p className="text-xs text-slate-500 mt-1">Por {row.actorName} · {new Date(row.createdAtUtc).toLocaleString("pt-BR")}</p>
       {(canHistory || canOpen) && <div className="flex flex-wrap gap-3 mt-2">
         {canHistory && <button type="button" className="text-xs font-medium text-sky-700 underline" onClick={toggleHistory}>Ver histórico</button>}
-        {canOpen && <button type="button" className="text-xs font-medium text-sky-700 underline" onClick={() => openRelated(row.relatedType!, row.relatedId!)}>Abrir registro relacionado</button>}
+        {canOpen && <button type="button" className="text-xs font-medium text-sky-700 underline" onClick={() => openRelated(row.relatedType!, row.relatedId!)}>Abrir {row.relatedType === "Loan" ? "empréstimo" : "reserva"}</button>}
       </div>}
       {showHistory && canHistory && <div className="mt-3"><AuditHistory type={row.relatedType as "Occupation" | "Booking" | "Loan"} id={row.relatedId!} /></div>}
     </div>

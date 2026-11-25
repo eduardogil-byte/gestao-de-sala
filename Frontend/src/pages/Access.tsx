@@ -39,7 +39,7 @@ export function Access({ onLogin, initialMessage = "" }: { onLogin: (user: User)
     }
   }
   return (
-    <div className="min-h-screen grid lg:grid-cols-2 bg-white">
+    <div className="min-h-screen grid lg:grid-cols-2 bg-canvas text-ink">
       <div className="hidden lg:flex bg-navy-900 p-14 flex-col justify-between relative overflow-hidden text-white">
         <div className="absolute -right-24 top-1/4 rounded-full w-96 h-96 border-[70px] border-white/5" />
         <div className="absolute -left-40 bottom-2 rounded-full w-96 h-96 border-[90px] border-blue-300/5" />
@@ -58,13 +58,13 @@ export function Access({ onLogin, initialMessage = "" }: { onLogin: (user: User)
           </h1>
           <p className="text-slate-300 text-lg leading-relaxed mt-5">
             Organize a grade da instituição, aloque laboratórios com
-            inteligência e facilite reservas e empréstimos entre professores.
+            inteligência e facilite reservas e empréstimos entre instrutores.
           </p>
           <div className="mt-12 grid grid-cols-3 gap-3">
             {[
               { icon: CalendarDays, title: "Grades", desc: "sem conflitos" },
               { icon: DoorOpen, title: "Salas", desc: "bem utilizadas" },
-              { icon: UserRound, title: "Professores", desc: "conectados" },
+              { icon: UserRound, title: "Instrutores", desc: "conectados" },
             ].map((a) => (
               <div
                 key={a.title}
@@ -82,18 +82,18 @@ export function Access({ onLogin, initialMessage = "" }: { onLogin: (user: User)
         </p>
       </div>
       <div className="flex items-center justify-center px-5 py-10 md:px-16">
-        <div className="w-full max-w-[410px]">
-          <div className="lg:hidden flex items-center gap-2 mb-10 text-navy-900">
+        <div className="w-full max-w-[440px] rounded-panel border border-line bg-surface p-6 sm:p-8 shadow-soft">
+          <div className="lg:hidden flex items-center gap-2 mb-10 text-ink">
             <Layers3 className="text-skybrand-600" />{" "}
             <span className="text-xl font-bold">SalaGest</span>
           </div>
-          <div className="w-12 h-12 rounded-2xl bg-skybrand-50 flex items-center justify-center text-skybrand-600 mb-6">
+          <div className="w-12 h-12 rounded-2xl bg-navy-800 flex items-center justify-center text-sky-300 mb-6">
             <LockKeyhole size={23} />
           </div>
-          <h2 className="text-[30px] tracking-tight font-bold text-slate-800">
+          <h2 className="text-[30px] tracking-tight font-bold text-ink">
             Bem-vindo de volta
           </h2>
-          <p className="text-slate-500 mt-2 mb-8">
+          <p className="text-muted-ink mt-2 mb-8">
             Entre para acessar a gestão de salas e horários.
           </p>
           <form onSubmit={submit} className="space-y-4">
@@ -107,7 +107,7 @@ export function Access({ onLogin, initialMessage = "" }: { onLogin: (user: User)
                 required
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
-                placeholder="professor@instituicao.edu.br"
+                placeholder="instrutor@instituicao.edu.br"
               />
             </Field>
             <Field label="Senha">
@@ -131,10 +131,10 @@ export function Access({ onLogin, initialMessage = "" }: { onLogin: (user: User)
               Entrar com conta institucional
             </button>
           </div>}
-          <p className="mt-6 text-center text-sm text-slate-500">
+          <p className="mt-6 text-center text-sm text-muted-ink">
             Precisa de uma conta? Procure a administração da instituição.
           </p>
-          <p className="text-center text-xs text-slate-400 mt-10">
+          <p className="text-center text-xs text-muted-ink mt-10">
             A conta de administrador é criada no backend, por configuração
             segura.
           </p>

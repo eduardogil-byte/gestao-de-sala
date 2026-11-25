@@ -10,6 +10,7 @@ export type Shift = {
   name: string;
   startsAt: string;
   endsAt: string;
+  pedagogicalHours?: number | null;
 };
 export type Course = { id: number; code: string; name: string; active: boolean };
 export type CourseModule = { id: number; courseId: number; name: string; order: number };
@@ -39,10 +40,14 @@ export type WorkloadSummary = {
   requiredMeetings: number | null;
 };
 export type Software = { id: number; name: string };
+export type ResourceCatalogItem = { id: number; name: string; category: string; description: string | null; active: boolean };
 export type InstalledSoftware = {
   softwareId: number;
   name: string;
   installedQuantity: number;
+  version?: string | null;
+  licenseQuantity?: number | null;
+  licenseExpiresOn?: string | null;
 };
 export type ComputerGroup = {
   id?: number;
@@ -51,8 +56,25 @@ export type ComputerGroup = {
   ramGb: number;
   tier: string;
   dedicatedGpu: boolean;
+  operationalQuantity?: number | null;
+  processor?: string | null;
+  storage?: string | null;
+  graphicsCard?: string | null;
+  operatingSystem?: string | null;
+  virtualization?: boolean | null;
+  dockerWsl?: boolean | null;
+  cadCompatible?: boolean | null;
+  simulatorCompatible?: boolean | null;
+  networkDetails?: string | null;
+  internetAvailable?: boolean | null;
   software: InstalledSoftware[];
 };
+export type RoomResource = {
+  id?: number; resourceCatalogItemId?: number | null; name: string; type: string; quantity: number; operationalQuantity: number | null;
+  description: string | null; condition: string | null; technicalDetails: string | null;
+  voltage: number | null; warrantyExpiresOn: string | null; licenseExpiresOn: string | null;
+};
+export type RoomInventory = { computerGroups: ComputerGroup[]; resources: RoomResource[] };
 export type Room = {
   id: number;
   code?: string | null;
@@ -77,6 +99,10 @@ export type Semester = {
 export type ClassGroup = {
   id: number;
   semesterId: number;
+  courseId?: number | null;
+  courseModuleId?: number | null;
+  shiftId?: number | null;
+  code?: string | null;
   name: string;
   students: number;
 };
@@ -130,6 +156,16 @@ export type ScheduleDetails = {
   unallocatedMeetings: number;
   createdAtUtc: string;
   lessons: Lesson[];
+  unitPlans?: {
+    id: number; classGroupId: number; className: string; courseName: string | null;
+    moduleName: string | null; curricularUnitId: number; unitName: string; teacherId: string | null;
+    plannedHours: number | null; allocatedHours: number; unallocatedHours: number | null;
+    pendingReason: string | null; deliveryMode: "Presencial" | "Ead";
+    eadScheduleMode: "SemHorarioFixo" | "HorarioDefinido" | null;
+    meetings: { id: number; date: string | null; shiftId: number | null; shiftName: string | null;
+      start: string | null; end: string | null; roomId: number | null; room: string | null;
+      plannedHours: number }[];
+  }[];
 };
 export type Occupation = {
   id: number;
@@ -201,6 +237,8 @@ export type OccupationBlockMovePreview = {
 };
 export type Booking = {
   id: number;
+  version: string;
+  turnExceptionConfirmed: boolean;
   teacherId: string;
   classGroupId: number | null;
   curricularUnitId?: number | null;
