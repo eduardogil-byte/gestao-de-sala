@@ -68,7 +68,7 @@ export function Teachers({ user, onImport }: { user: User; onImport?: () => void
   const teacherName = (item: typeof data.teachers[number]) => <button type="button" aria-label={`Abrir perfil de ${item.displayName}`} onClick={() => showProfile(item.id)}
     className="rounded text-left font-semibold text-ink underline decoration-line underline-offset-4 hover:decoration-current focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-skybrand-500">{item.displayName}</button>;
   return <div className="space-y-5">
-    <Title title="Docentes" subtitle="Consulte perfis pedagógicos, habilitações e disponibilidade por turno. Cadastros e alterações de perfil são restritos ao Admin."
+    <Title title="Docentes"
       action={admin && onImport ? <button type="button" className="btn-secondary" onClick={onImport}>Importar docentes</button> : undefined} />
     {error && !createOpen && !profileOpen && <Notice message={error} onClose={() => setError("")} />}
     {success && <Notice type="success" message={success} onClose={() => setSuccess("")} />}
@@ -91,12 +91,12 @@ export function Teachers({ user, onImport }: { user: User; onImport?: () => void
       </div>
       {loading ? <Busy /> : data.teachers.length === 0 ? <Empty text="Ainda não existem instrutores cadastrados." /> : shown.length === 0 ?
         <Empty title="Nenhum docente encontrado" text="Tente outro termo de busca." /> : <>
-          <div className="hidden md:block data-table-wrap"><table className="w-full text-left text-sm"><thead><tr>
-            <th className="table-head p-3">Docente</th>{admin && <th className="table-head p-3">E-mail</th>}
+          <div role="region" aria-label="Lista de instrutores cadastrados" tabIndex={0} className="hidden md:block data-table-wrap max-h-[min(60dvh,28rem)] !overflow-auto overscroll-contain focus-visible:outline focus-visible:outline-2 focus-visible:outline-skybrand-500"><table className="w-full text-left text-sm"><thead><tr>
+            <th scope="col" className="table-head sticky top-0 z-10 p-3">Docente</th>{admin && <th scope="col" className="table-head sticky top-0 z-10 p-3">E-mail</th>}
           </tr></thead><tbody>{shown.map((item) => <tr key={item.id} onClick={(event) => { if (!(event.target as HTMLElement).closest("button")) showProfile(item.id); }} className="cursor-pointer border-t border-line transition-colors hover:bg-canvas focus-within:bg-canvas">
             <td className="p-3 font-semibold text-ink">{teacherName(item)}</td>{admin && <td className="p-3 text-muted-ink">{item.email || "Não informado"}</td>}
           </tr>)}</tbody></table></div>
-          <div className="md:hidden space-y-2">{shown.map((item) => <div key={item.id} onClick={(event) => { if (!(event.target as HTMLElement).closest("button")) showProfile(item.id); }} className="cursor-pointer rounded-xl border border-line p-3 space-y-2 transition-colors hover:bg-canvas focus-within:bg-canvas">
+          <div role="region" aria-label="Lista de instrutores cadastrados" tabIndex={0} className="md:hidden max-h-[min(60dvh,28rem)] overflow-auto overscroll-contain space-y-2 rounded-lg focus-visible:outline focus-visible:outline-2 focus-visible:outline-skybrand-500">{shown.map((item) => <div key={item.id} onClick={(event) => { if (!(event.target as HTMLElement).closest("button")) showProfile(item.id); }} className="cursor-pointer rounded-xl border border-line p-3 space-y-2 transition-colors hover:bg-canvas focus-within:bg-canvas">
             <p className="font-semibold text-ink">{teacherName(item)}</p>{admin && item.email && <p className="text-sm text-muted-ink break-all">{item.email}</p>}
           </div>)}</div>
         </>}

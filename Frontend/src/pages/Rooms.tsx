@@ -271,7 +271,6 @@ export function Rooms({ user, onImport }: { user: User; onImport?: (kind: "Ambie
     <>
       <Title
         title="Ambientes"
-        subtitle="Consulte as fichas técnicas e gerencie salas, laboratórios e oficinas."
         action={admin ? <>
             {onImport && <><button type="button" className="btn-secondary" onClick={() => onImport("Ambientes")}>Importar ambientes</button>
               <button type="button" className="btn-secondary" onClick={() => onImport("Recursos")}>Importar recursos</button></>}
@@ -345,7 +344,7 @@ export function Rooms({ user, onImport }: { user: User; onImport?: (kind: "Ambie
         </Card>
       ) : !catalogLoading && (
         <Card className="p-4 sm:p-5 space-y-4">
-          <SectionHeading title="Ambientes" subtitle={`${list.length} de ${data.rooms.length} ambientes exibidos. Configuração de turnos e ocupação são informações distintas; nenhuma delas comprova disponibilidade em um horário.`} />
+          <SectionHeading title="Ambientes" />
           <div className="hidden lg:block table-wrap"><table className="w-full text-sm"><thead><tr className="text-left text-muted-ink border-b border-line">
             <th scope="col" className="p-3">Ambiente</th><th scope="col" className="p-3">Tipo e localização</th><th scope="col" className="p-3">Alunos</th><th scope="col" className="p-3">Turnos configurados</th><th scope="col" className="p-3">Turnos com ocupação</th><th scope="col" className="p-3">Situação</th><th scope="col" className="p-3">Ações</th>
           </tr></thead><tbody>{list.map((room) => <tr key={room.id} onClick={(event) => openRoomInformation(event, room)} className="cursor-pointer border-b border-line last:border-0 align-top transition-colors hover:bg-canvas focus-within:bg-canvas">

@@ -23,6 +23,89 @@ namespace SalaGest.Backend.Tests;
 public sealed class TeachingAssignmentTests
 {
     [Fact]
+    public async Task ConfirmedShiftChangePreservesAllLinkedDataAndOtherClassFields()
+    {
+        await using var host = await AssignmentHost.CreateAsync();
+        host.AsAdmin();
+        int target;
+        using (var scope = host.App.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+            (await db.Classes.FindAsync(host.ClassId))!.ShiftId = host.ShiftId;
+            var shift = new SchoolShift { Name = "Tarde", StartsAt = new(13, 0), EndsAt = new(17, 0) };
+            db.Shifts.Add(shift); await db.SaveChangesAsync(); target = shift.Id;
+        }
+        var assignment = (await (await host.CreateAssignment(host.TeacherId, host.ClassId, host.UnitId, 3))
+            .Content.ReadFromJsonAsync<AssignmentResponse>())!;
+        using (var scope = host.App.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+            var room = new Room { Name = "Sala", Location = "Bloco", Seats = 30, Desks = 30 };
+            db.Occupations.Add(new RoomOccupation { Room = room, ClassGroupId = host.ClassId,
+                TeacherId = host.TeacherId, StartsAt = new(2027, 3, 3, 8, 0, 0), EndsAt = new(2027, 3, 3, 12, 0, 0) });
+            if (!await db.ClassUnitOfferings.AnyAsync(x => x.ClassGroupId == host.ClassId && x.CurricularUnitId == host.UnitId))
+                db.ClassUnitOfferings.Add(new ClassUnitOffering { ClassGroupId = host.ClassId, CurricularUnitId = host.UnitId, DeliveryMode = UnitDeliveryMode.Presencial });
+            db.ScheduleUnitPlans.Add(new ScheduleUnitPlan { ClassGroupId = host.ClassId, CurricularUnitId = host.UnitId,
+                Schedule = new Schedule { SemesterId = host.SemesterId, Status = ScheduleStatus.Publicada }, TeacherId = host.TeacherId });
+            db.PlanProposals.Add(new PlanProposal { AssignmentId = assignment.Id, Room = room, ShiftId = host.ShiftId,
+                SemesterPlan = new SemesterPlan { SemesterId = host.SemesterId }, StartDate = new(2027, 3, 3), EndDate = new(2027, 3, 3) });
+            await db.SaveChangesAsync();
+        }
+        var before = await LinkedShiftSnapshot(host);
+        var route = $"/api/classes/{host.ClassId}/shift-change";
+        var preview = (await host.Client.GetFromJsonAsync<ClassShiftChangePreview>($"{route}?shiftId={target}"))!;
+        Assert.Equal(host.ShiftId, preview.CurrentShiftId);
+        Assert.Equal(5, preview.Links.Count);
+        Assert.All(preview.Links, link => Assert.Equal(1, link.Count));
+        Assert.Equal(HttpStatusCode.BadRequest, (await host.Client.PutAsJsonAsync(route,
+            new ClassShiftChangeInput(target, false, preview.PreviewToken))).StatusCode);
+        Assert.Equal(HttpStatusCode.Conflict, (await host.Client.PutAsJsonAsync(route,
+            new ClassShiftChangeInput(target, true, "invalid"))).StatusCode);
+        Assert.Equal(HttpStatusCode.NoContent, (await host.Client.PutAsJsonAsync(route,
+            new { ShiftId = target, Confirmed = true, preview.PreviewToken, Name = "Não salvar", Code = "Não salvar" })).StatusCode);
+        Assert.Equal(before, await LinkedShiftSnapshot(host));
+        using var check = host.App.Services.CreateScope();
+        var verify = check.ServiceProvider.GetRequiredService<AppDbContext>();
+        var turma = (await verify.Classes.FindAsync(host.ClassId))!;
+        Assert.Equal(target, turma.ShiftId); Assert.Equal("M1", turma.Name); Assert.Null(turma.Code);
+        Assert.Equal(25, turma.Students); Assert.Equal(host.SemesterId, turma.SemesterId); Assert.Equal(host.CourseId, turma.CourseId);
+        Assert.Single(await verify.AuditEntries.Where(x => x.Action == "TurnoOficialAlterado").ToListAsync());
+    }
+
+    [Fact]
+    public async Task ShiftChangeRequiresAdminValidTargetAndFreshPreview()
+    {
+        await using var host = await AssignmentHost.CreateAsync();
+        var route = $"/api/classes/{host.ClassId}/shift-change";
+        host.AsTeacher();
+        Assert.Equal(HttpStatusCode.Forbidden, (await host.Client.GetAsync($"{route}?shiftId={host.ShiftId}")).StatusCode);
+        Assert.Equal(HttpStatusCode.Forbidden, (await host.Client.PutAsJsonAsync(route, new ClassShiftChangeInput(host.ShiftId, true, "token"))).StatusCode);
+        host.AsAdmin();
+        Assert.Equal(HttpStatusCode.BadRequest, (await host.Client.GetAsync($"{route}?shiftId=99999")).StatusCode);
+        Assert.Equal(HttpStatusCode.NotFound, (await host.Client.GetAsync($"/api/classes/99999/shift-change?shiftId={host.ShiftId}")).StatusCode);
+        var preview = (await host.Client.GetFromJsonAsync<ClassShiftChangePreview>($"{route}?shiftId={host.ShiftId}"))!;
+        Assert.Equal(HttpStatusCode.Created, (await host.CreateAssignment(host.TeacherId, host.ClassId, host.UnitId, 3)).StatusCode);
+        Assert.Equal(HttpStatusCode.Conflict, (await host.Client.PutAsJsonAsync(route,
+            new ClassShiftChangeInput(host.ShiftId, true, preview.PreviewToken))).StatusCode);
+        using var scope = host.App.Services.CreateScope();
+        Assert.Null((await scope.ServiceProvider.GetRequiredService<AppDbContext>().Classes.FindAsync(host.ClassId))!.ShiftId);
+    }
+
+    private static async Task<string> LinkedShiftSnapshot(AssignmentHost host)
+    {
+        using var scope = host.App.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+        return System.Text.Json.JsonSerializer.Serialize(new {
+            Assignments = await db.Assignments.AsNoTracking().OrderBy(x => x.Id).ToListAsync(),
+            Bookings = await db.Bookings.AsNoTracking().OrderBy(x => x.Id).ToListAsync(),
+            Occupations = await db.Occupations.AsNoTracking().OrderBy(x => x.Id).ToListAsync(),
+            Plans = await db.ScheduleUnitPlans.AsNoTracking().OrderBy(x => x.Id).ToListAsync(),
+            Proposals = await db.PlanProposals.AsNoTracking().OrderBy(x => x.Id).ToListAsync(),
+            Offerings = await db.ClassUnitOfferings.AsNoTracking().OrderBy(x => x.ClassGroupId).ThenBy(x => x.CurricularUnitId).ToListAsync()
+        });
+    }
+
+    [Fact]
     public async Task ClassShiftIsRequiredForNewClassesAndProtectedAfterAssignment()
     {
         await using var host = await AssignmentHost.CreateAsync();

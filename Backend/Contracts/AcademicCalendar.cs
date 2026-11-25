@@ -4,6 +4,7 @@ namespace SalaGest.Api.Contracts;
 
 public record AcademicCalendarEventInput(DateOnly StartDate, DateOnly EndDate,
     AcademicDayKind Kind, string? Description);
+public record AcademicCalendarDatesInput(List<DateOnly>? Dates, AcademicDayKind Kind, string? Description);
 public record AcademicCalendarEventResponse(int Id, int SemesterId, DateOnly StartDate,
     DateOnly EndDate, AcademicDayKind Kind, string Description);
 public record ClassEadPatternInput(int? Weekday = null, DateOnly? StartDate = null,

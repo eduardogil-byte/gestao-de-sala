@@ -35,6 +35,30 @@ public static partial class ApiEndpoints
             return item is null ? Results.NotFound() : Results.Ok(EventView(item));
         });
 
+        semesters.MapPost("/events/batch", async (int semesterId, AcademicCalendarDatesInput input, AppDbContext db) =>
+        {
+            var semester = await db.Semesters.FindAsync(semesterId);
+            if (semester is null) return Results.NotFound();
+            if (input.Dates is not { Count: > 0 and <= 370 } || input.Dates.Distinct().Count() != input.Dates.Count)
+                return Error("Selecione entre 1 e 370 datas distintas.");
+            var dates = input.Dates.Order().ToList();
+            foreach (var date in dates)
+                if (ValidateEvent(new(date, date, input.Kind, input.Description), semester) is string error) return Error(error);
+            await using var tx = await db.Database.BeginTransactionAsync(IsolationLevel.Serializable);
+            var existing = await db.AcademicCalendarEvents.Where(x => x.SemesterId == semesterId &&
+                x.StartDate <= dates.Last() && x.EndDate >= dates.First()).ToListAsync();
+            if (dates.Any(date => existing.Any(x => x.StartDate <= date && x.EndDate >= date)))
+                return CatalogConflict("Uma das datas já possui ocorrência. Atualize o calendário e revise a seleção; nenhuma data foi salva.");
+            var created = dates.Select(date => new AcademicCalendarEvent { SemesterId = semesterId,
+                StartDate = date, EndDate = date, Kind = input.Kind, Description = input.Description!.Trim() }).ToList();
+            db.AcademicCalendarEvents.AddRange(created);
+            try { await db.SaveChangesAsync(); }
+            catch (DbUpdateException ex) when (IsUniqueViolation(ex))
+            { return CatalogConflict("Uma das datas já possui ocorrência. Nenhuma data foi salva."); }
+            await tx.CommitAsync();
+            return Results.Ok(created.Select(EventView));
+        }).RequireAuthorization("Admin");
+
         semesters.MapPost("/events", async (int semesterId, AcademicCalendarEventInput input,
             AppDbContext db) =>
         {

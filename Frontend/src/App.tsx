@@ -515,7 +515,7 @@ function Workspace({ user, onLogout, onPasswordChanged, institutionalNotice = ""
           ) : page === "rooms" ? (
             <Rooms user={user} onImport={admin ? (kind) => { setImportKind(kind); setPage("imports"); scrollToTop(); } : undefined} />
           ) : page === "academic" && admin ? (
-            <Academic user={user} />
+            <Academic user={user} onPlanning={() => open("semester-planning")} />
           ) : page === "pedagogical-catalog" ? (
             <PedagogicalCatalog user={user} />
           ) : page === "teachers" ? (

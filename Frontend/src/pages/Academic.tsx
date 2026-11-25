@@ -1,16 +1,17 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   BookOpen,
-  CalendarPlus,
-  GraduationCap,
   Plus,
   Users,
+  AlertTriangle,
+  Search,
+  SlidersHorizontal,
+  ChevronDown,
 } from "lucide-react";
 import { useData } from "../lib/data";
 import { post, put, read } from "../lib/api";
 import { dateBR, resultMessage } from "../lib/utils";
 import { NeedFields, defaultNeed } from "../components/NeedFields";
-import { AcademicCalendarEditor } from "../components/AcademicCalendarEditor";
 import { semesterDates } from "../lib/semesterDates";
 import {
   Card,
@@ -20,6 +21,8 @@ import {
   Notice,
   SubmitButton,
   Title,
+  Modal,
+  useConfirmation,
 } from "../components/UI";
 import type { Course, CourseModule, CurricularUnit, Need, User } from "../types";
 
@@ -31,10 +34,37 @@ type ClassUnits = { legacyWithoutModule: boolean; presentialHours: number; eadHo
   unitsWithoutHours: number; units: (UnitOffer & { code: string; name: string; plannedHours: number | null;
     resources: UnitResource[]; teacherId: string | null })[] };
 type EligibleTeacher = { teacherId: string; displayName: string };
+type ShiftPreview = { classId: number; currentShiftId: number | null; currentShiftName: string | null;
+  shiftId: number; shiftName: string; links: { label: string; count: number }[]; previewToken: string };
 
-export function Academic({ user }: { user: User }) {
+export function Academic({ user, onPlanning }: { user: User; onPlanning?: () => void }) {
   const admin = user.roles.includes("Admin");
+  const confirm = useConfirmation();
+  const createBaseline = useRef("");
   const { data, reload } = useData();
+  const [tab, setTab] = useState<"classes" | "semesters">("classes");
+  const [query, setQuery] = useState("");
+  const [semesterFilter, setSemesterFilter] = useState("");
+  const [shiftFilter, setShiftFilter] = useState("");
+  const [courseFilter, setCourseFilter] = useState("");
+  const [filtersOpen, setFiltersOpen] = useState(false);
+  const filtersRef = useRef<HTMLDivElement>(null);
+  const filtersButtonRef = useRef<HTMLButtonElement>(null);
+  useEffect(() => {
+    if (!filtersOpen) return;
+    filtersRef.current?.querySelector("select")?.focus();
+    const dismiss = (event: PointerEvent) => {
+      if (!filtersRef.current?.contains(event.target as Node)) setFiltersOpen(false);
+    };
+    const escape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") { setFiltersOpen(false); filtersButtonRef.current?.focus(); }
+    };
+    document.addEventListener("pointerdown", dismiss);
+    document.addEventListener("keydown", escape);
+    return () => { document.removeEventListener("pointerdown", dismiss); document.removeEventListener("keydown", escape); };
+  }, [filtersOpen]);
+  const [createModal, setCreateModal] = useState<"class" | "semester" | null>(null);
+  const [legacyOpen, setLegacyOpen] = useState(false);
   const [year, setYear] = useState(new Date().getFullYear());
   const [term, setTerm] = useState(new Date().getMonth() < 6 ? 1 : 2);
   const [semester, setSemester] = useState(() => semesterDates(year, term));
@@ -48,12 +78,12 @@ export function Academic({ user }: { user: User }) {
   const [expandedClassId, setExpandedClassId] = useState<number | null>(null);
   const [classUnits, setClassUnits] = useState<ClassUnits | null>(null);
   const [classUnitsError, setClassUnitsError] = useState("");
-  const [assignmentSemesterId, setAssignmentSemesterId] = useState("");
   const [assignmentClassId, setAssignmentClassId] = useState("");
   const [assignmentUnitId, setAssignmentUnitId] = useState("");
   const [assignmentTeacherId, setAssignmentTeacherId] = useState("");
   const [offeredUnits, setOfferedUnits] = useState<ClassUnits | null>(null);
   const [eligibleTeachers, setEligibleTeachers] = useState<EligibleTeacher[]>([]);
+  const [eligibleLoading, setEligibleLoading] = useState(false);
   const [offeringError, setOfferingError] = useState("");
   const [academicLoading, setAcademicLoading] = useState(false);
   const [academicError, setAcademicError] = useState("");
@@ -69,6 +99,8 @@ export function Academic({ user }: { user: User }) {
   const [need, setNeed] = useState<Need>(defaultNeed);
   const [action, setAction] = useState("");
   const [error, setError] = useState("");
+  const [shiftPreview, setShiftPreview] = useState<ShiftPreview | null>(null);
+  const [shiftError, setShiftError] = useState("");
   const [success, setSuccess] = useState("");
   useEffect(() => {
     let active = true;
@@ -96,11 +128,14 @@ export function Academic({ user }: { user: User }) {
   }, [assignmentClassId]);
   useEffect(() => {
     setEligibleTeachers([]); setAssignmentTeacherId("");
+    setEligibleLoading(false);
     if (!assignmentClassId || !assignmentUnitId || !admin) return;
     let active = true;
+    setEligibleLoading(true);
     read<EligibleTeacher[]>(`/classes/${assignmentClassId}/units/${assignmentUnitId}/eligible-teachers`)
       .then((value) => { if (active) setEligibleTeachers(value); })
-      .catch((cause) => { if (active) setOfferingError(resultMessage(cause)); });
+      .catch((cause) => { if (active) setOfferingError(resultMessage(cause)); })
+      .finally(() => { if (active) setEligibleLoading(false); });
     return () => { active = false; };
   }, [assignmentClassId, assignmentUnitId, admin]);
   async function assignOfferedUnit() {
@@ -111,6 +146,7 @@ export function Academic({ user }: { user: User }) {
       const updated = await read<ClassUnits>(`/classes/${assignmentClassId}/units`);
       setOfferedUnits(updated);
       if (expandedClassId === Number(assignmentClassId)) setClassUnits(updated);
+      setAssignmentTeacherId("");
       setSuccess("Instrutor responsável registrado para a UC ofertada.");
     } catch (cause) { setOfferingError(resultMessage(cause)); }
     finally { setAction(""); }
@@ -164,40 +200,74 @@ export function Academic({ user }: { user: User }) {
       setAction("");
     }
   };
-  return (
-    <>
-      <Title
-        title="Turmas e semestres"
-        subtitle="Organize semestres, calendário letivo e turmas."
-      />
-      {error && (
-        <div className="mb-4">
-          <Notice message={error} onClose={() => setError("")} />
-        </div>
-      )}
-      {success && (
-        <div className="mb-4">
-          <Notice
-            type="success"
-            message={success}
-            onClose={() => setSuccess("")}
-          />
-        </div>
-      )}
-      {admin && <AcademicCalendarEditor />}
-      {admin && (
-        <div className="grid xl:grid-cols-2 gap-5 mb-6">
-          <Card className="p-5">
-            <div className="flex gap-2 items-center mb-5">
-              <CalendarPlus className="text-skybrand-600" size={19} />
-              <h3 className="section-title">Novo semestre</h3>
-            </div>
+  async function saveClassEdit(event: React.FormEvent) {
+    event.preventDefault();
+    if (!editingClass || action) return;
+    setAction("edit-class"); setError(""); setSuccess("");
+    try {
+      const original = data.classes.find((item) => item.id === editingClass.id);
+      const target = editingClass.shiftId ? Number(editingClass.shiftId) : null;
+      if (target !== null && target !== original?.shiftId) {
+        const preview = await read<ShiftPreview>(`/classes/${editingClass.id}/shift-change?shiftId=${target}`);
+        setShiftError(""); setShiftPreview(preview);
+      } else {
+        await put(`/classes/${editingClass.id}`, { name: editingClass.name, code: editingClass.code, shiftId: target });
+        await reload(); setEditingClass(null); setSuccess("Turma atualizada.");
+      }
+    } catch (reason) { setError(resultMessage(reason)); }
+    finally { setAction(""); }
+  }
+  async function confirmShiftChange() {
+    if (!shiftPreview || action) return;
+    setAction("change-shift"); setShiftError("");
+    try {
+      await put(`/classes/${shiftPreview.classId}/shift-change`, {
+        shiftId: shiftPreview.shiftId, confirmed: true, previewToken: shiftPreview.previewToken,
+      });
+      await reload(); setShiftPreview(null); setEditingClass(null);
+      setSuccess("Turno oficial atualizado. Os registros vinculados foram preservados.");
+    } catch (reason) { setShiftError(resultMessage(reason)); }
+    finally { setAction(""); }
+  }
+  const discardChanges = (dirty: boolean) => !dirty ? Promise.resolve(true) : confirm({
+    title: "Descartar alterações?", message: "As alterações não salvas serão perdidas.", confirmLabel: "Descartar", danger: true,
+  });
+  const openCreate = (kind: "class" | "semester") => {
+    setError("");
+    if (kind === "class") {
+      const next = { ...cls, semesterId: semesterFilter || cls.semesterId };
+      setCls(next); createBaseline.current = JSON.stringify({ cls: next, unitOfferings });
+    } else {
+      const next = semesterDates(year, term);
+      setSemester(next); createBaseline.current = JSON.stringify({ semester: next, year, term });
+    }
+    setCreateModal(kind);
+  };
+  const closeCreate = async () => {
+    if (action || !createModal) return;
+    const current = createModal === "class" ? { cls, unitOfferings } : { semester, year, term };
+    if (!await discardChanges(JSON.stringify(current) !== createBaseline.current)) return;
+    const initial = JSON.parse(createBaseline.current);
+    if (createModal === "class") { setCls(initial.cls); setUnitOfferings(initial.unitOfferings); }
+    else { setSemester(initial.semester); setYear(initial.year); setTerm(initial.term); }
+    setCreateModal(null); setError("");
+  };
+  const editingDirty = () => {
+    const original = data.classes.find((item) => item.id === editingClass?.id);
+    return !!editingClass && !!original && (editingClass.name !== original.name || editingClass.code !== (original.code || "") || editingClass.shiftId !== (original.shiftId == null ? "" : String(original.shiftId)));
+  };
+  const cancelEditing = async () => { if (!action && await discardChanges(editingDirty())) setEditingClass(null); };
+  const closeClass = async () => {
+    if (action || !await discardChanges(editingDirty() || !!assignmentTeacherId)) return false;
+    setExpandedClassId(null); setAssignmentClassId(""); setEditingClass(null); return true;
+  };
+  const semesterForm = (<div>
             <form
               className="space-y-4"
               onSubmit={(e) => {
                 e.preventDefault();
                 void handle("/semesters", semester, "semester", () =>
-                  setSemester((s) => ({ ...s, name: "" })),
+                  { setSemester((s) => ({ ...s, name: "" })); setCreateModal(null); },
                 );
               }}
             >
@@ -210,7 +280,10 @@ export function Academic({ user }: { user: User }) {
                   if (year >= 1900 && year <= 9998) setSemester(semesterDates(year, value));
                 }}><option value={1}>1º semestre</option><option value={2}>2º semestre</option></select></Field>
               </div>
-              <p className="muted text-xs">Datas sugeridas pela RN-01. Ajuste conforme o calendário oficial.</p>
+              <p className="text-sm text-ink">{semester.name} · {dateBR(semester.startDate)} a {dateBR(semester.endDate)}</p>
+              <details className="rounded-lg border border-line p-3" onInvalidCapture={(event) => { event.currentTarget.open = true; }}>
+              <summary className="cursor-pointer font-medium text-ink">Ajustar dados sugeridos</summary>
+              <div className="space-y-3 mt-3">
               <Field label="Nome">
                 <input
                   required
@@ -247,17 +320,17 @@ export function Academic({ user }: { user: User }) {
                   />
                 </Field>
               </div>
+              </div></details>
+              <div className="flex flex-wrap justify-end gap-2">
+              <button type="button" className="btn-secondary" onClick={() => void closeCreate()}>Cancelar</button>
               <SubmitButton busy={action === "semester"}>
                 <Plus size={16} />
                 Adicionar semestre
               </SubmitButton>
+              </div>
             </form>
-          </Card>
-          <Card className="p-5">
-            <div className="flex gap-2 items-center mb-5">
-              <GraduationCap className="text-skybrand-600" size={19} />
-              <h3 className="section-title">Nova turma</h3>
-            </div>
+          </div>);
+  const classForm = (<div>
             <form
               className="space-y-4"
               onSubmit={(e) => {
@@ -268,7 +341,7 @@ export function Academic({ user }: { user: User }) {
                     courseId: Number(cls.courseId), courseModuleId: Number(cls.courseModuleId),
                     unitOfferings },
                   "class",
-                  () => setCls({ ...cls, name: "" }),
+                  () => { setCls({ ...cls, name: "" }); setCreateModal(null); },
                 );
               }}
             >
@@ -308,33 +381,7 @@ export function Academic({ user }: { user: User }) {
               </div>
               {academicError && <Notice message={academicError} />}
               {academicLoading && <p className="muted" role="status">Carregando módulos e UCs do Plano de Curso…</p>}
-              {cls.courseModuleId && !academicLoading && !academicError && <section aria-label="UCs do módulo" className="space-y-3">
-                <h4 className="font-semibold text-ink">UCs do módulo</h4>
-                {units.length === 0 && <p className="muted">Este módulo ainda não possui UCs cadastradas.</p>}
-                {units.map((unit) => {
-                  const offer = unitOfferings.find((item) => item.curricularUnitId === unit.id);
-                  return <div key={unit.id} className="rounded-panel border border-line p-3 space-y-2">
-                    <p className="font-medium text-ink">{unit.code} · {unit.name} · CH {unit.plannedHours == null ? "não informada" : `${unit.plannedHours} h`}</p>
-                    <p className="muted text-sm">Recursos: {(unitResources[unit.id] ?? []).length
-                      ? unitResources[unit.id].map((resource) => `${resource.name} (${resource.quantity})`).join(", ") : "nenhum requisito cadastrado"}</p>
-                    <div className="grid gap-2 sm:grid-cols-2">
-                      <Field label={`Oferta de ${unit.name}`}><select className="field" value={offer?.deliveryMode ?? "Presencial"}
-                        onChange={(event) => setUnitOfferings((current) => current.map((item) => item.curricularUnitId === unit.id
-                          ? { ...item, deliveryMode: event.target.value as UnitOffer["deliveryMode"],
-                            eadScheduleMode: event.target.value === "Ead" ? "SemHorarioFixo" : null } : item))}>
-                        <option value="Presencial">Presencial</option><option value="Ead">EAD</option>
-                      </select></Field>
-                      {offer?.deliveryMode === "Ead" && <Field label={`Horário on-line de ${unit.name}`}><select className="field"
-                        value={offer.eadScheduleMode ?? "SemHorarioFixo"}
-                        onChange={(event) => setUnitOfferings((current) => current.map((item) => item.curricularUnitId === unit.id
-                          ? { ...item, eadScheduleMode: event.target.value as UnitOffer["eadScheduleMode"] } : item))}>
-                        <option value="SemHorarioFixo">Sem horário fixo</option>
-                        <option value="HorarioDefinido">Encontros on-line com horário definido</option>
-                      </select></Field>}
-                    </div>
-                  </div>;
-                })}
-              </section>}
+
               <div className="grid grid-cols-2 gap-3">
                 <Field label="Código da turma">
                   <input className="field" maxLength={30} value={cls.code}
@@ -368,49 +415,63 @@ export function Academic({ user }: { user: User }) {
                   {data.shifts.map((shift) => <option key={shift.id} value={shift.id}>{shift.name} · {shift.startsAt.slice(0, 5)}–{shift.endsAt.slice(0, 5)}</option>)}
                 </select>
               </Field>
-              <SubmitButton busy={action === "class" || academicLoading || Boolean(academicError) ||
+              {cls.courseModuleId && !academicLoading && !academicError && <section aria-label="UCs do módulo" className="space-y-3">
+                <h4 className="font-semibold text-ink">UCs do módulo</h4>
+                {units.length === 0 && <p className="muted">Este módulo ainda não possui UCs cadastradas.</p>}
+                {units.map((unit) => {
+                  const offer = unitOfferings.find((item) => item.curricularUnitId === unit.id);
+                  return <details key={unit.id} className="rounded-panel border border-line p-3 space-y-2">
+                    <summary className="cursor-pointer font-medium text-ink">{unit.code} · {unit.name}</summary>
+                    <p className="font-medium text-ink">{unit.code} · {unit.name} · CH {unit.plannedHours == null ? "não informada" : `${unit.plannedHours} h`}</p>
+                    <p className="muted text-sm">Recursos: {(unitResources[unit.id] ?? []).length
+                      ? unitResources[unit.id].map((resource) => `${resource.name} (${resource.quantity})`).join(", ") : "nenhum requisito cadastrado"}</p>
+                    <div className="grid gap-2 sm:grid-cols-2">
+                      <Field label={`Oferta de ${unit.name}`}><select className="field" value={offer?.deliveryMode ?? "Presencial"}
+                        onChange={(event) => setUnitOfferings((current) => current.map((item) => item.curricularUnitId === unit.id
+                          ? { ...item, deliveryMode: event.target.value as UnitOffer["deliveryMode"],
+                            eadScheduleMode: event.target.value === "Ead" ? "SemHorarioFixo" : null } : item))}>
+                        <option value="Presencial">Presencial</option><option value="Ead">EAD</option>
+                      </select></Field>
+                      {offer?.deliveryMode === "Ead" && <Field label={`Horário on-line de ${unit.name}`}><select className="field"
+                        value={offer.eadScheduleMode ?? "SemHorarioFixo"}
+                        onChange={(event) => setUnitOfferings((current) => current.map((item) => item.curricularUnitId === unit.id
+                          ? { ...item, eadScheduleMode: event.target.value as UnitOffer["eadScheduleMode"] } : item))}>
+                        <option value="SemHorarioFixo">Sem horário fixo</option>
+                        <option value="HorarioDefinido">Encontros on-line com horário definido</option>
+                      </select></Field>}
+                    </div>
+                  </details>;
+                })}
+              </section>}
+              <div className="flex flex-wrap justify-end gap-2">
+              <button type="button" className="btn-secondary" onClick={() => void closeCreate()}>Cancelar</button>
+              <SubmitButton busy={action === "class"} disabled={academicLoading || Boolean(academicError) ||
                 !cls.courseId || !cls.courseModuleId || unitOfferings.length !== units.length}>
                 <Plus size={16} />
                 Adicionar turma
               </SubmitButton>
+              </div>
             </form>
-          </Card>
-        </div>
-      )}
-      {admin && (
-        <Card className="p-5 mb-6 space-y-4">
-          <h3 className="section-title">Atribuir instrutor à UC ofertada</h3>
-          <p className="muted">Atribuição sem dia, turno ou sala. A programação dos encontros ocorre em etapa posterior.</p>
+          </div>);
+  const assignmentForm = (<div className="border-t border-line pt-3 space-y-3">
+          <h4 className="font-semibold text-ink">Instrutor responsável</h4>
           <div className="grid gap-3 sm:grid-cols-2">
-            <Field label="Semestre da atribuição"><select className="field" value={assignmentSemesterId}
-              onChange={(event) => { setAssignmentSemesterId(event.target.value); setAssignmentClassId(""); }}>
-              <option value="">Selecione o semestre</option>{data.semesters.map((item) =>
-                <option key={item.id} value={item.id}>{item.name}</option>)}</select></Field>
-            <Field label="Turma da atribuição"><select className="field" value={assignmentClassId} disabled={!assignmentSemesterId}
-              onChange={(event) => { setOfferingError(""); setAssignmentClassId(event.target.value); }}>
-              <option value="">Selecione a turma</option>{data.classes.filter((item) => item.semesterId === Number(assignmentSemesterId))
-                .map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></Field>
-            <Field label="UC ofertada"><select className="field" value={assignmentUnitId} disabled={!offeredUnits?.units.length}
-              onChange={(event) => { setOfferingError(""); setAssignmentUnitId(event.target.value); }}>
-              <option value="">Selecione a UC</option>{offeredUnits?.units.map((item) => <option key={item.curricularUnitId}
-                value={item.curricularUnitId}>{item.code} · {item.name} · {item.deliveryMode === "Ead" ? "EAD" : "Presencial"}</option>)}</select></Field>
-            <Field label="Instrutor habilitado"><select className="field" value={assignmentTeacherId} disabled={!assignmentUnitId}
+            <Field label="Instrutor habilitado"><select className="field" value={assignmentTeacherId} disabled={eligibleLoading || !!action}
               onChange={(event) => setAssignmentTeacherId(event.target.value)}>
               <option value="">Selecione o instrutor</option>{eligibleTeachers.map((item) =>
                 <option key={item.teacherId} value={item.teacherId}>{item.displayName}</option>)}</select></Field>
           </div>
           {offeredUnits?.legacyWithoutModule && <Notice type="info" message="Turma anterior sem módulo vinculado; suas atribuições existentes permanecem disponíveis abaixo." />}
-          {assignmentUnitId && eligibleTeachers.length === 0 && !offeringError && <p className="muted">Nenhum instrutor habilitado para o curso e esta UC.</p>}
+          {eligibleLoading && <p role="status" className="muted">Carregando instrutores…</p>}
+          {assignmentUnitId && !eligibleLoading && eligibleTeachers.length === 0 && !offeringError && <p className="muted">Nenhum instrutor habilitado para o curso e esta UC.</p>}
           {assignmentUnitId && offeredUnits?.units.find((item) => item.curricularUnitId === Number(assignmentUnitId))?.teacherId &&
             <p className="muted">Responsável atual: {data.teachers.find((teacher) => teacher.id === offeredUnits.units.find((item) =>
               item.curricularUnitId === Number(assignmentUnitId))?.teacherId)?.displayName ?? "Instrutor cadastrado"}</p>}
           {offeringError && <Notice message={offeringError} />}
           <button type="button" className="btn-primary" disabled={!assignmentTeacherId || action === "offered-unit"}
             onClick={() => void assignOfferedUnit()}>Salvar instrutor responsável</button>
-        </Card>
-      )}
-      {admin && (
-        <Card className="p-5 mb-6">
+        </div>);
+  const legacyForm = (<Card className="p-5 mb-6">
           <div className="flex gap-2 items-center mb-5">
             <BookOpen className="text-skybrand-600" size={19} />
             <h3 className="section-title">Atribuir disciplina a uma turma</h3>
@@ -538,103 +599,8 @@ export function Academic({ user }: { user: User }) {
               </SubmitButton>
             </div>
           </form>
-        </Card>
-      )}
-      <div className="grid xl:grid-cols-2 gap-5">
-        <Card className="overflow-hidden">
-          <div className="p-5 border-b border-slate-100 flex justify-between">
-            <h3 className="section-title">Semestres e turmas</h3>
-            <span className="text-xs text-slate-400">
-              {data.classes.length} turmas
-            </span>
-          </div>
-          {data.semesters.length === 0 ? (
-            <Empty text="Comece cadastrando um semestre." />
-          ) : (
-            data.semesters.map((s) => (
-              <div
-                className="border-b border-slate-100 p-4 last:border-b-0"
-                key={s.id}
-              >
-                <p className="font-semibold text-sm">
-                  {s.name}
-                  <span className="ml-2 text-xs font-normal text-slate-400">
-                    {dateBR(s.startDate)} a {dateBR(s.endDate)}
-                  </span>
-                </p>
-                <div className="flex flex-wrap gap-2 mt-2">
-                  {data.classes.filter((c) => c.semesterId === s.id).length ? (
-                    data.classes
-                      .filter((c) => c.semesterId === s.id)
-                      .map((c) => (<div key={c.id} className="w-full">
-                        <div
-                          className="rounded-lg border border-line bg-surface px-3 py-2 text-sm text-ink"
-                        >
-                          <strong>{c.code ? `${c.code} | ` : ""}{c.name}</strong>
-                          {(() => {
-                            const shiftNames = [...new Set(data.assignments
-                              .filter((assignment) => assignment.classGroupId === c.id && !assignment.endedAtUtc)
-                              .map((assignment) => data.shifts.find((shift) => shift.id === assignment.preferredShiftId)?.name)
-                              .filter((name): name is string => Boolean(name)))];
-                            const official = data.shifts.find((shift) => shift.id === c.shiftId)?.name;
-                            return <span className="text-muted-ink"> · {c.students} alunos · {official ?? (shiftNames.length === 0 ? "Turno não cadastrado" : shiftNames.length === 1 ? `${shiftNames[0]} (atribuição; turno oficial pendente)` : `Turnos divergentes: ${shiftNames.join(" / ")}`)}</span>;
-                          })()}
-                          <span className="text-muted-ink"> · {courses.find((course) => course.id === c.courseId)?.name ??
-                            (c.courseId ? `Curso #${c.courseId}` : "Curso não vinculado")}</span>
-                          {c.courseModuleId && <span className="text-muted-ink"> · Módulo #{c.courseModuleId}</span>}
-                          <button type="button" className="ml-2 btn-secondary" onClick={() =>
-                            setExpandedClassId((current) => current === c.id ? null : c.id)}>
-                            {expandedClassId === c.id ? "Ocultar UCs" : "Ver UCs da turma"}
-                          </button>
-                          {admin && <button type="button" className="ml-2 text-sky-700 underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-sky-400"
-                            onClick={() => setEditingClass({ id: c.id, code: c.code || "", name: c.name, shiftId: c.shiftId == null ? "" : String(c.shiftId) })}>Editar</button>}
-                        </div>
-                        {expandedClassId === c.id && <div className="basis-full rounded-panel border border-line p-3 space-y-2 text-sm" aria-live="polite">
-                          {classUnitsError && <Notice message={classUnitsError} />}
-                          {!classUnits && !classUnitsError && <p className="muted">Carregando UCs da turma…</p>}
-                          {classUnits?.legacyWithoutModule && <p className="muted">Turma anterior sem módulo vinculado. Atribuições e reservas existentes permanecem válidas.</p>}
-                          {classUnits && !classUnits.legacyWithoutModule && <>
-                            <p className="font-medium text-ink">Carga horária informada: presencial {classUnits.presentialHours} h · EAD {classUnits.eadHours} h
-                              {classUnits.unitsWithoutHours > 0 && ` · ${classUnits.unitsWithoutHours} UC(s) sem CH informada`}</p>
-                            {classUnits.units.map((unit) => <p key={unit.curricularUnitId} className="text-muted-ink">
-                              {unit.code} · {unit.name} · {unit.deliveryMode === "Ead" ?
-                                `EAD (${unit.eadScheduleMode === "HorarioDefinido" ? "encontros on-line com horário definido" : "sem horário fixo"})` : "Presencial"}
-                              · CH {unit.plannedHours == null ? "não informada" : `${unit.plannedHours} h`}
-                              {unit.resources.length > 0 && ` · Recursos: ${unit.resources.map((resource) => resource.name).join(", ")}`}
-                              {unit.teacherId && ` · Instrutor: ${data.teachers.find((teacher) => teacher.id === unit.teacherId)?.displayName ?? "Responsável registrado"}`}
-                            </p>)}
-                          </>}
-                        </div>}
-                        </div>
-                      ))
-                  ) : (
-                    <span className="text-xs text-slate-400">Sem turmas</span>
-                  )}
-                </div>
-                {editingClass && data.classes.some((c) => c.id === editingClass.id && c.semesterId === s.id) &&
-                  <form className="mt-3 flex flex-wrap gap-2" onSubmit={async (event) => {
-                    event.preventDefault(); setError("");
-                    try {
-                      await put(`/classes/${editingClass.id}`, { name: editingClass.name, code: editingClass.code, shiftId: editingClass.shiftId ? Number(editingClass.shiftId) : null });
-                      await reload(); setEditingClass(null); setSuccess("Turma atualizada.");
-                    } catch (reason) { setError(resultMessage(reason)); }
-                  }}>
-                    <input className="field !w-28" aria-label="Código da turma" maxLength={30}
-                      value={editingClass.code} onChange={(event) => setEditingClass({ ...editingClass, code: event.target.value })} />
-                    <input className="field !w-48" aria-label="Nome da turma" required maxLength={100}
-                      value={editingClass.name} onChange={(event) => setEditingClass({ ...editingClass, name: event.target.value })} />
-                    <select className="field !w-48" aria-label="Turno da turma" required value={editingClass.shiftId} onChange={(event) => setEditingClass({ ...editingClass, shiftId: event.target.value })}>
-                      <option value="">Selecione o turno</option>
-                      {data.shifts.map((shift) => <option key={shift.id} value={shift.id}>{shift.name}</option>)}
-                    </select>
-                    <button className="btn-primary" type="submit">Salvar</button>
-                    <button className="btn-secondary" type="button" onClick={() => setEditingClass(null)}>Cancelar</button>
-                  </form>}
-              </div>
-            ))
-          )}
-        </Card>
-        <Card className="overflow-hidden">
+        </Card>);
+  const legacyHistory = (<Card className="overflow-hidden">
           <div className="p-5 border-b border-slate-100 flex justify-between">
             <h3 className="section-title">Disciplinas atribuídas</h3>
             <span className="text-xs text-slate-400">
@@ -681,8 +647,136 @@ export function Academic({ user }: { user: User }) {
               ))}
             </div>
           )}
-        </Card>
+        </Card>);
+  const selectedClass = data.classes.find((item) => item.id === expandedClassId);
+  const filterCount = Number(!!semesterFilter) + Number(!!shiftFilter) + Number(!!courseFilter);
+  const visibleClasses = data.classes.filter((item) => (!semesterFilter || item.semesterId === Number(semesterFilter)) &&
+    (!shiftFilter || item.shiftId === Number(shiftFilter)) && (!courseFilter || item.courseId === Number(courseFilter)) &&
+    `${item.code ?? ""} ${item.name}`.toLocaleLowerCase("pt-BR").includes(query.trim().toLocaleLowerCase("pt-BR")));
+  const openClass = (id: number) => { setExpandedClassId(id); setAssignmentClassId(String(id)); setAssignmentUnitId(""); setEditingClass(null); setOfferingError(""); setError(""); };
+  const tabs = [{ key: "classes", label: "Turmas" }, { key: "semesters", label: "Semestres" }] as const;
+  return <div className="space-y-5">
+    <Title title="Turmas e semestres" />
+    {success && !selectedClass && <Notice type="success" message={success} onClose={() => setSuccess("")} />}
+    {error && !createModal && !selectedClass && <Notice message={error} onClose={() => setError("")} />}
+    <div role="tablist" aria-label="Turmas e semestres" className="flex gap-2 border-b border-line pb-3">
+      {tabs.map((item, index) => <button type="button" role="tab" id={`academic-tab-${item.key}`} aria-controls={`academic-panel-${item.key}`} aria-selected={tab === item.key} tabIndex={tab === item.key ? 0 : -1} key={item.key}
+        className={tab === item.key ? "btn-primary" : "btn-secondary"} onClick={() => setTab(item.key)} onKeyDown={(event) => {
+          if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return;
+          event.preventDefault(); const next = event.key === "Home" ? 0 : event.key === "End" ? 1 : 1 - index;
+          setTab(tabs[next].key); document.getElementById(`academic-tab-${tabs[next].key}`)?.focus();
+        }}>{item.label}</button>)}
+    </div>
+    <section role="tabpanel" id="academic-panel-classes" aria-labelledby="academic-tab-classes" hidden={tab !== "classes"}>
+      <Card className="p-4 sm:p-5 space-y-4">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <h2 className="section-title">Turmas cadastradas</h2>
+          {admin && <button type="button" className="btn-primary" onClick={() => openCreate("class")}>Nova turma</button>}
+        </div>
+        <section aria-label="Filtros de turmas" className="flex flex-col gap-3 sm:flex-row sm:items-end">
+          <label className="relative min-w-0 flex-1"><span className="field-label">Buscar turma</span>
+            <Search size={17} aria-hidden="true" className="absolute left-3 bottom-3 text-muted-ink" />
+            <input className="field !pl-10" type="search" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Nome ou código" />
+          </label>
+          <div ref={filtersRef} className="relative sm:shrink-0" onBlur={(event) => { if (!event.currentTarget.contains(event.relatedTarget)) setFiltersOpen(false); }}>
+            <button ref={filtersButtonRef} type="button" className="btn-secondary w-full sm:w-auto" aria-expanded={filtersOpen} aria-controls="class-filters-panel" onClick={() => setFiltersOpen(!filtersOpen)}>
+              <SlidersHorizontal size={17} aria-hidden="true" />Filtros
+              {filterCount > 0 && <span className="rounded-full bg-canvas px-2 py-0.5 text-xs text-ink">{filterCount}<span className="sr-only"> selecionados</span></span>}
+              <ChevronDown size={16} aria-hidden="true" className={`transition-transform ${filtersOpen ? "rotate-180" : ""}`} />
+            </button>
+            {filtersOpen && <div id="class-filters-panel" role="region" aria-label="Opções de filtro" className="absolute right-0 top-full z-20 mt-2 w-full space-y-4 rounded-panel border border-line bg-surface p-4 shadow-soft sm:w-80">
+              <Field label="Filtrar semestre"><select className="field" value={semesterFilter} onChange={(event) => setSemesterFilter(event.target.value)}><option value="">Todos os semestres</option>{data.semesters.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></Field>
+              <Field label="Filtrar turno"><select className="field" value={shiftFilter} onChange={(event) => setShiftFilter(event.target.value)}><option value="">Todos os turnos</option>{data.shifts.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></Field>
+              <Field label="Filtrar curso"><select className="field" value={courseFilter} onChange={(event) => setCourseFilter(event.target.value)}><option value="">Todos os cursos</option>{courses.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></Field>
+              <div className="flex items-center justify-between gap-3 border-t border-line pt-3">
+                <button type="button" className="btn-quiet" disabled={!filterCount} onClick={() => { setSemesterFilter(""); setShiftFilter(""); setCourseFilter(""); }}>Limpar filtros</button>
+                <button type="button" className="btn-primary" onClick={() => { setFiltersOpen(false); filtersButtonRef.current?.focus(); }}>Concluir</button>
+              </div>
+            </div>}
+          </div>
+        </section>
+        {!visibleClasses.length ? <Empty title="Nenhuma turma encontrada" text="Cadastre uma turma ou ajuste os filtros." /> : <div role="region" aria-label="Lista de turmas cadastradas" tabIndex={0} className="max-h-[min(60dvh,28rem)] overflow-auto overscroll-contain rounded-panel border border-line focus-visible:outline focus-visible:outline-2 focus-visible:outline-skybrand-500">
+          <table className="w-full min-w-[42rem] text-left text-sm">
+            <thead><tr>{["Turma", "Curso", "Semestre", "Turno", "Alunos"].map((label) => <th key={label} scope="col" className={`table-head sticky top-0 z-10 p-3 ${label === "Alunos" ? "text-right" : ""}`}>{label}</th>)}</tr></thead>
+            <tbody>{visibleClasses.map((item) => <tr key={item.id} className="cursor-pointer border-t border-line text-ink transition-colors hover:bg-canvas focus-within:bg-canvas" onClick={(event) => { if (!(event.target as HTMLElement).closest("button")) openClass(item.id); }}>
+              <td className="p-3"><button type="button" aria-label={`Abrir informações de ${item.name}`} className="rounded text-left font-semibold underline decoration-line underline-offset-4 hover:decoration-current focus-visible:outline focus-visible:outline-2 focus-visible:outline-skybrand-500" onClick={() => openClass(item.id)}>{item.name}</button><span className="block text-xs text-muted-ink">{item.code || "Código não informado"}</span></td>
+              <td className="p-3 text-muted-ink">{courses.find((row) => row.id === item.courseId)?.name ?? "Curso não vinculado"}</td>
+              <td className="p-3 text-muted-ink">{data.semesters.find((row) => row.id === item.semesterId)?.name ?? "Semestre não informado"}</td>
+              <td className="p-3 text-muted-ink">{data.shifts.find((row) => row.id === item.shiftId)?.name ?? "Turno pendente"}</td>
+              <td className="p-3 text-right tabular-nums">{item.students}</td>
+            </tr>)}</tbody>
+          </table>
+        </div>}
+      </Card>
+      {selectedClass && <Modal title="Informações" width="max-w-3xl" onClose={() => void closeClass()}><div className="space-y-4">
+        {error && <Notice message={error} />}{success && <Notice type="success" message={success} />}
+        <div className="flex flex-wrap items-center justify-between gap-3"><div><p className="font-semibold text-ink">{selectedClass.name}</p><p className="muted">{data.semesters.find((item) => item.id === selectedClass.semesterId)?.name} · {selectedClass.students} alunos</p></div>
+          <div className="flex flex-wrap gap-2">{admin && <button type="button" className="btn-secondary" disabled={!!action} onClick={() => setEditingClass({ id: selectedClass.id, code: selectedClass.code || "", name: selectedClass.name, shiftId: selectedClass.shiftId == null ? "" : String(selectedClass.shiftId) })}>Editar</button>}
+            {onPlanning && <button type="button" className="btn-secondary" disabled={!!action} onClick={async () => { if (await closeClass()) onPlanning(); }}>Ir para Planejamento</button>}
+          </div>
+        </div>
+        <dl className="grid grid-cols-2 gap-3 rounded-panel border border-line bg-canvas p-4 text-sm">
+          <div><dt className="text-muted-ink">Código</dt><dd className="font-medium text-ink">{selectedClass.code || "Não informado"}</dd></div>
+          <div><dt className="text-muted-ink">Turno</dt><dd className="font-medium text-ink">{data.shifts.find((item) => item.id === selectedClass.shiftId)?.name ?? "Não informado"}</dd></div>
+          <div className="col-span-2"><dt className="text-muted-ink">Curso</dt><dd className="font-medium text-ink">{courses.find((item) => item.id === selectedClass.courseId)?.name ?? "Não vinculado"}</dd></div>
+        </dl>
+        {editingClass && (                  <form className="mt-3 rounded-panel border border-line p-4" onSubmit={(event) => void saveClassEdit(event)}>
+                    <fieldset disabled={!!action} className="space-y-3">
+                    <legend className="font-semibold text-ink mb-3">Editar turma</legend>
+                    <div className="grid gap-3 sm:grid-cols-2">
+                    <Field label="Nome da turma" className="sm:col-span-2"><input className="field" aria-label="Nome da turma" required maxLength={100}
+                      value={editingClass.name} onChange={(event) => setEditingClass({ ...editingClass, name: event.target.value })} /></Field>
+                    <Field label="Código da turma"><input className="field" aria-label="Código da turma" maxLength={30}
+                      value={editingClass.code} onChange={(event) => setEditingClass({ ...editingClass, code: event.target.value })} /></Field>
+                    <Field label="Turno da turma"><select className="field" aria-label="Turno da turma" required value={editingClass.shiftId} onChange={(event) => setEditingClass({ ...editingClass, shiftId: event.target.value })}>
+                      <option value="">Selecione o turno</option>
+                      {data.shifts.map((shift) => <option key={shift.id} value={shift.id}>{shift.name}</option>)}
+                    </select></Field></div>
+                    <div className="flex flex-wrap justify-end gap-2">
+                    <button className="btn-secondary" type="button" onClick={() => void cancelEditing()}>Cancelar</button>
+                    <SubmitButton busy={action === "edit-class"}>Salvar</SubmitButton>
+                    </div>
+                    </fieldset>
+                  </form>)}
+        <h3 className="font-semibold text-ink">UCs e instrutores</h3>
+        {classUnitsError && <Notice message={classUnitsError} />}
+                          {!classUnits && !classUnitsError && <p className="muted">Carregando UCs da turma…</p>}
+                          {classUnits?.legacyWithoutModule && <p className="muted">Turma anterior sem módulo vinculado. Atribuições e reservas existentes permanecem válidas.</p>}
+                          {classUnits && !classUnits.legacyWithoutModule && <>
+                            <p className="font-medium text-ink">Carga horária informada: presencial {classUnits.presentialHours} h · EAD {classUnits.eadHours} h
+                              {classUnits.unitsWithoutHours > 0 && ` · ${classUnits.unitsWithoutHours} UC(s) sem CH informada`}</p>
+                            {classUnits.units.map((unit) => <div key={unit.curricularUnitId} className="rounded-lg border border-line p-3 space-y-2"><p className="text-muted-ink">
+                              {unit.code} · {unit.name} · {unit.deliveryMode === "Ead" ?
+                                `EAD (${unit.eadScheduleMode === "HorarioDefinido" ? "encontros on-line com horário definido" : "sem horário fixo"})` : "Presencial"}
+                              · CH {unit.plannedHours == null ? "não informada" : `${unit.plannedHours} h`}
+                              {unit.resources.length > 0 && ` · Recursos: ${unit.resources.map((resource) => resource.name).join(", ")}`}
+                              {unit.teacherId && ` · Instrutor: ${data.teachers.find((teacher) => teacher.id === unit.teacherId)?.displayName ?? "Responsável registrado"}`}
+                            </p>{!unit.teacherId && <p className="text-sm font-medium text-muted-ink">Instrutor não definido</p>}
+                            {admin && <button type="button" className="btn-secondary" disabled={!!action} onClick={async () => { if (assignmentUnitId !== String(unit.curricularUnitId) && !await discardChanges(!!assignmentTeacherId)) return; setOfferingError(""); setAssignmentUnitId(String(unit.curricularUnitId)); }}>Definir instrutor</button>}
+                            {admin && assignmentUnitId === String(unit.curricularUnitId) && <section aria-label={`Definir instrutor de ${unit.name}`}>{assignmentForm}</section>}
+                            </div>)}
+                          </>}
+      </div></Modal>}
+      <details className="mt-5 rounded-panel border border-line bg-surface p-4" onToggle={(event) => setLegacyOpen(event.currentTarget.open)}><summary className="cursor-pointer font-semibold text-ink">Registros anteriores</summary>{legacyOpen && <div className="mt-4 space-y-4">{admin && legacyForm}{legacyHistory}</div>}</details>
+    </section>
+    <section role="tabpanel" id="academic-panel-semesters" aria-labelledby="academic-tab-semesters" hidden={tab !== "semesters"}>
+      <Card className="p-4 sm:p-5 space-y-4"><div className="flex items-center justify-between gap-3"><h2 className="section-title">Semestres cadastrados</h2>{admin && <button type="button" className="btn-primary" onClick={() => openCreate("semester")}>Novo semestre</button>}</div>
+        {!data.semesters.length ? <Empty text="Comece cadastrando um semestre." /> : <ul className="space-y-3">{data.semesters.map((item) => <li key={item.id} className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-line p-4"><div><strong className="text-ink">{item.name}</strong><p className="muted">{dateBR(item.startDate)} a {dateBR(item.endDate)} · {data.classes.filter((row) => row.semesterId === item.id).length} turmas</p></div>
+        </li>)}</ul>}
+      </Card>
+    </section>
+    {admin && shiftPreview && <Modal title="Confirmar mudança de turno" width="max-w-xl" descriptionId="class-shift-warning" onClose={() => { if (!action) setShiftPreview(null); }}>
+      <div className="space-y-4">
+        {shiftError && <Notice message={shiftError} />}
+        <div className="flex items-start gap-3"><AlertTriangle size={24} className="shrink-0 text-[var(--color-remove-ink)]" aria-hidden="true" /><p id="class-shift-warning" className="text-sm text-ink">A mudança será de <strong>{shiftPreview.currentShiftName ?? "Não definido"}</strong> para <strong>{shiftPreview.shiftName}</strong>.</p></div>
+        {shiftPreview.links.length ? <div className="rounded-panel border border-line p-4 space-y-2"><h3 className="font-semibold text-ink">Vínculos que impediam a alteração direta</h3><ul className="space-y-2 text-sm">{shiftPreview.links.map((link) => <li key={link.label} className="flex justify-between gap-3 text-ink"><span>{link.label}</span><strong>{link.count}</strong></li>)}</ul><p className="text-xs text-muted-ink">A contagem inclui registros históricos, encerrados ou cancelados.</p></div> : <p className="text-sm text-muted-ink">Nenhum vínculo impeditivo encontrado.</p>}
+        <div className="rounded-lg border border-line bg-canvas p-3 text-sm text-ink space-y-2"><p><strong>Somente o turno oficial da turma será alterado.</strong> Nome e código não serão alterados nesta confirmação.</p><p>As atribuições, reservas, ocupações e planejamentos continuarão com seus dados e horários atuais. A troca não remaneja aulas nem reserva ambientes no novo turno.</p></div>
+        <div className="flex flex-wrap justify-end gap-2"><button type="button" className="btn-secondary" disabled={!!action} onClick={() => setShiftPreview(null)}>Cancelar</button><button type="button" className="btn-primary" disabled={!!action} onClick={() => void confirmShiftChange()}>{action === "change-shift" ? "Alterando…" : "Confirmar turno"}</button></div>
       </div>
-    </>
-  );
+    </Modal>}
+    {admin && createModal && <Modal title={createModal === "class" ? "Nova turma" : "Novo semestre"} width="max-w-2xl" onClose={() => void closeCreate()}>
+      {error && <div className="mb-3"><Notice message={error} /></div>}
+      <fieldset disabled={!!action}>{createModal === "class" ? classForm : semesterForm}</fieldset>
+    </Modal>}
+  </div>;
 }

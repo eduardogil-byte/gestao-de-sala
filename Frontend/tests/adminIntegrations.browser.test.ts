@@ -157,11 +157,15 @@ test("integrações administrativas usam contratos existentes e preservam estado
     });
     await t.test("turma carrega módulo, UC, CH e recursos e registra EAD sem duplicar o plano", async () => {
       await reset("academic", "Admin");
+      await evaluate("adminTest.click('Nova turma')");
+      await waitFor("!!document.querySelector('[role=dialog]')");
       await evaluate(`adminTest.catalog['/api/courses/1/modules/2/curricular-units/3/resources'] =
         [{ resourceCatalogItemId: 9, name: 'Bancada', category: 'Equipamento', quantity: 1 }]`);
       await evaluate("adminTest.select('Semestre', '1'); adminTest.select('Curso do Plano de Curso', '1')");
       await waitFor("document.body.innerText.includes('Módulo sintético')");
       await evaluate("adminTest.select('Módulo do curso', '2')");
+      await waitFor("!!document.querySelector('[role=dialog] details summary')");
+      await evaluate("document.querySelector('[role=dialog] details').open = true");
       await waitFor("document.body.innerText.includes('UC sintética · CH 8 h')");
       assert.equal(await evaluate("document.body.innerText.includes('Bancada (1)')"), true);
       await command("Emulation.setDeviceMetricsOverride", { width: 390, height: 844, deviceScaleFactor: 1, mobile: true });
@@ -184,7 +188,7 @@ test("integrações administrativas usam contratos existentes e preservam estado
         adminTest.catalog['/api/classes/7/units'] = { legacyWithoutModule: true, units: [], presentialHours: 0, eadHours: 0, unitsWithoutHours: 0 };
         adminTest.click('Atualizar dados')`);
       await waitFor("document.body.innerText.includes('Turma anterior')");
-      await evaluate("adminTest.click('Ver UCs da turma')");
+      await evaluate("[...document.querySelectorAll('button')].find(item => item.textContent.includes('Turma anterior')).click()");
       await waitFor("document.body.innerText.includes('Turma anterior sem módulo vinculado')");
       assert.equal(await evaluate("document.body.innerText.includes('Adicionar turma')"), false);
     });
@@ -198,10 +202,10 @@ test("integrações administrativas usam contratos existentes e preservam estado
         adminTest.catalog['/api/classes/7/units/3/eligible-teachers'] = [{ teacherId: 't0', displayName: 'Docente 0' }];
         adminTest.click('Atualizar dados')`);
       await waitFor("document.body.innerText.includes('Turma EAD')");
-      await evaluate("adminTest.select('Semestre da atribuição', '1'); adminTest.select('Turma da atribuição', '7')");
+      await evaluate("[...document.querySelectorAll('button')].find(item => item.textContent.includes('Turma EAD')).click()");
       await waitFor("document.body.innerText.includes('UC · UC sintética · EAD')");
-      await evaluate("adminTest.select('UC ofertada', '3')");
-      await waitFor("document.body.innerText.includes('Docente 0')");
+      await evaluate("adminTest.click('Definir instrutor')");
+      await waitFor("[...document.querySelectorAll('label')].find(item => item.textContent.includes('Instrutor habilitado'))?.querySelectorAll('option').length > 1");
       await evaluate("adminTest.select('Instrutor habilitado', 't0'); adminTest.click('Salvar instrutor responsável')");
       const path = '/api/classes/7/units/3/teacher';
       await waitFor(`adminTest.pending.some(r => r.path === ${JSON.stringify(path)})`);
