@@ -1,0 +1,31 @@
+/* Complementos às folhas da referência (origin.css) para funções que só existem neste sistema. */
+.app-workspace:has(.sgp) { background: #0a1020; }
+:root[data-theme="light"] .app-workspace:has(.sgp) { background: #f7f8fb; }
+.sgp { box-shadow: none; }
+:root[data-theme="light"] .sgp { background: #f7f8fb; }
+:root[data-theme="dark"] .sgp { background: #0a1020; }
+:root[data-theme="light"] .sgp, :root[data-theme="light"] .sgp .planning-page { --content: var(--card); --planning-section-content: var(--card); --table-surface: var(--subtle); --field-surface: var(--card); }
+.sgp .planning-page .planning-days .planning-day.is-today strong, .sgp .grade-steps li.is-current > span { background: #1d4ed8; border-color: #1d4ed8; color: #fff; }
+.sgp .planning-page .sgp-fold, .sgp .planning-page .planning-reference-finalize, .sgp .planning-page .grade-section, .sgp .planning-page #planning-requests { margin: 0 0 14px; }
+.sgp .sgp-fold > .courses-panel, .sgp .sgp-fold > .sgp-legacy { margin: 14px; }
+.sgp .sgp-fold > .sgp-legacy { max-height: 640px; overflow: auto; }
+.sgp .sgp-legacy .mb-4:empty, .sgp .sgp-legacy .filter-group:empty { display: none; }
+.sgp .sgp-legacy .filter-bar:has(> .filter-group:empty) { padding: 0; border: 0; background: transparent; box-shadow: none; }
+.sgp .sgp-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; padding: 12px 0 0; }
+.sgp .courses-panel > .sgp-actions { padding: 0 20px 18px; }
+.sgp .sgp-actions input { flex: 1 1 220px; min-width: 0; }
+.sgp .sgp-proposals, .sgp .sgp-scroll { display: grid; align-content: start; gap: 12px; max-height: 520px; overflow-y: auto; }
+.sgp .sgp-proposal { flex: 0 0 auto; margin: 0; }
+.sgp .sgp-history { margin: 0; padding: 16px 20px; list-style: none; }
+.sgp .sgp-head-tools { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 12px; }
+.sgp .sgp-flexible { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 8px; max-height: 300px; margin-top: 14px; overflow-y: auto; }
+.sgp .sgp-flexible h4 { grid-column: 1 / -1; margin: 0; }
+.sgp .grade-week { overflow-x: auto; }
+.sgp .grade-day { max-height: 480px; overflow-y: auto; }
+.sgp .sgp-alert { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 12px 16px; border: 1px solid currentColor; border-radius: 10px; color: var(--danger); }
+.sgp .sgp-alert button { border: 0; background: none; color: inherit; }
+.sgp .sgp-retry { justify-self: start; }
+.sgp .planning-day:disabled { cursor: default; }
+.sgp table, .sgp thead, .sgp tbody, .sgp tr, .sgp th, .sgp td { line-height: 1.5; }
+:root[data-theme="light"] .sgp .reservation-env-chip.is-fail, :root[data-theme="light"] .sgp .reservation-env-result.is-fail, :root[data-theme="light"] .sgp .reservation-detail-issues p b { color: #a3182b; }
+.sgp .planning-page .grade-filters input, .sgp .planning-page .sgp-actions input { min-height: 36px; padding: 8px 11px; border: 1px solid var(--line); border-radius: 8px; background: var(--field-surface, #141e2e); color: var(--text); font-size: 12px; }
