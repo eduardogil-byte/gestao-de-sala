@@ -9,6 +9,37 @@ namespace SalaGest.Api.Endpoints;
 
 public static partial class ApiEndpoints
 {
+    private static async Task ApplyAssignmentNeeds(AppDbContext db, BookingRequest booking)
+    {
+        var assignments = await db.Assignments.AsNoTracking().Include(a => a.Software)
+            .Where(a => a.TeacherId == booking.TeacherId && a.ClassGroupId == booking.ClassGroupId &&
+                a.CurricularUnitId == booking.CurricularUnitId && a.EndedAtUtc == null).ToListAsync();
+        if (assignments.Count == 0) return;
+        booking.Students = await db.Classes.Where(c => c.Id == booking.ClassGroupId).Select(c => c.Students).SingleAsync();
+        booking.NeedsProjector |= assignments.Any(a => a.NeedsProjector);
+        booking.NeedsTeacherComputer |= assignments.Any(a => a.NeedsTeacherComputer);
+        booking.NeedsStudentComputers |= assignments.Any(a => a.NeedsStudentComputers);
+        booking.MinRamGb = Math.Max(booking.MinRamGb, assignments.Max(a => a.MinRamGb));
+        booking.MinTier = (HardwareTier)Math.Max((int)booking.MinTier, assignments.Max(a => (int)a.MinTier));
+        booking.NeedsDedicatedGpu |= assignments.Any(a => a.NeedsDedicatedGpu);
+        foreach (var id in assignments.SelectMany(a => a.Software).Select(s => s.SoftwareId).Distinct())
+            if (!booking.Software.Any(s => s.SoftwareId == id)) booking.Software.Add(new BookingSoftware { SoftwareId = id });
+    }
+
+    private static EnvironmentCompatibilityResponse BookingEnvironment(BookingRequest booking,
+        CapabilityEnvironmentRequirement? requirement, Room room, DateOnly date,
+        IReadOnlyList<CurricularUnitResourceRequirement> resources)
+    {
+        // Without a capability there is no type restriction; UC resources and assignment needs still apply.
+        var effective = requirement ?? (booking.CurricularCapabilityId is null
+            ? new CapabilityEnvironmentRequirement { RoomKind = room.Kind } : null);
+        var result = EnvironmentCompatibility.Evaluate(effective, room, booking.Students, date, unitResources: resources);
+        var mismatch = booking.CurricularCapabilityId is null
+            ? RoomCompatibility.Incompatibility(room, Need(booking), date) : null;
+        return mismatch is null ? result : result with { Classification = "Incompatible",
+            Findings = result.Findings.Append(new RequirementFinding("assignment", "UnmetCritical", mismatch)).ToArray() };
+    }
+
     private static void MapPedagogicalBookingOptions(IEndpointRouteBuilder app)
     {
         app.MapGet("/api/bookings/pedagogical-options", async (string? teacherId, ClaimsPrincipal current, AppDbContext db) =>

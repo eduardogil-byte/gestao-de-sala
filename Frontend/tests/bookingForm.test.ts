@@ -50,8 +50,10 @@ test("recorrência começa na data escolhida e propõe apenas os dias selecionad
     const markup = renderToStaticMarkup(createElement(ConfirmationProvider, null,
       createElement((await server.ssrLoadModule("/src/components/BookingForm.tsx")).BookingForm,
         { user: { id: "p", displayName: "Professor", email: "", roles: ["Professor"] }, onCreated: () => {} })));
-    assert.match(markup, /Turma \(opcional\)/);
-    assert.match(markup, /Atividade \/ justificativa \(obrigatória\)/);
+    assert.match(markup, /Turma obrigatória/);
+    assert.match(markup, /Unidade curricular/);
+    assert.match(markup, /Capacidade \(opcional\)/);
+    assert.doesNotMatch(markup, /Atividade \/ justificativa|Vincular ao planejamento/);
     assert.match(markup, /Continuar para escolha da sala/);
   } finally { await server.close(); }
 });
