@@ -7,7 +7,7 @@ test("dashboard por semestre preserva gráficos, filtros, temas, comparação e 
   try {
     await waitFor("document.body.textContent.includes('Ocupação do semestre · 2027/1')");
     assert.equal(await evaluate("document.querySelector('h1')?.textContent"), "Visão Geral");
-    assert.equal(await evaluate("document.querySelectorAll('[aria-label=\"Resumo do semestre\"] .card').length"), 4);
+    assert.equal(await evaluate("document.querySelectorAll('[aria-label=\"Resumo do semestre\"] .card').length"), 6);
     assert.equal(await evaluate("[...document.querySelectorAll('details')].every(element => !element.open)"), true);
     for (const width of [1366, 768, 360]) {
       await command("Emulation.setDeviceMetricsOverride", { width, height: 850, deviceScaleFactor: 1, mobile: width === 360 });

@@ -1,12 +1,13 @@
 import { useEffect, useRef, useState, type FormEvent } from "react";
-import { ArrowLeft, ChevronRight, Plus } from "lucide-react";
+import { ArrowLeft, ChevronDown, ChevronRight, Eye, Pencil, Plus, Power, Search } from "lucide-react";
 import { post, put, read } from "../lib/api";
 import { useData } from "../lib/data";
 import {
   canEditCatalog, catalogErrorMessage, catalogPath, formatHours, parseHours, parseOrder,
   shiftHours, workloadText,
 } from "../lib/pedagogicalCatalog";
-import { Badge, Busy, Card, Empty, Field, MetricCard, Modal, Notice, SectionHeading, SubmitButton, Title } from "../components/UI";
+import { Busy, Field, Modal, Notice, SubmitButton, useConfirmation } from "../components/UI";
+import { PageHeading, Panel, SenaiScope, StatCard, Tabs } from "../components/senai/SenaiUI";
 import { CapabilityRequirements } from "../components/CapabilityRequirements";
 import { UnitResourceRequirements } from "../components/UnitResourceRequirements";
 import type {
@@ -29,10 +30,19 @@ const blankForm: FormValues = {
 const levelNames: Record<Level, string> = {
   course: "curso", module: "módulo", unit: "unidade curricular", capability: "capacidade",
 };
+const newLabels: Record<Level, string> = {
+  course: "Novo curso", module: "Novo módulo", unit: "Novo unidade curricular", capability: "Novo capacidade",
+};
+type CourseTab = "resumo" | "modulos" | "turmas";
+
+function Status({ active }: { active: boolean }) {
+  return <span className={`sg-status ${active ? "is-active" : ""}`}>{active ? "Ativo" : "Inativo"}</span>;
+}
 
 export function PedagogicalCatalog({ user }: { user: User }) {
   const admin = canEditCatalog(user.roles);
   const { data } = useData();
+  const confirm = useConfirmation();
   const [courses, setCourses] = useState<Course[]>([]);
   const [modules, setModules] = useState<CourseModule[]>([]);
   const [units, setUnits] = useState<CurricularUnit[]>([]);
@@ -50,7 +60,10 @@ export function PedagogicalCatalog({ user }: { user: User }) {
   const [shiftId, setShiftId] = useState("");
   const [hoursPerShift, setHoursPerShift] = useState("");
   const [plannedHours, setPlannedHours] = useState("");
-  const [formOpen, setFormOpen] = useState(false);
+  const [formLevel, setFormLevel] = useState<Level | null>(null);
+  const [courseTab, setCourseTab] = useState<CourseTab>("modulos");
+  const [statusFilter, setStatusFilter] = useState<"all" | "active" | "inactive">("all");
+  const [moduleSearch, setModuleSearch] = useState("");
   const [editId, setEditId] = useState<number | null>(null);
   const [form, setForm] = useState<FormValues>(blankForm);
   const [busy, setBusy] = useState("");
@@ -134,14 +147,19 @@ export function PedagogicalCatalog({ user }: { user: User }) {
     return () => { current = false; };
   }, [unitPath, hoursPerShift, revision]);
 
-  const closeForm = () => { setFormOpen(false); setEditId(null); setError(""); };
+  const closeForm = () => { setFormLevel(null); setEditId(null); setError(""); };
   const goCourses = () => {
-    closeForm(); setSearch(""); setCourseId(null); setModuleId(null); setUnitId(null);
+    closeForm(); setSearch(""); setModuleSearch(""); setCourseId(null); setModuleId(null); setUnitId(null);
     setModules([]); setUnits([]); setCapabilities([]); setSummary(null);
   };
   const goModules = (id: number) => {
-    closeForm(); setSearch(""); setCourseId(id); setModuleId(null); setUnitId(null);
+    closeForm(); setSearch(""); setModuleSearch(""); setCourseTab("modulos");
+    setCourseId(id); setModuleId(null); setUnitId(null);
     setModules([]); setUnits([]); setCapabilities([]); setSummary(null);
+  };
+  const collapseModule = () => {
+    closeForm(); setSearch(""); setModuleId(null); setUnitId(null);
+    setUnits([]); setCapabilities([]); setSummary(null);
   };
   const goUnits = (id: number) => {
     closeForm(); setSearch(""); setModuleId(id); setUnitId(null);
@@ -150,28 +168,35 @@ export function PedagogicalCatalog({ user }: { user: User }) {
   const goCapabilities = (id: number) => {
     closeForm(); setSearch(""); setUnitId(id); setCapabilities([]); setSummary(null);
   };
-  const beginForm = (id: number | null = null, values: Partial<FormValues> = {}) => {
+  const beginForm = (target: Level, id: number | null = null, values: Partial<FormValues> = {}) => {
     setForm({ ...blankForm, ...values });
-    setEditId(id); setFormOpen(true); setError(""); setSuccess("");
+    setFormLevel(target); setEditId(id); setError(""); setSuccess("");
+  };
+  // Atualiza uma lista de nível superior ao exibido (ex.: editar o curso dentro dos detalhes).
+  const reloadList = async (target: Level) => {
+    if (target === "course") setCourses(await read<Course[]>(catalogPath()));
+    else if (target === "module" && courseId !== null) setModules(await read<CourseModule[]>(catalogPath(courseId)));
+    else if (target === "unit" && courseId !== null && moduleId !== null)
+      setUnits(await read<CurricularUnit[]>(catalogPath(courseId, moduleId)));
   };
 
   const saveEntry = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    if (!admin || submitting.current) return;
+    if (!admin || submitting.current || formLevel === null) return;
     submitting.current = true;
     setBusy("form"); setError(""); setSuccess("");
     try {
       let path: string;
       let payload: unknown;
-      if (level === "course") {
+      if (formLevel === "course") {
         if (!form.code.trim() || !form.name.trim()) throw new Error("Informe código e nome do curso.");
         path = catalogPath();
         payload = { code: form.code.trim(), name: form.name.trim(), active: form.active };
-      } else if (level === "module" && courseId !== null) {
+      } else if (formLevel === "module" && courseId !== null) {
         if (!form.name.trim()) throw new Error("Informe o nome do módulo.");
         path = catalogPath(courseId);
         payload = { name: form.name.trim(), order: parseOrder(form.order) };
-      } else if (level === "unit" && courseId !== null && moduleId !== null) {
+      } else if (formLevel === "unit" && courseId !== null && moduleId !== null) {
         if (!form.code.trim() || !form.name.trim()) throw new Error("Informe código e nome da UC.");
         path = catalogPath(courseId, moduleId);
         payload = { code: form.code.trim(), name: form.name.trim() };
@@ -188,6 +213,27 @@ export function PedagogicalCatalog({ user }: { user: User }) {
       else await put(`${path}/${editId}`, payload);
       closeForm();
       setSuccess(editId === null ? "Cadastro realizado." : "Alterações salvas.");
+      if (formLevel === level) setRevision((value) => value + 1);
+      else await reloadList(formLevel);
+    } catch (cause) {
+      setError(catalogErrorMessage(cause));
+    } finally {
+      submitting.current = false;
+      setBusy("");
+    }
+  };
+
+  // Usa o mesmo contrato de edição do curso, alterando apenas a situação.
+  const toggleCourse = async (item: Course) => {
+    if (!admin || submitting.current) return;
+    if (item.active && !await confirm({ title: "Desativar curso", confirmLabel: "Desativar",
+      message: `Deseja desativar ${item.name}? O curso continuará disponível para consulta.` })) return;
+    if (submitting.current) return;
+    submitting.current = true;
+    setBusy("status"); setError(""); setSuccess("");
+    try {
+      await put(`${catalogPath()}/${item.id}`, { code: item.code, name: item.name, active: !item.active });
+      setSuccess(item.active ? "Curso desativado." : "Curso ativado.");
       setRevision((value) => value + 1);
     } catch (cause) {
       setError(catalogErrorMessage(cause));
@@ -217,91 +263,172 @@ export function PedagogicalCatalog({ user }: { user: User }) {
     }
   };
 
-  const count = level === "course" ? courses.length : level === "module" ? modules.length :
-    level === "unit" ? units.length : capabilities.length;
   const query = search.trim().toLocaleLowerCase("pt-BR");
-  const visibleCourses = courses.filter((item) => `${item.code} ${item.name}`.toLocaleLowerCase("pt-BR").includes(query));
-  const visibleModules = modules.filter((item) => item.name.toLocaleLowerCase("pt-BR").includes(query));
-  const visibleUnits = units.filter((item) => `${item.code} ${item.name}`.toLocaleLowerCase("pt-BR").includes(query));
-  const visibleCapabilities = capabilities.filter((item) => `${item.description} ${item.contents}`.toLocaleLowerCase("pt-BR").includes(query));
-  const visibleCount = level === "course" ? visibleCourses.length : level === "module" ? visibleModules.length :
-    level === "unit" ? visibleUnits.length : visibleCapabilities.length;
-  return (
-    <>
-      <Title title="Catálogo Pedagógico"
-        action={admin ? <button className="btn-primary" onClick={() => beginForm()} disabled={busy !== ""}>
-          <Plus size={16} /> Novo {levelNames[level]}
-        </button> : undefined} />
+  const matches = (text: string, term = query) => text.toLocaleLowerCase("pt-BR").includes(term);
+  const visibleCourses = courses.filter((item) => matches(`${item.code} ${item.name}`) &&
+    (statusFilter === "all" || item.active === (statusFilter === "active")));
+  const visibleModules = modules.filter((item) => matches(item.name, moduleSearch.trim().toLocaleLowerCase("pt-BR")));
+  const visibleUnits = units.filter((item) => matches(`${item.code} ${item.name}`));
+  const visibleCapabilities = capabilities.filter((item) => matches(`${item.description} ${item.contents}`));
+  const activeCourses = courses.filter((item) => item.active).length;
+  const courseClasses = data.classes.filter((item) => item.courseId === courseId);
+  const courseTitle = course?.name || "Curso";
+  const locked = busy !== "";
 
-      {courseId !== null && <nav aria-label="Caminho no catálogo" className="card flex flex-wrap items-center gap-2 p-3 text-sm mb-5">
-        {courseId !== null && <>
-          <button type="button" className="text-sky-300 font-semibold hover:underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-sky-400 rounded" onClick={() => goModules(courseId)}
-            disabled={busy !== ""}>{course?.name || "Curso"}</button></>}
-        {moduleId !== null && <><ChevronRight size={15} className="text-slate-400" />
-          <button type="button" className="text-sky-300 font-semibold hover:underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-sky-400 rounded" onClick={() => goUnits(moduleId)}
-            disabled={busy !== ""}>{module?.name || "Módulo"}</button></>}
-        {unitId !== null && <><ChevronRight size={15} className="text-slate-400" />
-          <span aria-current="page" className="font-semibold text-ink">{unit?.name || "Unidade curricular"}</span></>}
-      </nav>}
+  const newButton = (target: Level, className = "btn-primary") => admin &&
+    <button type="button" className={className} onClick={() => beginForm(target)} disabled={locked}>
+      <Plus size={16} aria-hidden="true" /> {newLabels[target]}
+    </button>;
+  const searchBox = (target: Level, value: string, onChange: (value: string) => void, placeholder: string) =>
+    <div className="sg-search"><Field label={`Buscar ${levelNames[target]}`}>
+      <input type="search" className="field" value={value} onChange={(event) => onChange(event.target.value)} placeholder={placeholder} />
+    </Field><Search size={16} aria-hidden="true" /></div>;
+  const retry = <div className="sg-panel-body"><button type="button" className="btn-secondary" onClick={() => setRevision((value) => value + 1)}>Tentar novamente</button></div>;
+  const noResults = <p className="sg-empty">Nenhum resultado para a busca. Tente outro termo neste nível do catálogo.</p>;
+  const nothing = (target: Level) => <p className="sg-empty">Nenhum(a) {levelNames[target]} cadastrado(a) neste contexto.</p>;
+  const notices = <>
+    {error && formLevel === null && <Notice message={error} onClose={() => setError("")} />}
+    {success && <Notice type="success" message={success} onClose={() => setSuccess("")} />}
+    {loadError && <Notice message={loadError} />}
+  </>;
 
-      {level !== "course" && <button className="btn-quiet mb-4" disabled={busy !== ""}
-        onClick={() => level === "module" ? goCourses() :
-          level === "unit" ? goModules(courseId!) : goUnits(moduleId!)}>
-        <ArrowLeft size={16} /> Voltar
-      </button>}
-      {error && <div className="mb-4"><Notice message={error} onClose={() => setError("")} /></div>}
-      {success && <div className="mb-4"><Notice type="success" message={success}
-        onClose={() => setSuccess("")} /></div>}
-      {loadError && <div className="mb-4"><Notice message={loadError} /></div>}
+  const courseList = <>
+    <PageHeading eyebrow={admin ? "Cadastros / Cursos" : "Pedagógico / Catálogo"} title={admin ? "Cadastro de cursos" : "Catálogo Pedagógico"}
+      subtitle="Cursos, módulos, unidades curriculares e capacidades." action={newButton("course") || undefined} />
+    {notices}
+    <section aria-label="Resumo dos cursos" className="sg-stats">
+      <StatCard label="Cursos" value={loading || loadError ? "—" : courses.length} detail="cadastrados" />
+      <StatCard tone="green" label="Ativos" value={loading || loadError ? "—" : activeCourses} detail="situação ativa" />
+      <StatCard tone="gray" label="Inativos" value={loading || loadError ? "—" : courses.length - activeCourses} detail="situação inativa" />
+    </section>
+    <section className="card sg-panel" aria-label="Lista de cursos">
+      <div className="sg-toolbar">
+        {searchBox("course", search, setSearch, "Pesquisar código ou nome")}
+        <Field label="Situação"><select className="field" value={statusFilter} onChange={(event) => setStatusFilter(event.target.value as typeof statusFilter)}>
+          <option value="all">Todos</option><option value="active">Ativos</option><option value="inactive">Inativos</option>
+        </select></Field>
+        {!loading && !loadError && <span className="sg-count">{visibleCourses.length} de {courses.length} cursos</span>}
+      </div>
+      {loading ? <Busy /> : loadError ? retry : courses.length === 0 ? <div className="sg-panel-body">{nothing("course")}</div> :
+        visibleCourses.length === 0 ? <div className="sg-panel-body">{noResults}</div> :
+          <table className="sg-table sg-table-cards">
+            <thead><tr><th scope="col">Código</th><th scope="col">Nome do curso</th><th scope="col">Situação</th><th scope="col" className="sg-col-actions">Ações</th></tr></thead>
+            <tbody>{visibleCourses.map((item) => <tr key={item.id}>
+              <td><span className="sg-code">{item.code}</span></td>
+              <td><strong>{item.name}</strong></td>
+              <td><Status active={item.active} /></td>
+              <td><div className="sg-row-actions">
+                <button type="button" className="sg-icon-button" title="Ver módulos" aria-label={`Ver módulos de ${item.name}`} onClick={() => goModules(item.id)}>
+                  <Eye size={17} aria-hidden="true" /><span className="sr-only">Ver módulos</span></button>
+                {admin && <button type="button" className="sg-icon-button" title="Editar" aria-label={`Editar ${item.name}`} disabled={locked}
+                  onClick={() => beginForm("course", item.id, { code: item.code, name: item.name, active: item.active })}>
+                  <Pencil size={16} aria-hidden="true" /></button>}
+                {admin && <button type="button" className="sg-icon-button" title={item.active ? "Desativar" : "Ativar"} aria-label={`${item.active ? "Desativar" : "Ativar"} ${item.name}`} disabled={locked}
+                  onClick={() => void toggleCourse(item)}><Power size={17} aria-hidden="true" /></button>}
+              </div></td>
+            </tr>)}</tbody>
+          </table>}
+    </section>
+  </>;
 
-      {formOpen && admin && <Card className="p-5 mb-5">
-        <SectionHeading title={`${editId === null ? "Cadastrar" : "Editar"} ${levelNames[level]}`} subtitle="Os dados permanecem vinculados ao nível pedagógico exibido no caminho acima." />
-        <form onSubmit={(event) => void saveEntry(event)} className="space-y-4">
-          <div className="grid gap-4 md:grid-cols-2">
-            {(level === "course" || level === "unit") && <Field label="Código">
-              <input className="field" required maxLength={30} value={form.code}
-                onChange={(event) => setForm({ ...form, code: event.target.value })} />
-            </Field>}
-            {level !== "capability" && <Field label="Nome">
-              <input className="field" required maxLength={level === "module" ? 120 : 160}
-                value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} />
-            </Field>}
-            {level === "course" && <Field label="Situação">
-              <select className="field" value={form.active ? "active" : "inactive"}
-                onChange={(event) => setForm({ ...form, active: event.target.value === "active" })}>
-                <option value="active">Ativo</option><option value="inactive">Inativo</option>
-              </select>
-            </Field>}
-            {(level === "module" || level === "capability") && <Field label="Ordem">
-              <input className="field" type="number" required min="1" step="1" value={form.order}
-                onChange={(event) => setForm({ ...form, order: event.target.value })} />
-            </Field>}
-            {level === "capability" && <>
-              <Field label="Descrição">
-                <input className="field" required maxLength={300} value={form.description}
-                  onChange={(event) => setForm({ ...form, description: event.target.value })} />
-              </Field>
-              <Field label="Carga horária necessária">
-                <input className="field" required inputMode="decimal" placeholder="Ex.: 12,5"
-                  value={form.requiredHours}
-                  onChange={(event) => setForm({ ...form, requiredHours: event.target.value })} />
-              </Field>
-              <Field label="Conteúdos relacionados" className="md:col-span-2">
-                <textarea className="field min-h-28" required maxLength={4000} value={form.contents}
-                  onChange={(event) => setForm({ ...form, contents: event.target.value })} />
-              </Field>
-            </>}
-          </div>
-          <div className="flex flex-wrap gap-2 justify-end">
-            <button type="button" className="btn-secondary" onClick={closeForm} disabled={busy !== ""}>Cancelar</button>
-            <SubmitButton busy={busy !== ""}>Salvar {levelNames[level]}</SubmitButton>
-          </div>
-        </form>
-      </Card>}
+  const moduleList = <Panel title="Módulos curriculares" subtitle="Unidades curriculares organizadas por sequência." action={newButton("module") || undefined}>
+    {modules.length > 0 && searchBox("module", moduleSearch, setModuleSearch, "Filtrar módulos pelo nome")}
+    {level === "module" && loading && modules.length === 0 ? <Busy /> : level === "module" && loadError ? retry :
+      modules.length === 0 ? nothing("module") : visibleModules.length === 0 ? noResults :
+        <div>{visibleModules.map((item) => {
+          const open = item.id === moduleId;
+          return <article key={item.id} className="sg-module">
+            <div className="sg-module-head">
+              <button type="button" className="sg-icon-button" aria-expanded={open} disabled={locked}
+                title={open ? "Ocultar UCs" : "Ver UCs"} aria-label={`${open ? "Ocultar" : "Ver"} UCs de ${item.name}`}
+                onClick={() => open ? collapseModule() : goUnits(item.id)}>
+                {open ? <ChevronDown size={18} aria-hidden="true" /> : <ChevronRight size={18} aria-hidden="true" />}
+                <span className="sr-only">{open ? "Ocultar UCs" : "Ver UCs"}</span>
+              </button>
+              <span className="sg-code">Módulo {item.order}</span>
+              <h3>{item.name}</h3>
+              {admin && <button type="button" className="sg-icon-button" title="Editar módulo" aria-label={`Editar módulo ${item.name}`} disabled={locked}
+                onClick={() => beginForm("module", item.id, { name: item.name, order: String(item.order) })}><Pencil size={16} aria-hidden="true" /></button>}
+            </div>
+            {open && <div className="sg-units">
+              <div className="sg-units-head"><h4>Unidades curriculares</h4>{newButton("unit", "btn-secondary")}</div>
+              {!loading && !loadError && units.length > 0 && searchBox("unit", search, setSearch, "Pesquisar código ou nome")}
+              {loading ? <Busy /> : loadError ? retry : units.length === 0 ? nothing("unit") : visibleUnits.length === 0 ? noResults :
+                <ul className="sg-unit-list">{visibleUnits.map((entry) => <li key={entry.id}>
+                  <span className="sg-code">{entry.code}</span>
+                  <strong>{entry.name}</strong>
+                  <span className="sg-unit-hours">CH prevista: {entry.plannedHours === null ? "indefinida" : `${formatHours(entry.plannedHours)} h`}</span>
+                  <div className="sg-row-actions">
+                    <button type="button" className="sg-icon-button" title="Ver capacidades" aria-label={`Ver capacidades de ${entry.name}`} onClick={() => goCapabilities(entry.id)}>
+                      <Eye size={17} aria-hidden="true" /><span className="sr-only">Ver capacidades</span></button>
+                    {admin && <button type="button" className="sg-icon-button" title="Editar UC" aria-label={`Editar UC ${entry.name}`} disabled={locked}
+                      onClick={() => beginForm("unit", entry.id, { code: entry.code, name: entry.name })}><Pencil size={16} aria-hidden="true" /></button>}
+                  </div>
+                </li>)}</ul>}
+            </div>}
+          </article>;
+        })}</div>}
+  </Panel>;
 
-      {level === "capability" && <Card className="p-5 mb-5">
-        <SectionHeading title="Carga horária da UC" subtitle="Compare a carga prevista com a soma das capacidades e a duração do turno." />
-        {admin && <form onSubmit={(event) => void saveWorkload(event)} className="flex flex-wrap items-end gap-3 mb-5">
+  const courseDetail = <>
+    <button type="button" className="sg-back" disabled={locked} onClick={goCourses}><ArrowLeft size={17} aria-hidden="true" /> Voltar para cursos</button>
+    <PageHeading eyebrow={admin ? "Cadastros / Cursos / Detalhes" : "Pedagógico / Catálogo / Detalhes"} title={courseTitle}
+      action={admin && course ? <button type="button" className="btn-secondary" disabled={locked}
+        onClick={() => beginForm("course", course.id, { code: course.code, name: course.name, active: course.active })}>
+        <Pencil size={16} aria-hidden="true" /> Editar curso</button> : undefined} />
+    {course && <div className="sg-meta"><span className="sg-code">{course.code}</span><Status active={course.active} /></div>}
+    {notices}
+    <Tabs label="Seções do curso" idPrefix="course-detail" active={courseTab} onChange={(next) => setCourseTab(next as CourseTab)}
+      items={[{ id: "resumo", label: "Resumo" }, { id: "modulos", label: "Módulos e UCs" }, { id: "turmas", label: "Turmas vinculadas", count: courseClasses.length }]} />
+    <div role="tabpanel" id={`course-detail-panel-${courseTab}`} aria-labelledby={`course-detail-tab-${courseTab}`} className="sg-stack">
+      {courseTab === "modulos" && moduleList}
+      {courseTab === "resumo" && <>
+        <section aria-label="Resumo do curso" className="sg-stats">
+          <StatCard label="Módulos" value={level === "module" && (loading || loadError) && modules.length === 0 ? "—" : modules.length} detail="neste curso" />
+          <StatCard tone="amber" label="Turmas" value={courseClasses.length} detail="vinculadas ao curso" />
+          <StatCard tone="green" label="Situação" value={course ? course.active ? "Ativo" : "Inativo" : "—"} detail="cadastro do curso" />
+        </section>
+        <Panel title="Informações gerais">
+          <dl className="sg-facts">
+            <div><dt>Código</dt><dd>{course?.code ?? "—"}</dd></div>
+            <div><dt>Nome</dt><dd>{courseTitle}</dd></div>
+          </dl>
+        </Panel>
+      </>}
+      {courseTab === "turmas" && <section className="card sg-panel" aria-label="Turmas vinculadas ao curso">
+        <div className="sg-panel-head"><div><h2>Turmas vinculadas</h2><p>Turmas de qualquer semestre que usam este curso.</p></div></div>
+        {courseClasses.length === 0 ? <div className="sg-panel-body"><p className="sg-empty">Nenhuma turma usa este curso.</p></div> :
+          <div className="sg-table-wrap" tabIndex={0} role="region" aria-label="Lista de turmas vinculadas">
+            <table className="sg-table">
+              <thead><tr>{["Turma", "Semestre", "Módulo", "Turno", "Alunos"].map((title) => <th scope="col" key={title}>{title}</th>)}</tr></thead>
+              <tbody>{courseClasses.map((item) => <tr key={item.id}>
+                <td><strong>{item.code || item.name}</strong>{item.code && <small>{item.name}</small>}</td>
+                <td>{data.semesters.find((entry) => entry.id === item.semesterId)?.name ?? "Não informado"}</td>
+                <td>{modules.find((entry) => entry.id === item.courseModuleId)?.name ?? "Não informado"}</td>
+                <td>{data.shifts.find((entry) => entry.id === item.shiftId)?.name ?? "Não informado"}</td>
+                <td>{item.students}</td>
+              </tr>)}</tbody>
+            </table>
+          </div>}
+      </section>}
+    </div>
+  </>;
+
+  const unitDetail = <>
+    <nav aria-label="Caminho no catálogo" className="sg-crumbs">
+      <button type="button" className="sg-back" disabled={locked} onClick={() => goUnits(moduleId!)}><ArrowLeft size={17} aria-hidden="true" /> Voltar</button>
+      <button type="button" className="sg-link" disabled={locked} onClick={() => goModules(courseId!)}>{courseTitle}</button>
+      <ChevronRight size={14} aria-hidden="true" />
+      <button type="button" className="sg-link" disabled={locked} onClick={() => goUnits(moduleId!)}>{module?.name || "Módulo"}</button>
+      <ChevronRight size={14} aria-hidden="true" />
+      <span aria-current="page">{unit?.name || "Unidade curricular"}</span>
+    </nav>
+    <PageHeading eyebrow={`${admin ? "Cadastros / Cursos" : "Pedagógico / Catálogo"}${course ? ` / ${course.code}` : ""} / UC`} title={unit?.name || "Unidade curricular"} subtitle={unit?.code}
+      action={admin && unit ? <button type="button" className="btn-secondary" disabled={locked}
+        onClick={() => beginForm("unit", unit.id, { code: unit.code, name: unit.name })}><Pencil size={16} aria-hidden="true" /> Editar UC</button> : undefined} />
+    {notices}
+    <Panel title="Carga horária da UC" subtitle="Compare a carga prevista com a soma das capacidades e a duração do turno.">
+        {admin && <form onSubmit={(event) => void saveWorkload(event)} className="flex flex-wrap items-end gap-3 mb-4">
           <Field label="CH prevista (horas; vazio = indefinida)" className="w-full sm:w-64">
             <input className="field" inputMode="decimal" placeholder="Ex.: 40,5"
               value={plannedHours} onChange={(event) => setPlannedHours(event.target.value)} />
@@ -333,88 +460,96 @@ export function PedagogicalCatalog({ user }: { user: User }) {
         })()}
         {summaryError && <Notice message={summaryError} />}
         {summaryLoading && <Busy />}
-        {!summaryLoading && summary && <div aria-label="Resumo da carga horária"
-          className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5 text-sm">
-          <MetricCard label="CH prevista" value={summary.plannedHours === null ? "Indefinida" : `${formatHours(summary.plannedHours)} h`} tone="blue" />
-          <MetricCard label="Soma das capacidades" value={`${formatHours(summary.capabilityHours)} h`} tone="violet" />
-          <MetricCard label="Diferença" value={summary.status === "Undefined" ? "Indefinida" : summary.status === "MissingHours"
+        {!summaryLoading && summary && <div aria-label="Resumo da carga horária" className="sg-stats sg-stats-5 sg-stats-compact">
+          <StatCard label="CH prevista" value={summary.plannedHours === null ? "Indefinida" : `${formatHours(summary.plannedHours)} h`} />
+          <StatCard label="Soma das capacidades" value={`${formatHours(summary.capabilityHours)} h`} />
+          <StatCard tone={summary.status === "Balanced" ? "green" : "amber"} label="Diferença" value={summary.status === "Undefined" ? "Indefinida" : summary.status === "MissingHours"
             ? `${formatHours(summary.missingHours)} h faltantes` : summary.status === "ExcessHours"
-              ? `${formatHours(summary.excessHours)} h excedentes` : "0 h"} tone={summary.status === "Balanced" ? "emerald" : "amber"} />
-          <MetricCard label="Situação" value={workloadText(summary)} tone={summary.status === "Balanced" ? "emerald" : "amber"} />
-          <MetricCard label="Encontros estimados" value={summary.requiredMeetings === null ? "Indefinidos" : summary.requiredMeetings} tone="slate" />
+              ? `${formatHours(summary.excessHours)} h excedentes` : "0 h"} />
+          <StatCard tone={summary.status === "Balanced" ? "green" : "amber"} label="Situação" value={workloadText(summary)} />
+          <StatCard tone="gray" label="Encontros estimados" value={summary.requiredMeetings === null ? "Indefinidos" : summary.requiredMeetings} />
         </div>}
-      </Card>}
-
-      {unitPath && <div className="flex flex-wrap items-center gap-3">
-        <button type="button" className="btn-secondary" onClick={() => setShowUnitResources(true)}>Recursos necessários da UC</button>
-        <span className="muted text-sm">Critérios compartilhados com o inventário dos ambientes.</span>
-      </div>}
-      <Card className="overflow-hidden">
-        <div className="px-5 py-4 border-b border-line flex flex-wrap items-center gap-3">
-          <h2 className="section-title">{level === "course" ? "Cursos" : level === "module" ? "Módulos" :
-            level === "unit" ? "Unidades curriculares" : "Capacidades"}</h2>
-          {!loading && !loadError && count > 0 && <div className="w-full sm:ml-auto sm:w-80"><Field label={`Buscar ${levelNames[level]}`}>
-            <input type="search" className="field" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Filtrar registros deste nível" />
-          </Field></div>}
-        </div>
-        {loading ? <Busy /> : loadError ? <div className="p-5">
-          <button className="btn-secondary" onClick={() => setRevision((value) => value + 1)}>Tentar novamente</button>
-        </div> : count === 0 ? <Empty text={`Nenhum(a) ${levelNames[level]} cadastrado(a) neste contexto.`} /> : visibleCount === 0 ?
-          <Empty title="Nenhum resultado para a busca" text="Tente outro termo neste nível do catálogo." /> : <div>
-          {level === "course" && visibleCourses.map((item) => <div key={item.id}
-            className="p-4 md:px-5 border-b border-line last:border-0 flex flex-wrap items-center justify-between gap-3">
-            <div className="min-w-0"><p className="font-semibold text-ink">{item.name}</p>
-              <div className="flex items-center gap-2 mt-1 text-xs text-muted-ink">
-                <span>{item.code}</span><Badge status={item.active ? "Ativa" : "Inativa"} />
-              </div></div>
-            <div className="flex flex-wrap gap-2">
-              {admin && <button className="btn-secondary" onClick={() => beginForm(item.id,
-                { code: item.code, name: item.name, active: item.active })}>Editar</button>}
-              <button className="btn-primary" onClick={() => goModules(item.id)}>Ver módulos <ChevronRight size={16} /></button>
-            </div>
-          </div>)}
-          {level === "module" && visibleModules.map((item) => <div key={item.id}
-            className="p-4 md:px-5 border-b border-line last:border-0 flex flex-wrap items-center justify-between gap-3">
-            <div><p className="font-semibold text-ink">{item.name}</p>
-              <p className="text-xs text-muted-ink mt-1">Ordem {item.order}</p></div>
-            <div className="flex flex-wrap gap-2">
-              {admin && <button className="btn-secondary" onClick={() => beginForm(item.id,
-                { name: item.name, order: String(item.order) })}>Editar</button>}
-              <button className="btn-primary" onClick={() => goUnits(item.id)}>Ver UCs <ChevronRight size={16} /></button>
-            </div>
-          </div>)}
-          {level === "unit" && visibleUnits.map((item) => <div key={item.id}
-            className="p-4 md:px-5 border-b border-line last:border-0 flex flex-wrap items-center justify-between gap-3">
-            <div className="min-w-0"><p className="font-semibold text-ink">{item.name}</p>
-              <p className="text-xs text-muted-ink mt-1">{item.code} · CH prevista: {item.plannedHours === null
-                ? "indefinida" : `${formatHours(item.plannedHours)} h`}</p></div>
-            <div className="flex flex-wrap gap-2">
-              {admin && <button className="btn-secondary" onClick={() => beginForm(item.id,
-                { code: item.code, name: item.name })}>Editar</button>}
-              <button className="btn-primary" onClick={() => goCapabilities(item.id)}>Ver capacidades <ChevronRight size={16} /></button>
-            </div>
-          </div>)}
-          {level === "capability" && visibleCapabilities.map((item) => <div key={item.id}
-            className="p-4 md:px-5 border-b border-line last:border-0 flex flex-wrap items-start justify-between gap-3">
-            <div className="min-w-0"><p className="font-semibold text-ink">{item.description}</p>
-              <p className="text-sm text-muted-ink whitespace-pre-wrap mt-1">{item.contents}</p>
-              <p className="text-xs text-muted-ink mt-2">Ordem {item.order} · CH necessária {formatHours(item.requiredHours)} h</p></div>
-            <div className="flex flex-wrap gap-2">
+    </Panel>
+    <Panel title="Recursos técnicos" subtitle="Critérios compartilhados com o inventário dos ambientes."
+      action={<button type="button" className="btn-secondary" onClick={() => setShowUnitResources(true)}>Recursos necessários da UC</button>}>
+      <p className="sg-note">Estes recursos valem para toda a UC. Os requisitos específicos ficam em cada capacidade.</p>
+    </Panel>
+    <Panel title="Capacidades" action={newButton("capability") || undefined}>
+      {!loading && !loadError && capabilities.length > 0 && searchBox("capability", search, setSearch, "Pesquisar descrição ou conteúdo")}
+      {loading ? <Busy /> : loadError ? retry : capabilities.length === 0 ? nothing("capability") : visibleCapabilities.length === 0 ? noResults :
+        <div>{visibleCapabilities.map((item) => <article key={item.id} className="sg-item flex-wrap">
+          <div className="sg-item-text">
+            <strong>{item.description}</strong>
+            <small className="whitespace-pre-wrap">{item.contents}</small>
+            <small>Ordem {item.order} · CH necessária {formatHours(item.requiredHours)} h</small>
+          </div>
+          <div className="sg-actions">
             <button type="button" className="btn-secondary" onClick={() => setRequirementsCapability(item)}>Requisitos técnicos</button>
-            {admin && <button className="btn-secondary" onClick={() => beginForm(item.id, {
-              description: item.description, contents: item.contents,
-              requiredHours: String(item.requiredHours), order: String(item.order),
-            })}>Editar</button>}
-            </div>
-          </div>)}
-        </div>}
-      </Card>
+            {admin && <button type="button" className="sg-icon-button" title="Editar capacidade" aria-label={`Editar capacidade ${item.description}`} disabled={locked}
+              onClick={() => beginForm("capability", item.id, {
+                description: item.description, contents: item.contents,
+                requiredHours: String(item.requiredHours), order: String(item.order),
+              })}><Pencil size={16} aria-hidden="true" /></button>}
+          </div>
+        </article>)}</div>}
+    </Panel>
+  </>;
+
+  return <>
+    <SenaiScope>
+      {courseId === null ? courseList : level === "capability" ? unitDetail : courseDetail}
+    </SenaiScope>
+    <SenaiScope modals>
+      {formLevel !== null && admin && <Modal title={editId === null ? newLabels[formLevel] : `Editar ${levelNames[formLevel]}`} onClose={() => { if (!locked) closeForm(); }}>
+        {error && <div className="mb-4"><Notice message={error} onClose={() => setError("")} /></div>}
+        <form onSubmit={(event) => void saveEntry(event)} className="space-y-4">
+          <div className="grid gap-4 md:grid-cols-2">
+            {(formLevel === "course" || formLevel === "unit") && <Field label="Código">
+              <input className="field" required maxLength={30} value={form.code}
+                onChange={(event) => setForm({ ...form, code: event.target.value })} />
+            </Field>}
+            {formLevel !== "capability" && <Field label="Nome">
+              <input className="field" required maxLength={formLevel === "module" ? 120 : 160}
+                value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} />
+            </Field>}
+            {formLevel === "course" && <Field label="Situação">
+              <select className="field" value={form.active ? "active" : "inactive"}
+                onChange={(event) => setForm({ ...form, active: event.target.value === "active" })}>
+                <option value="active">Ativo</option><option value="inactive">Inativo</option>
+              </select>
+            </Field>}
+            {(formLevel === "module" || formLevel === "capability") && <Field label="Ordem">
+              <input className="field" type="number" required min="1" step="1" value={form.order}
+                onChange={(event) => setForm({ ...form, order: event.target.value })} />
+            </Field>}
+            {formLevel === "capability" && <>
+              <Field label="Descrição">
+                <input className="field" required maxLength={300} value={form.description}
+                  onChange={(event) => setForm({ ...form, description: event.target.value })} />
+              </Field>
+              <Field label="Carga horária necessária">
+                <input className="field" required inputMode="decimal" placeholder="Ex.: 12,5"
+                  value={form.requiredHours}
+                  onChange={(event) => setForm({ ...form, requiredHours: event.target.value })} />
+              </Field>
+              <Field label="Conteúdos relacionados" className="md:col-span-2">
+                <textarea className="field min-h-28" required maxLength={4000} value={form.contents}
+                  onChange={(event) => setForm({ ...form, contents: event.target.value })} />
+              </Field>
+            </>}
+          </div>
+          <div className="flex flex-wrap gap-2 justify-end">
+            <button type="button" className="btn-secondary" onClick={closeForm} disabled={busy !== ""}>Cancelar</button>
+            <SubmitButton busy={busy !== ""}>Salvar {levelNames[formLevel]}</SubmitButton>
+          </div>
+        </form>
+      </Modal>}
       {requirementsCapability && unitPath && <Modal title={`Requisitos técnicos · ${requirementsCapability.description}`} onClose={() => setRequirementsCapability(null)} width="max-w-3xl">
         <CapabilityRequirements key={`${unitPath}|${requirementsCapability.id}`} path={`${unitPath}/capabilities/${requirementsCapability.id}`} admin={admin} />
       </Modal>}
       {showUnitResources && unitPath && <Modal title={`Recursos da UC · ${unit?.name ?? ""}`} onClose={() => setShowUnitResources(false)} width="max-w-3xl">
         <UnitResourceRequirements key={unitPath} path={unitPath} admin={admin} />
       </Modal>}
-    </>
-  );
+    </SenaiScope>
+  </>;
 }

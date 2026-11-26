@@ -1,14 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import {
-  DoorOpen,
-  HardDrive,
-  AppWindow,
-  Plus,
-  Search,
-  Settings2,
-  ChevronDown,
-  SlidersHorizontal,
-} from "lucide-react";
+import { AppWindow, Eye, HardDrive, Pencil, Plus, Search, Settings2, SlidersHorizontal } from "lucide-react";
 import type { ResourceCatalogItem, Room, RoomInventory, RoomResource, User } from "../types";
 import { useData } from "../lib/data";
 import { post, put, read } from "../lib/api";
@@ -17,25 +8,16 @@ import { ResourceCatalogManager } from "../components/ResourceCatalogManager";
 import { OperatingShiftEditor } from "../components/OperatingShiftEditor";
 import { indicatorPath, isBottleneck, isSemesterIndicators, type SemesterIndicators } from "../lib/occupancyIndicators";
 import { resultMessage, roomKind } from "../lib/utils";
-import {
-  Busy,
-  Card,
-  Checkbox,
-  Empty,
-  Field,
-  MetricCard,
-  Modal,
-  Notice,
-  SectionHeading,
-  SubmitButton,
-  Title,
-  useConfirmation,
-} from "../components/UI";
+import { Busy, Checkbox, Field, Modal, Notice, SubmitButton, useConfirmation } from "../components/UI";
+import { PageHeading, Panel, SenaiScope, StatCard, Tabs } from "../components/senai/SenaiUI";
 
 type RoomInput = Omit<Room, "id" | "desks"> & { resources: RoomResource[] };
 type OfferedShift = { shiftId: number; weekdaysMask: number };
 const stated = (value: string | null | undefined) => value?.trim() || "Não informado";
 const yesNoUnknown = (value: boolean | null | undefined) => value == null ? "Não informado" : value ? "Sim" : "Não";
+type DetailTab = "resumo" | "recursos" | "computadores";
+type ResourceFilter = "todos" | "reduzida" | "desconhecida";
+const reduced = (item: RoomResource) => item.operationalQuantity != null && item.operationalQuantity < item.quantity;
 const emptyRoom: RoomInput = {
   code: "",
   name: "",
@@ -62,22 +44,9 @@ export function Rooms({ user, onImport }: { user: User; onImport?: (kind: "Ambie
   const [search, setSearch] = useState("");
   const [kind, setKind] = useState("");
   const [status, setStatus] = useState("");
-  const [filtersOpen, setFiltersOpen] = useState(false);
-  const filtersRef = useRef<HTMLDivElement>(null);
-  const filtersButtonRef = useRef<HTMLButtonElement>(null);
-  useEffect(() => {
-    if (!filtersOpen) return;
-    filtersRef.current?.querySelector("select")?.focus();
-    const dismiss = (event: PointerEvent) => {
-      if (!filtersRef.current?.contains(event.target as Node)) setFiltersOpen(false);
-    };
-    const escape = (event: KeyboardEvent) => {
-      if (event.key === "Escape") { setFiltersOpen(false); filtersButtonRef.current?.focus(); }
-    };
-    document.addEventListener("pointerdown", dismiss);
-    document.addEventListener("keydown", escape);
-    return () => { document.removeEventListener("pointerdown", dismiss); document.removeEventListener("keydown", escape); };
-  }, [filtersOpen]);
+  const [detailTab, setDetailTab] = useState<DetailTab>("resumo");
+  const [resourceFilter, setResourceFilter] = useState<ResourceFilter>("todos");
+  const resourceCatalogRef = useRef<HTMLDivElement>(null);
   const [semesterId, setSemesterId] = useState("");
   const [shiftRoom, setShiftRoom] = useState<Room | null>(null);
   const [indicatorRefresh, setIndicatorRefresh] = useState(0);
@@ -144,6 +113,7 @@ export function Rooms({ user, onImport }: { user: User; onImport?: (kind: "Ambie
   async function showDetail(room: Room) {
     const request = ++openingRequest.current;
     setDetail(null); setDetailLoading(true); setError("");
+    setDetailTab("resumo"); setResourceFilter("todos");
     try {
       const inventory = await read<RoomInventory>(`/rooms/${room.id}/inventory`);
       if (request === openingRequest.current) setDetail({ room, inventory });
@@ -251,13 +221,13 @@ export function Rooms({ user, onImport }: { user: User; onImport?: (kind: "Ambie
     const occupied = report.shifts.filter((shift) => shift.occupiedHours > 0);
     return occupied.length ? occupied.map((shift) => shift.shiftName).join(", ") : "Nenhuma ocupação por turno identificada";
   };
-  const roomAction = (room: Room) => <div className="flex flex-wrap gap-2">
-    {admin && <button type="button" className="btn-secondary" disabled={opening || detailLoading} onClick={() => void open(room)}><Settings2 size={15} /> Editar</button>}
-    {admin && semesterId && <button type="button" className="btn-secondary" onClick={() => setShiftRoom(room)}>Configurar turnos</button>}
+  const roomAction = (room: Room) => <div className="sg-row-actions">
+    <button type="button" className="sg-icon-button" title="Ver detalhes" aria-label={`Ver detalhes de ${room.name}`} disabled={opening || detailLoading} onClick={() => void showDetail(room)}><Eye size={17} aria-hidden="true" /></button>
+    {admin && <button type="button" className="sg-icon-button" title="Editar" aria-label={`Editar ambiente ${room.name}`} disabled={opening || detailLoading} onClick={() => void open(room)}><Pencil size={16} aria-hidden="true" /><span className="sr-only">Editar</span></button>}
+    {admin && semesterId && <button type="button" className="sg-icon-button" title="Configurar turnos" aria-label={`Configurar turnos de ${room.name}`} onClick={() => setShiftRoom(room)}><Settings2 size={17} aria-hidden="true" /><span className="sr-only">Configurar turnos</span></button>}
   </div>;
   const roomInformation = (room: Room) => <button type="button" disabled={detailLoading || opening}
-    aria-label={`Abrir informações de ${room.name}`} onClick={() => void showDetail(room)}
-    className="rounded text-left font-semibold text-ink underline decoration-line underline-offset-4 hover:decoration-current focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-skybrand-500 disabled:cursor-wait">
+    aria-label={`Abrir informações de ${room.name}`} onClick={() => void showDetail(room)} className="sg-name-button">
     {room.name}
   </button>;
   const openRoomInformation = (event: React.MouseEvent, room: Room) => {
@@ -265,182 +235,184 @@ export function Rooms({ user, onImport }: { user: User; onImport?: (kind: "Ambie
   };
   const bottleneckLabel = (room: Room) => {
     const indicator = admin && indicatorState === "idle" ? indicators?.rooms.find((item) => item.roomId === room.id) : undefined;
-    return indicator && isBottleneck(indicator) ? <span className="pill bg-rose-50 text-rose-800 mt-1">{indicator.occupancyPercent}% · Gargalo</span> : null;
+    return indicator && isBottleneck(indicator) ? <span className="sg-badge is-danger">{indicator.occupancyPercent}% · Gargalo</span> : null;
   };
+  const roomStatus = (room: Room) => <span className={`sg-status ${room.active ? "is-active" : ""}`}>{room.active ? "Ativa" : "Inativa"}</span>;
+  const filtered = !!(search || kind || status || semesterId);
+  const activeRooms = data.rooms.filter((room) => room.active);
+  const softwareList = data.software.filter((item) => item.name.toLocaleLowerCase("pt-BR").includes(softwareSearch.toLocaleLowerCase("pt-BR")));
+  const resources = detail?.inventory.resources ?? [];
+  const resourceFilters: { id: ResourceFilter; label: string; items: RoomResource[] }[] = [
+    { id: "todos", label: "Todos", items: resources },
+    { id: "reduzida", label: "Disponibilidade reduzida", items: resources.filter(reduced) },
+    { id: "desconhecida", label: "Sem quantidade operacional", items: resources.filter((item) => item.operationalQuantity == null) },
+  ];
+  const shownResources = resourceFilters.find((item) => item.id === resourceFilter)!.items;
   return (
     <>
-      <Title
-        title="Ambientes"
-        action={admin ? <>
+      <SenaiScope>
+        <PageHeading eyebrow={admin ? "Cadastros / Ambientes" : "Ambientes / Consulta"} title="Ambientes"
+          subtitle="Salas, laboratórios e oficinas cadastrados, com inventário e turnos."
+          action={admin ? <>
             {onImport && <><button type="button" className="btn-secondary" onClick={() => onImport("Ambientes")}>Importar ambientes</button>
               <button type="button" className="btn-secondary" onClick={() => onImport("Recursos")}>Importar recursos</button></>}
-            <button className="btn-primary" disabled={opening} onClick={() => void open()}>
-              <Plus size={17} /> Novo ambiente
+            <button type="button" className="btn-primary" disabled={opening} onClick={() => void open()}>
+              <Plus size={17} aria-hidden="true" /> Novo ambiente
             </button>
-          </> : undefined}
-      />
-      <div className="grid gap-3 sm:grid-cols-3 mb-5">
-        <MetricCard label="Ambientes cadastrados" value={data.rooms.length} detail="Todos os tipos retornados pela API" icon={DoorOpen} />
-        <MetricCard label="Ativos" value={data.rooms.filter((room) => room.active).length} detail="Situação cadastral" tone="emerald" />
-        <MetricCard label="Inativos" value={data.rooms.filter((room) => !room.active).length} detail="Situação cadastral" tone="slate" />
-      </div>
-      <div className="mb-5">
-        <section aria-label="Filtros de ambientes" className="flex flex-col gap-3 rounded-panel border border-line bg-surface p-4 sm:flex-row sm:items-end">
-          <label className="relative min-w-0 flex-1">
-            <span className="field-label">Buscar ambiente</span>
-            <Search
-              size={17}
-              className="absolute left-3 bottom-3 text-slate-400"
-            />
-            <input
-              aria-label="Buscar ambiente"
-              className="field !pl-10"
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              placeholder="Nome, código ou localização"
-            />
-          </label>
-          <div ref={filtersRef} className="relative sm:shrink-0" onBlur={(event) => { if (!event.currentTarget.contains(event.relatedTarget)) setFiltersOpen(false); }}>
-            <button ref={filtersButtonRef} type="button" className="btn-secondary w-full sm:w-auto" aria-expanded={filtersOpen} aria-controls="room-filters-panel" onClick={() => setFiltersOpen(!filtersOpen)}>
-              <SlidersHorizontal size={17} aria-hidden="true" />Filtros
-              {(kind || status || (admin && semesterId)) && <span className="rounded-full bg-canvas px-2 py-0.5 text-xs text-ink">{Number(!!kind) + Number(!!status) + Number(admin && !!semesterId)}<span className="sr-only"> selecionados</span></span>}
-              <ChevronDown size={16} aria-hidden="true" className={`transition-transform ${filtersOpen ? "rotate-180" : ""}`} />
-            </button>
-            {filtersOpen && <div id="room-filters-panel" role="region" aria-label="Opções de filtro" className="absolute right-0 top-full z-20 mt-2 w-full min-w-0 space-y-4 rounded-panel border border-line bg-surface p-4 shadow-soft sm:w-80">
-          <Field label="Tipo de ambiente">
-            <select className="field" value={kind} onChange={(e) => setKind(e.target.value)}>
-              <option value="">Todos os tipos</option>
-              <option value="Comum">Sala comum</option>
-              <option value="Laboratorio">Laboratório</option>
-              <option value="Hibrida">Híbrida</option>
-              <option value="Oficina">Oficina</option>
-            </select>
-          </Field>
-          <Field label="Situação"><select className="field" value={status} onChange={(e) => setStatus(e.target.value)}>
-            <option value="">Todas</option><option value="active">Ativas</option><option value="inactive">Inativas</option>
-          </select></Field>
-          {admin && <Field label="Semestre dos turnos"><select className="field" value={semesterId} onChange={(e) => setSemesterId(e.target.value)}>
-            <option value="">Selecione</option>{data.semesters.map((semester) => <option key={semester.id} value={semester.id}>{semester.name}</option>)}
-          </select></Field>}
-              <div className="flex items-center justify-between gap-3 border-t border-line pt-3">
-                <button type="button" className="btn-quiet" disabled={!kind && !status && !semesterId} onClick={() => { setKind(""); setStatus(""); setSemesterId(""); }}>Limpar filtros</button>
-                <button type="button" className="btn-primary" onClick={() => { setFiltersOpen(false); filtersButtonRef.current?.focus(); }}>Concluir</button>
-              </div>
-            </div>}
-          </div>
+          </> : undefined} />
+        <section aria-label="Resumo dos ambientes" className={`sg-stats ${admin ? "sg-stats-4" : ""}`}>
+          <StatCard label="Ambientes" value={data.rooms.length} detail="cadastrados" />
+          <StatCard tone="green" label="Ativos" value={activeRooms.length} detail={`${data.rooms.length - activeRooms.length} inativo(s)`} />
+          <StatCard label="Capacidade" value={activeRooms.reduce((total, room) => total + room.seats, 0)} detail="vagas em ambientes ativos" />
+          {admin && <StatCard tone="amber" label="Catálogo" value={resourceCatalogError ? "—" : resourceCatalog.length} detail="tipos de recurso cadastrados" />}
         </section>
-      </div>
-      {catalogLoading && <Busy />}
-      {catalogError && <Notice message={catalogError} />}
-      {resourceCatalogError && <Notice message={`Catálogo de recursos indisponível: ${resourceCatalogError}`} />}
-      {(opening || detailLoading) && <p role="status">Carregando inventário técnico...</p>}
-      {indicatorState === "error" && <Notice type="info" message="Não foi possível consultar os turnos oferecidos neste semestre. Nenhuma disponibilidade foi presumida." />}
-      {!catalogLoading && list.length === 0 ? (
-        <Card>
-          <Empty
-            title={data.rooms.length ? "Nenhum ambiente encontrado" : "Nenhum ambiente cadastrado"}
-            text={data.rooms.length ? "Ajuste a busca ou os filtros para visualizar outros ambientes." : "Os ambientes cadastrados aparecerão aqui."}
-          />
-        </Card>
-      ) : !catalogLoading && (
-        <Card className="p-4 sm:p-5 space-y-4">
-          <SectionHeading title="Ambientes" />
-          <div className="hidden lg:block table-wrap"><table className="w-full text-sm"><thead><tr className="text-left text-muted-ink border-b border-line">
-            <th scope="col" className="p-3">Ambiente</th><th scope="col" className="p-3">Tipo e localização</th><th scope="col" className="p-3">Alunos</th><th scope="col" className="p-3">Turnos configurados</th><th scope="col" className="p-3">Turnos com ocupação</th><th scope="col" className="p-3">Situação</th><th scope="col" className="p-3">Ações</th>
-          </tr></thead><tbody>{list.map((room) => <tr key={room.id} onClick={(event) => openRoomInformation(event, room)} className="cursor-pointer border-b border-line last:border-0 align-top transition-colors hover:bg-canvas focus-within:bg-canvas">
-            <td className="p-3"><strong className="text-ink">{room.code || `#${room.id}`}</strong><span className="block">{roomInformation(room)}</span>{bottleneckLabel(room)}</td>
-            <td className="p-3">{roomKind(room.kind)}<span className="block text-muted-ink">{room.location || "Localização não informada"}</span></td>
-            <td className="p-3 tabular-nums">{room.seats}</td><td className="p-3 text-muted-ink">{shiftLabel(room)}</td><td className="p-3 text-muted-ink">{occupiedShiftLabel(room)}</td>
-            <td className="p-3"><span className={`pill ${room.active ? "bg-emerald-50 text-emerald-700" : "bg-slate-100 text-slate-500"}`}>{room.active ? "Ativa" : "Inativa"}</span></td>
-            <td className="p-3">{roomAction(room)}</td>
-          </tr>)}</tbody></table></div>
-          <div className="grid gap-3 sm:grid-cols-2 lg:hidden">{list.map((room) => <article key={room.id} onClick={(event) => openRoomInformation(event, room)} className="cursor-pointer rounded-panel border border-line p-4 space-y-3 transition-colors hover:bg-canvas focus-within:bg-canvas">
-            <div className="flex items-start justify-between gap-2"><div><p className="text-xs font-semibold uppercase tracking-wide text-muted-ink">{room.code || `#${room.id}`}</p><h3 className="font-bold text-ink">{roomInformation(room)}</h3></div><span className={`pill ${room.active ? "bg-emerald-50 text-emerald-700" : "bg-slate-100 text-slate-500"}`}>{room.active ? "Ativa" : "Inativa"}</span></div>
-            <p className="muted">{roomKind(room.kind)} · {room.location || "Localização não informada"}</p>
-            {bottleneckLabel(room)}
-            <dl className="grid grid-cols-2 gap-2 text-sm"><div><dt className="text-muted-ink">Capacidade</dt><dd>{room.seats} alunos</dd></div><div><dt className="text-muted-ink">Turnos configurados</dt><dd>{shiftLabel(room)}</dd></div><div className="col-span-2"><dt className="text-muted-ink">Turnos com ocupação</dt><dd>{occupiedShiftLabel(room)}</dd></div></dl>
-            {roomAction(room)}
-          </article>)}</div>
-        </Card>
-      )}
-      {admin && (
-        <ResourceCatalogManager catalog={resourceCatalog} onChanged={refreshResourceCatalog} />
-      )}
-      {admin && (
-        <Card className="p-5 mt-6">
-          <SectionHeading title="Catálogo de softwares" subtitle="Softwares disponíveis para associar aos grupos de computadores." />
-          {softwareSuccess && <div className="mt-3"><Notice type="success" message={softwareSuccess} onClose={() => setSoftwareSuccess("")} /></div>}
-          <p className="muted mt-3 mb-3" role="status">{data.software.length} software(s) cadastrado(s)</p>
+        {catalogLoading && <Busy />}
+        {catalogError && <Notice message={catalogError} />}
+        {resourceCatalogError && <Notice message={`Catálogo de recursos indisponível: ${resourceCatalogError}`} />}
+        {(opening || detailLoading) && <p role="status" className="sg-note">Carregando inventário técnico...</p>}
+        {indicatorState === "error" && <Notice type="info" message="Não foi possível consultar os turnos oferecidos neste semestre. Nenhuma disponibilidade foi presumida." />}
+        {error && !form && <Notice message={error} onClose={() => setError("")} />}
+        <section className="card sg-panel" aria-label="Lista de ambientes">
+          <div className="sg-toolbar" role="search" aria-label="Filtros de ambientes">
+            <div className="sg-search"><Field label="Buscar ambiente">
+              <input type="search" className="field" value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Nome, código ou localização" />
+            </Field><Search size={16} aria-hidden="true" /></div>
+            <Field label="Tipo de ambiente">
+              <select className="field" value={kind} onChange={(e) => setKind(e.target.value)}>
+                <option value="">Todos os tipos</option>
+                <option value="Comum">Sala comum</option>
+                <option value="Laboratorio">Laboratório</option>
+                <option value="Hibrida">Híbrida</option>
+                <option value="Oficina">Oficina</option>
+              </select>
+            </Field>
+            <Field label="Situação"><select className="field" value={status} onChange={(e) => setStatus(e.target.value)}>
+              <option value="">Todas</option><option value="active">Ativas</option><option value="inactive">Inativas</option>
+            </select></Field>
+            {admin && <Field label="Semestre dos turnos"><select className="field" value={semesterId} onChange={(e) => setSemesterId(e.target.value)}>
+              <option value="">Selecione</option>{data.semesters.map((semester) => <option key={semester.id} value={semester.id}>{semester.name}</option>)}
+            </select></Field>}
+            <div className="sg-filters-end">
+              {!catalogLoading && <span className="sg-count" role="status">{list.length} de {data.rooms.length} ambientes exibidos</span>}
+              {filtered && <button type="button" className="btn-quiet" onClick={() => { setSearch(""); setKind(""); setStatus(""); setSemesterId(""); }}>Limpar filtros</button>}
+              {admin && <button type="button" className="btn-secondary" onClick={() => {
+                resourceCatalogRef.current?.scrollIntoView({ block: "start" }); resourceCatalogRef.current?.focus({ preventScroll: true });
+              }}><SlidersHorizontal size={16} aria-hidden="true" /> Gerenciar catálogo de recursos</button>}
+            </div>
+          </div>
+          {!catalogLoading && list.length === 0 ? <div className="sg-panel-body"><p className="sg-empty">
+            <strong>{data.rooms.length ? "Nenhum ambiente encontrado" : "Nenhum ambiente cadastrado"}</strong><br />
+            {data.rooms.length ? "Ajuste a busca ou os filtros para visualizar outros ambientes." : "Os ambientes cadastrados aparecerão aqui."}
+          </p></div> : !catalogLoading && <>
+            <div className="hidden overflow-x-auto lg:block"><table className="sg-table sg-rooms-table"><thead><tr>
+              <th scope="col">Ambiente</th><th scope="col">Tipo e localização</th><th scope="col">Capacidade</th><th scope="col">Turnos configurados</th><th scope="col">Turnos com ocupação</th><th scope="col">Situação</th><th scope="col" className="sg-col-actions">Ações</th>
+            </tr></thead><tbody>{list.map((room) => <tr key={room.id} onClick={(event) => openRoomInformation(event, room)} className="cursor-pointer">
+              <td><span className="sg-code">{room.code || `#${room.id}`}</span><span className="block">{roomInformation(room)}</span>{bottleneckLabel(room)}</td>
+              <td>{roomKind(room.kind)}<span className="sg-sub">{room.location || "Localização não informada"}</span></td>
+              <td className="tabular-nums">{room.seats} alunos</td><td>{shiftLabel(room)}</td><td>{occupiedShiftLabel(room)}</td>
+              <td>{roomStatus(room)}</td>
+              <td>{roomAction(room)}</td>
+            </tr>)}</tbody></table></div>
+            <div className="sg-cards lg:hidden">{list.map((room) => <article key={room.id} onClick={(event) => openRoomInformation(event, room)}>
+              <div className="sg-cards-top"><span className="sg-code">{room.code || `#${room.id}`}</span>{roomStatus(room)}</div>
+              <h3>{roomInformation(room)}</h3>
+              <p className="sg-note">{roomKind(room.kind)} · {room.location || "Localização não informada"}</p>
+              {bottleneckLabel(room)}
+              <dl><div><dt>Capacidade</dt><dd>{room.seats} alunos</dd></div><div><dt>Turnos configurados</dt><dd>{shiftLabel(room)}</dd></div><div className="sg-wide"><dt>Turnos com ocupação</dt><dd>{occupiedShiftLabel(room)}</dd></div></dl>
+              {roomAction(room)}
+            </article>)}</div>
+          </>}
+        </section>
+        {admin && <div ref={resourceCatalogRef} tabIndex={-1} className="sg-anchor">
+          <ResourceCatalogManager catalog={resourceCatalog} onChanged={refreshResourceCatalog} />
+        </div>}
+        {admin && <Panel title="Catálogo de softwares" subtitle="Softwares disponíveis para associar aos grupos de computadores.">
+          {softwareSuccess && <div className="mb-3"><Notice type="success" message={softwareSuccess} onClose={() => setSoftwareSuccess("")} /></div>}
+          <p className="sg-note mb-3" role="status">{data.software.length} software(s) cadastrado(s)</p>
           {data.software.length > 8 && <Field label="Buscar software"><input className="field" type="search" value={softwareSearch} onChange={(event) => setSoftwareSearch(event.target.value)} placeholder="Nome do software…" /></Field>}
-          {data.software.length ? <ul className="grid gap-2 sm:grid-cols-2 mt-3">
-            {data.software.filter((item) => item.name.toLocaleLowerCase("pt-BR").includes(softwareSearch.toLocaleLowerCase("pt-BR"))).map((item) =>
-              <li key={item.id} className="flex min-w-0 items-center gap-3 rounded-panel border border-line bg-surface px-3 py-3">
-                <AppWindow size={18} className="shrink-0 text-skybrand-500" aria-hidden="true" />
-                <span className="min-w-0 flex-1 break-words font-semibold text-ink">{item.name}</span>
-                <span className="pill border border-line text-muted-ink">Cadastrado</span>
-              </li>)}
-          </ul> : <Empty title="Nenhum software cadastrado" text="Adicione um software para associá-lo aos computadores dos ambientes." />}
-          {data.software.length > 0 && softwareSearch && !data.software.some((item) => item.name.toLocaleLowerCase("pt-BR").includes(softwareSearch.toLocaleLowerCase("pt-BR"))) && <p className="muted mt-3">Nenhum software encontrado para esta busca.</p>}
-          <form className="flex flex-wrap gap-2 mt-4" onSubmit={addSoftware}>
-            <input
-              className="field max-w-sm"
-              aria-label="Nome do software"
-              required
-              placeholder="Ex.: SolidWorks"
-              value={softwareName}
-              onChange={(e) => setSoftwareName(e.target.value)}
-            />
-            <button className="btn-secondary" disabled={softwareBusy}>
-              <Plus size={16} />
-              Adicionar
-            </button>
+          {data.software.length ? <ul className="sg-catalog">
+            {softwareList.map((item) => <li key={item.id}>
+              <AppWindow size={18} className="sg-catalog-icon" aria-hidden="true" />
+              <div className="sg-item-text"><strong>{item.name}</strong></div>
+              <span className="sg-status is-active">Cadastrado</span>
+            </li>)}
+          </ul> : <p className="sg-empty">Nenhum software cadastrado. Adicione um software para associá-lo aos computadores dos ambientes.</p>}
+          {data.software.length > 0 && softwareSearch && softwareList.length === 0 && <p className="sg-note mt-3">Nenhum software encontrado para esta busca.</p>}
+          <form className="mt-4 flex flex-wrap gap-2" onSubmit={addSoftware}>
+            <input className="field max-w-sm" aria-label="Nome do software" required placeholder="Ex.: SolidWorks"
+              value={softwareName} onChange={(e) => setSoftwareName(e.target.value)} />
+            <button className="btn-secondary" disabled={softwareBusy}><Plus size={16} aria-hidden="true" />Adicionar</button>
           </form>
-        </Card>
-      )}
-      {error && !form && (
-        <div className="mt-4">
-          <Notice message={error} onClose={() => setError("")} />
-        </div>
-      )}
+        </Panel>}
+      </SenaiScope>
+      <SenaiScope modals>
       {shiftRoom && semesterId && <Modal width="max-w-2xl" title={`Turnos oferecidos · ${shiftRoom.name}`} onClose={() => setShiftRoom(null)}>
         <OperatingShiftEditor key={`${semesterId}|${shiftRoom.id}`} semesterId={Number(semesterId)} roomId={String(shiftRoom.id)} onSaved={() => setIndicatorRefresh((value) => value + 1)} />
       </Modal>}
-      {detail && <Modal width="max-w-3xl" title={`${detail.room.code || `#${detail.room.id}`} · ${detail.room.name}`} onClose={() => setDetail(null)}>
-        <div className="space-y-5">
-          <p className="muted">Ficha técnica cadastrada. Os turnos oferecidos não comprovam disponibilidade para reserva.</p>
-          <dl className="grid gap-3 sm:grid-cols-2 text-sm">
-            {[["Tipo", roomKind(detail.room.kind)], ["Localização", detail.room.location || "Não informada"], ["Capacidade", `${detail.room.seats} alunos`], ["Carteiras", String(detail.room.desks)], ["Situação", detail.room.active ? "Ativa" : "Inativa"], ["Turnos configurados", shiftLabel(detail.room)], ["Turnos com ocupação", occupiedShiftLabel(detail.room)]].map(([label, value]) => <div key={label} className="rounded-control border border-line p-3"><dt className="text-muted-ink">{label}</dt><dd className="mt-1 font-semibold text-ink">{value}</dd></div>)}
-          </dl>
-          <div className="space-y-3"><SectionHeading title="Grupos de computadores" subtitle="Quantidades operacionais desconhecidas permanecem sem confirmação." />
-            {detail.inventory.computerGroups.length ? detail.inventory.computerGroups.map((group, index) => <div key={group.id ?? index} className="rounded-control border border-line p-4 text-sm space-y-2">
-              <h3 className="font-semibold text-ink"><HardDrive size={16} className="inline mr-2" />{group.description}</h3>
-              <p>{group.quantity} cadastrados · {group.operationalQuantity == null ? "Operacionais não informados" : `${group.operationalQuantity} operacionais`}</p>
-              <dl className="grid gap-x-4 gap-y-2 sm:grid-cols-2">
-                {[["Processador", stated(group.processor)], ["RAM", group.ramGb ? `${group.ramGb} GB` : "Não informada"],
-                  ["Armazenamento", stated(group.storage)], ["Placa de vídeo", stated(group.graphicsCard)],
-                  ["GPU dedicada", yesNoUnknown(group.dedicatedGpu)], ["Desempenho", stated(group.tier)],
-                  ["Sistema operacional", stated(group.operatingSystem)], ["Virtualização", yesNoUnknown(group.virtualization)],
-                  ["Docker / WSL", yesNoUnknown(group.dockerWsl)], ["Suporte a CAD", yesNoUnknown(group.cadCompatible)],
-                  ["Suporte a simuladores", yesNoUnknown(group.simulatorCompatible)],
-                  ["Internet no grupo", yesNoUnknown(group.internetAvailable)], ["Rede e restrições", stated(group.networkDetails)]].map(([label, value]) =>
-                  <div key={label}><dt className="text-muted-ink">{label}</dt><dd className="text-ink break-words">{value}</dd></div>)}
-              </dl>
-              <div className="border-t border-line pt-3"><h4 className="font-semibold text-ink mb-2">Softwares e licenças</h4>
-                {group.software.length ? <ul className="space-y-2">{group.software.map((item) => <li key={item.softwareId}>
-                  <strong>{item.name}</strong> · Versão: {stated(item.version)} · {item.installedQuantity} instalações · Licenças: {item.licenseQuantity ?? "Não informadas"} · Validade: {stated(item.licenseExpiresOn)}
-                </li>)}</ul> : <p className="muted">Nenhum software informado.</p>}
+      {detail && <Modal width="max-w-4xl" title={`${detail.room.code || `#${detail.room.id}`} · ${detail.room.name}`} onClose={() => setDetail(null)}>
+        <div className="sg-stack">
+          <div className="sg-detail-head">
+            <div className="sg-meta"><span className="sg-code">{detail.room.code || `#${detail.room.id}`}</span><span className="sg-note">{roomKind(detail.room.kind)}</span>{roomStatus(detail.room)}</div>
+            {admin && <button type="button" className="btn-secondary" onClick={() => { const room = detail.room; setDetail(null); void open(room); }}><Pencil size={16} aria-hidden="true" />Editar</button>}
+          </div>
+          <p className="sg-note">Ficha técnica cadastrada. Os turnos oferecidos não comprovam disponibilidade para reserva.</p>
+          <Tabs label="Seções do ambiente" idPrefix="room-detail" active={detailTab} onChange={(next) => setDetailTab(next as DetailTab)} items={[
+            { id: "resumo", label: "Resumo" }, { id: "recursos", label: "Recursos", count: resources.length },
+            { id: "computadores", label: "Computadores e softwares", count: detail.inventory.computerGroups.length },
+          ]} />
+          <div role="tabpanel" id={`room-detail-panel-${detailTab}`} aria-labelledby={`room-detail-tab-${detailTab}`} className="sg-stack">
+            {detailTab === "resumo" && <>
+              <div className="sg-stats sg-stats-4 sg-stats-compact">
+                <StatCard label="Capacidade" value={detail.room.seats} detail="vagas para alunos" />
+                <StatCard tone="green" label="Recursos" value={resources.length} detail="vinculados ao ambiente" />
+                <StatCard tone="amber" label="Com restrição" value={resources.filter(reduced).length} detail="disponibilidade reduzida" />
+                <StatCard label="Grupos" value={detail.inventory.computerGroups.length} detail="de computadores" />
               </div>
-            </div>) : <p className="muted">Nenhum grupo cadastrado.</p>}
+              <Panel title="Informações gerais">
+                <dl className="sg-facts">
+                  {[["Tipo", roomKind(detail.room.kind)], ["Localização", detail.room.location || "Não informada"], ["Capacidade", `${detail.room.seats} alunos`], ["Carteiras", String(detail.room.desks)], ["Situação", detail.room.active ? "Ativa" : "Inativa"], ["Finalidade", stated(detail.room.purpose)], ["Turnos configurados", shiftLabel(detail.room)], ["Turnos com ocupação", occupiedShiftLabel(detail.room)]].map(([label, value]) => <div key={label}><dt>{label}</dt><dd>{value}</dd></div>)}
+                </dl>
+              </Panel>
+            </>}
+            {detailTab === "recursos" && <Panel title="Equipamentos e recursos" subtitle="Quantidades cadastradas e operacionais neste ambiente.">
+              {resources.length ? <>
+                <div className="sg-pills" role="group" aria-label="Filtrar recursos por situação operacional">
+                  {resourceFilters.map((item) => <button type="button" key={item.id} aria-pressed={resourceFilter === item.id} onClick={() => setResourceFilter(item.id)}>{item.label}<span>{item.items.length}</span></button>)}
+                </div>
+                {shownResources.length ? <ul>{shownResources.map((item, index) => <li key={item.id ?? index} className="sg-item flex-wrap">
+                  <div className="sg-item-text">
+                    <strong>{item.name} · {item.type}</strong>
+                    <small>{item.quantity} cadastrados · {item.operationalQuantity == null ? "Operacionais não informados" : `${item.operationalQuantity} operacionais`}</small>
+                    {item.description && <small>{item.description}</small>}
+                    {item.technicalDetails && <small>{item.technicalDetails}</small>}
+                    <small>{[item.condition && `Condição: ${item.condition}`, item.voltage && `Voltagem: ${item.voltage} V`, item.warrantyExpiresOn && `Garantia até ${item.warrantyExpiresOn}`, item.licenseExpiresOn && `Licença até ${item.licenseExpiresOn}`].filter(Boolean).join(" · ")}</small>
+                  </div>
+                  {reduced(item) && <span className="sg-badge is-danger">Disponibilidade reduzida</span>}
+                </li>)}</ul> : <p className="sg-empty">Nenhum recurso nesta situação.</p>}
+              </> : <p className="sg-empty">Nenhum equipamento cadastrado.</p>}
+            </Panel>}
+            {detailTab === "computadores" && (detail.inventory.computerGroups.length ? <>
+              <p className="sg-note">Quantidades operacionais desconhecidas permanecem sem confirmação.</p>
+              {detail.inventory.computerGroups.map((group, index) => <Panel key={group.id ?? index} title={group.description}
+                subtitle={`${group.quantity} cadastrados · ${group.operationalQuantity == null ? "Operacionais não informados" : `${group.operationalQuantity} operacionais`}`}
+                action={<HardDrive size={18} className="sg-catalog-icon" aria-hidden="true" />}>
+                <dl className="sg-facts">
+                  {[["Processador", stated(group.processor)], ["RAM", group.ramGb ? `${group.ramGb} GB` : "Não informada"],
+                    ["Armazenamento", stated(group.storage)], ["Placa de vídeo", stated(group.graphicsCard)],
+                    ["GPU dedicada", yesNoUnknown(group.dedicatedGpu)], ["Desempenho", stated(group.tier)],
+                    ["Sistema operacional", stated(group.operatingSystem)], ["Virtualização", yesNoUnknown(group.virtualization)],
+                    ["Docker / WSL", yesNoUnknown(group.dockerWsl)], ["Suporte a CAD", yesNoUnknown(group.cadCompatible)],
+                    ["Suporte a simuladores", yesNoUnknown(group.simulatorCompatible)],
+                    ["Internet no grupo", yesNoUnknown(group.internetAvailable)], ["Rede e restrições", stated(group.networkDetails)]].map(([label, value]) =>
+                    <div key={label}><dt>{label}</dt><dd className="break-words">{value}</dd></div>)}
+                </dl>
+                <h3 className="mb-2 text-sm font-bold">Softwares e licenças</h3>
+                {group.software.length ? <ul>{group.software.map((item) => <li key={item.softwareId} className="sg-item"><div className="sg-item-text">
+                  <strong>{item.name}</strong><small>Versão: {stated(item.version)} · {item.installedQuantity} instalações · Licenças: {item.licenseQuantity ?? "Não informadas"} · Validade: {stated(item.licenseExpiresOn)}</small>
+                </div></li>)}</ul> : <p className="sg-empty">Nenhum software informado.</p>}
+              </Panel>)}
+            </> : <p className="sg-empty">Nenhum grupo cadastrado.</p>)}
           </div>
-          <div className="space-y-3"><SectionHeading title="Equipamentos e recursos" />
-            {detail.inventory.resources.length ? detail.inventory.resources.map((item, index) => <div key={item.id ?? index} className="rounded-control border border-line p-4 text-sm">
-              <h3 className="font-semibold text-ink">{item.name} · {item.type}</h3><p>{item.quantity} cadastrados · {item.operationalQuantity == null ? "Operacionais não informados" : `${item.operationalQuantity} operacionais`}</p>
-              {item.description && <p className="muted">{item.description}</p>}
-              {item.technicalDetails && <p className="muted">{item.technicalDetails}</p>}
-              <p className="muted">{[item.condition && `Condição: ${item.condition}`, item.voltage && `Voltagem: ${item.voltage} V`, item.warrantyExpiresOn && `Garantia até ${item.warrantyExpiresOn}`, item.licenseExpiresOn && `Licença até ${item.licenseExpiresOn}`].filter(Boolean).join(" · ")}</p>
-            </div>) : <p className="muted">Nenhum equipamento cadastrado.</p>}
-          </div>
-          {admin && <button type="button" className="btn-secondary" onClick={() => { const room = detail.room; setDetail(null); void open(room); }}>Editar</button>}
         </div>
       </Modal>}
       {form && (
@@ -452,13 +424,25 @@ export function Rooms({ user, onImport }: { user: User; onImport?: (kind: "Ambie
           <form className="space-y-5" onSubmit={submit}>
             <fieldset disabled={busy} className="space-y-5">
             {error && <Notice message={error} />}
-            <SectionHeading title="Dados gerais" subtitle="Código, capacidade e recursos físicos do ambiente." />
+            <div><h3 className="text-sm font-bold">Dados gerais</h3><p className="sg-note">Código, capacidade e recursos físicos do ambiente.</p></div>
             <div className="grid sm:grid-cols-2 gap-3">
               <Field label="Código do ambiente">
                 <input className="field" maxLength={30} value={form.code || ""}
                   onChange={(e) => set("code", e.target.value)} placeholder="Ex.: LAB-01" />
               </Field>
-              <Field label="Nome da sala">
+              <Field label="Tipo">
+                <select
+                  className="field"
+                  value={form.kind}
+                  onChange={(e) => set("kind", e.target.value)}
+                >
+                  <option value="Comum">Sala comum</option>
+                  <option value="Laboratorio">Laboratório</option>
+                  <option value="Hibrida">Híbrida</option>
+                  <option value="Oficina">Oficina</option>
+                </select>
+              </Field>
+              <Field label="Nome da sala" className="sm:col-span-2">
                 <input
                   required
                   className="field"
@@ -466,6 +450,16 @@ export function Rooms({ user, onImport }: { user: User; onImport?: (kind: "Ambie
                   value={form.name}
                   onChange={(e) => set("name", e.target.value)}
                   placeholder="Laboratório 02"
+                />
+              </Field>
+              <Field label="Capacidade de alunos">
+                <input
+                  type="number"
+                  min="1"
+                  max="1000"
+                  className="field"
+                  value={form.seats}
+                  onChange={(e) => set("seats", Number(e.target.value))}
                 />
               </Field>
               <Field label="Localização">
@@ -484,31 +478,6 @@ export function Rooms({ user, onImport }: { user: User; onImport?: (kind: "Ambie
                   placeholder="Ex.: Robótica, SolidWorks, programação"
                 />
               </Field>
-              <Field label="Tipo">
-                <select
-                  className="field"
-                  value={form.kind}
-                  onChange={(e) => set("kind", e.target.value)}
-                >
-                  <option value="Comum">Sala comum</option>
-                  <option value="Laboratorio">Laboratório</option>
-                  <option value="Hibrida">Híbrida</option>
-                  <option value="Oficina">Oficina</option>
-                </select>
-              </Field>
-              <div className="grid grid-cols-2 gap-2">
-                <Field label="Capacidade de alunos">
-                  <input
-                    type="number"
-                    min="1"
-                    max="1000"
-                    className="field"
-                    value={form.seats}
-                    onChange={(e) => set("seats", Number(e.target.value))}
-                  />
-                </Field>
-
-              </div>
             </div>
             <div className="flex flex-wrap gap-4">
               <Checkbox label="Ambiente ativo" checked={form.active} onChange={(v) => set("active", v)} />
@@ -548,6 +517,7 @@ export function Rooms({ user, onImport }: { user: User; onImport?: (kind: "Ambie
           </form>
         </Modal>
       )}
+      </SenaiScope>
     </>
   );
 }

@@ -1,9 +1,7 @@
-import {
-  ArrowUpRight,
-} from "lucide-react";
+import { ArrowUpRight, CalendarDays } from "lucide-react";
 import { useData } from "../lib/data";
 import { dateTimeBR } from "../lib/utils";
-import { Card, Empty, Title } from "../components/UI";
+import { PageHeading, Panel, SenaiScope, StatCard } from "../components/senai/SenaiUI";
 import { ManagerDashboard } from "../components/ManagerDashboard";
 import type { AgendaOccupation, User } from "../types";
 
@@ -42,44 +40,60 @@ export function Dashboard({
     const sent = data.loans.filter((l) => l.ownerTeacherId === user.id);
     const needsReply = received.filter((l) => l.status === "AguardandoDestinatario").length;
     const needsDisposition = sent.filter((l) => l.status === "AguardandoSituacaoTitular").length;
-    return <>
-      <Title title={`Olá, ${user.displayName.split(" ")[0]}!`} subtitle="Suas próximas aulas, reservas e solicitações em um só lugar." />
-      <div className="flex flex-wrap gap-2 mb-6">
-        <button type="button" className="btn-primary" onClick={() => navigate("bookings")}>Criar reserva <ArrowUpRight size={16} /></button>
-        <button type="button" className="btn-secondary" onClick={() => navigate("instructor-agenda")}>Minha agenda</button>
-        <button type="button" className="btn-secondary" onClick={() => navigate("agenda")}>Disponibilidade dos ambientes</button>
-        <button type="button" className="btn-secondary" onClick={() => navigate("loans")}>Acompanhar empréstimos</button>
+    const confirmed = data.bookings.filter((b) => b.status === "Aprovada").length;
+    const assignments = data.assignments.filter((a) => a.teacherId === user.id && !a.endedAtUtc);
+    const classCount = new Set(assignments.map((a) => a.classGroupId)).size;
+    return <SenaiScope>
+      <PageHeading eyebrow="Visão do instrutor" title={`Olá, ${user.displayName.split(" ")[0]}!`} subtitle="Suas próximas aulas, reservas e solicitações em um só lugar."
+        action={<button type="button" className="btn-primary" onClick={() => navigate("bookings")}>Criar reserva <ArrowUpRight size={16} aria-hidden="true" /></button>} />
+      <section aria-label="Resumo do instrutor" className="sg-stats sg-stats-5">
+        <StatCard label="Turmas" value={classCount} detail="Com atribuição ativa" />
+        <StatCard label="Atribuições" value={assignments.length} detail="Disciplinas e UCs ativas" />
+        <StatCard tone="amber" label="Reservas pendentes" value={pending.length} detail="Aguardando escolha de sala" />
+        <StatCard tone="green" label="Reservas confirmadas" value={confirmed} detail="Solicitações com sala confirmada" />
+        <StatCard label="Empréstimos" value={received.length + sent.length} detail={`${received.length} recebidos · ${sent.length} enviados`} />
+      </section>
+      <Panel title="Minhas turmas e UCs" subtitle="Somente atribuições ativas vinculadas à sua conta."
+        action={<button type="button" className="btn-secondary" onClick={() => navigate("instructor-agenda")}>Minha agenda</button>}>
+        {assignments.length === 0 ? <p className="sg-empty">Nenhuma atribuição ativa.</p> :
+          <div className="sg-scroll">{assignments.map((assignment) => {
+            const group = data.classes.find((c) => c.id === assignment.classGroupId);
+            const semester = data.semesters.find((item) => item.id === assignment.semesterId);
+            return <div key={assignment.id} className="sg-item"><div className="sg-item-text">
+              <strong>{group ? [group.code, group.name].filter(Boolean).join(" · ") : `Turma ${assignment.classGroupId}`}</strong>
+              <small>{assignment.disciplineName} · {semester?.name ?? "Semestre não informado"}</small>
+            </div></div>;
+          })}</div>}
+      </Panel>
+      <Panel title="Próximas aulas e reservas" subtitle="Ocupações confirmadas nos próximos 30 dias."
+        action={<div className="sg-actions">
+          <button type="button" className="btn-secondary" onClick={() => navigate("instructor-agenda")}>Ver minha agenda</button>
+          <button type="button" className="btn-secondary" onClick={() => navigate("agenda")}>Disponibilidade dos ambientes</button>
+        </div>}>
+        {upcoming.length === 0 ? <p className="sg-empty">Nenhuma aula nos próximos 30 dias. Consulte sua agenda ou crie uma reserva.</p> :
+          <div>{upcoming.map((o) => <div key={o.id} className="sg-item items-center flex-wrap">
+            <span className="sg-item-icon"><CalendarDays size={19} aria-hidden="true" /></span>
+            <div className="sg-item-text"><strong>{o.description || "Ocupação de ambiente"}</strong>
+              <small>{dateTimeBR(o.startsAt)} · {data.rooms.find((r) => r.id === o.roomId)?.name || `Sala ${o.roomId}`}</small></div>
+            <span className="sg-badge is-success">{o.isBorrowed ? "Empréstimo efetivado" : "Confirmada"}</span>
+          </div>)}</div>}
+      </Panel>
+      <div className="sg-grid sg-grid-thirds">
+        <Panel title="Reservas">
+          <p className="sg-note">{pending.length} aguardando escolha de sala · {confirmed} confirmadas</p>
+          <button type="button" className="btn-secondary mt-4" onClick={() => navigate("bookings")}>Acompanhar reservas</button>
+        </Panel>
+        <Panel title="Empréstimos">
+          <p className="sg-note">{received.length} recebidos · {sent.length} enviados</p>
+          {(needsReply > 0 || needsDisposition > 0) && <p className="sg-warning mt-2">{needsReply} para responder · {needsDisposition} para definir a situação da turma</p>}
+          <button type="button" className="btn-secondary mt-4" onClick={() => navigate("loans")}>Ver solicitações</button>
+        </Panel>
+        <Panel title="Notificações">
+          <p className="sg-note">{unread === null ? "Não foi possível consultar avisos agora." : unread > 0 ? `${unread} aviso(s) não lido(s) que podem precisar de atenção.` : "Nenhum aviso não lido."}</p>
+          <button type="button" className="btn-secondary mt-4" onClick={() => navigate("notifications")}>Abrir notificações</button>
+        </Panel>
       </div>
-      <div className="grid gap-5 xl:grid-cols-[1.5fr_1fr]">
-        <Card className="overflow-hidden">
-          <div className="p-5 border-b border-line flex flex-wrap items-center justify-between gap-2">
-            <h2 className="section-title">Próximas aulas e reservas</h2>
-            <button type="button" className="text-sm font-semibold text-skybrand-700 underline" onClick={() => navigate("instructor-agenda")}>Ver minha agenda</button>
-          </div>
-          {upcoming.length === 0 ? <Empty title="Nenhuma aula nos próximos 30 dias" text="Consulte sua agenda ou crie uma reserva." /> :
-            <div className="divide-y divide-line">{upcoming.map((o) => <div key={o.id} className="p-4 sm:px-5 flex flex-wrap items-center justify-between gap-2">
-              <div><p className="text-sm font-semibold">{o.description || "Ocupação de ambiente"}</p>
-                <p className="text-sm text-muted-ink">{dateTimeBR(o.startsAt)} · {data.rooms.find((r) => r.id === o.roomId)?.name || `Sala ${o.roomId}`}</p></div>
-              <span className="pill bg-emerald-50 text-emerald-700">{o.isBorrowed ? "Empréstimo efetivado" : "Confirmada"}</span>
-            </div>)}</div>}
-        </Card>
-        <div className="space-y-5">
-          <Card className="p-5"><h2 className="section-title">Reservas</h2>
-            <p className="text-sm text-muted-ink mt-3">{pending.length} aguardando escolha de sala · {data.bookings.filter((b) => b.status === "Aprovada").length} confirmadas</p>
-            <button type="button" className="btn-secondary mt-4" onClick={() => navigate("bookings")}>Acompanhar reservas</button>
-          </Card>
-          <Card className="p-5"><h2 className="section-title">Empréstimos</h2>
-            <p className="text-sm text-muted-ink mt-3">{received.length} recebidos · {sent.length} enviados</p>
-            {(needsReply > 0 || needsDisposition > 0) && <p className="text-sm font-medium text-amber-800 mt-2">{needsReply} para responder · {needsDisposition} para definir a situação da turma</p>}
-            <button type="button" className="btn-secondary mt-4" onClick={() => navigate("loans")}>Ver solicitações</button>
-          </Card>
-          <Card className="p-5"><h2 className="section-title">Notificações</h2>
-            <p className="text-sm text-muted-ink mt-3">{unread === null ? "Não foi possível consultar avisos agora." : unread > 0 ? `${unread} aviso(s) não lido(s) que podem precisar de atenção.` : "Nenhum aviso não lido."}</p>
-            <button type="button" className="btn-secondary mt-4" onClick={() => navigate("notifications")}>Abrir notificações</button>
-          </Card>
-        </div>
-      </div>
-    </>;
+    </SenaiScope>;
   }
   return <ManagerDashboard admin={admin} onTimeline={openTimeline} onOpportunity={openOpportunity} onExport={onExport} />;
 }

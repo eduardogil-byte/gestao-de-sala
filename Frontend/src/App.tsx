@@ -523,7 +523,7 @@ function Workspace({ user, onLogout, onPasswordChanged, institutionalNotice = ""
           ) : page === "schedules" && admin ? (
             <Schedules user={user} reloadAgenda={reloadAgenda} />
           ) : page === "semester-planning" ? (
-            <SemesterPlanning user={user} reloadAgenda={reloadAgenda} />
+            <SemesterPlanning user={user} reloadAgenda={reloadAgenda} onOpen={(target) => open(target)} />
           ) : page === "bookings" ? (
             <Bookings user={user} reloadAgenda={reloadAgenda}
               focusId={related?.page === "bookings" ? related.id : null} />
