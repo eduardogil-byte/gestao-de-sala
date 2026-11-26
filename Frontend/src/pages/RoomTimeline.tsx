@@ -1,11 +1,11 @@
 import { WeeklyOccupations } from "../components/WeeklyOccupations";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { ChevronDown, ChevronUp } from "lucide-react";
+import { ChevronDown, SlidersHorizontal } from "lucide-react";
 import { ApiError, downloadFile, post, read } from "../lib/api";
 import { useData } from "../lib/data";
 import { agendaPath, datesBetween, indexOccupations, isAgendaOccupation, movePeriod, period, summarize, weekStart, type TimelineView } from "../lib/roomTimeline";
 import { dateBR, formatMonthWeek, localDate, nextDate, resultMessage } from "../lib/utils";
-import { Busy, Card, Field, FilterBar, MetricCard, Modal, Notice, SectionHeading, Title } from "../components/UI";
+import { Busy, Card, Field, MetricCard, Modal, Notice, SectionHeading, Title } from "../components/UI";
 import { AuditHistory } from "../components/AuditHistory";
 import type { AgendaOccupation, OccupationBlockMovePreview, OccupationMovePreview, User } from "../types";
 
@@ -59,6 +59,22 @@ export function RoomTimeline({ user, openBookings, initialFilter }: { user: User
   const [shiftId, setShiftId] = useState(initialFilter?.shiftId ? String(initialFilter.shiftId) : "");
   const [kind, setKind] = useState("");
   const [filtersExpanded, setFiltersExpanded] = useState(false);
+  const filtersRef = useRef<HTMLDivElement>(null);
+  const filtersButtonRef = useRef<HTMLButtonElement>(null);
+  const activeFilterCount = [semesterId, roomKind, roomId, admin ? teacherId : "", classGroupId, shiftId, kind].filter(Boolean).length;
+  useEffect(() => {
+    if (!filtersExpanded) return;
+    filtersRef.current?.querySelector("select")?.focus();
+    const dismiss = (event: PointerEvent) => {
+      if (!filtersRef.current?.contains(event.target as Node)) setFiltersExpanded(false);
+    };
+    const escape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") { setFiltersExpanded(false); filtersButtonRef.current?.focus(); }
+    };
+    document.addEventListener("pointerdown", dismiss);
+    document.addEventListener("keydown", escape);
+    return () => { document.removeEventListener("pointerdown", dismiss); document.removeEventListener("keydown", escape); };
+  }, [filtersExpanded]);
   const [items, setItems] = useState<AgendaOccupation[] | null>(null);
   const [loadedQuery, setLoadedQuery] = useState("");
   const [loading, setLoading] = useState(false);
@@ -366,12 +382,16 @@ export function RoomTimeline({ user, openBookings, initialFilter }: { user: User
           </div>
         </div>
       </div>
-      <SectionHeading title="Filtros do cronograma" action={<button type="button" className="btn-secondary min-h-11" aria-expanded={filtersExpanded} aria-controls="timeline-filters" onClick={() => setFiltersExpanded((expanded) => !expanded)}>
-        {filtersExpanded ? <ChevronUp size={18} aria-hidden="true" /> : <ChevronDown size={18} aria-hidden="true" />}
-        {filtersExpanded ? "Recolher filtros" : "Expandir filtros"}
-      </button>} />
-      <div id="timeline-filters" hidden={!filtersExpanded}>
-      <FilterBar embedded actions={<button type="button" className="btn-quiet" onClick={clearFilters}>Limpar filtros</button>}>
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <h2 className="section-title">Filtros do cronograma</h2>
+        <div ref={filtersRef} className="relative sm:shrink-0" onBlur={(event) => { if (!event.currentTarget.contains(event.relatedTarget)) setFiltersExpanded(false); }}>
+          <button ref={filtersButtonRef} type="button" className="btn-secondary w-full sm:w-auto" aria-expanded={filtersExpanded} aria-controls="timeline-filters" onClick={() => setFiltersExpanded((expanded) => !expanded)}>
+            <SlidersHorizontal size={17} aria-hidden="true" />Filtros
+            {activeFilterCount > 0 && <span className="rounded-full bg-canvas px-2 py-0.5 text-xs text-ink">{activeFilterCount}<span className="sr-only"> selecionados</span></span>}
+            <ChevronDown size={16} aria-hidden="true" className={`transition-transform ${filtersExpanded ? "rotate-180" : ""}`} />
+          </button>
+      <div id="timeline-filters" hidden={!filtersExpanded} role="region" aria-label="Opções de filtro" className="absolute right-0 top-full z-20 mt-2 w-full min-w-0 max-h-[70dvh] overflow-y-auto space-y-4 rounded-panel border border-line bg-surface p-4 shadow-soft sm:w-[32rem]">
+        <div className="grid grid-cols-2 gap-4 [&>label]:min-w-0">
         <Field label="Semestre"><select className="field" value={semesterId} onChange={(e) => { setSemesterId(e.target.value); setClassGroupId(""); }}>
           <option value="">Todos</option>{data.semesters.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
         </select></Field>
@@ -393,7 +413,10 @@ export function RoomTimeline({ user, openBookings, initialFilter }: { user: User
         <Field label="Tipo de ocupação"><select className="field" value={kind} onChange={(e) => setKind(e.target.value)}>
           <option value="">Todos</option><option value="Aula">Aula</option><option value="Avulsa">Avulsa</option><option value="Bloqueio">Bloqueio</option>
         </select></Field>
-      </FilterBar>
+        </div>
+        <button type="button" className="btn-quiet" onClick={clearFilters}>Limpar filtros</button>
+      </div>
+      </div>
       </div>
     </Card>
     <Card className="mb-5 p-4 sm:p-5 space-y-4">

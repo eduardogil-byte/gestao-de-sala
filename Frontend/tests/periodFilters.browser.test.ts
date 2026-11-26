@@ -15,7 +15,6 @@ test("períodos e filtros preservam navegação, seleção e temas em desktop e 
     await waitFor("document.body.innerText.includes('Filtros do cronograma')");
     assert.equal(await evaluate("document.querySelector('[aria-controls=timeline-filters]').getAttribute('aria-expanded')"), "false");
     assert.equal(await evaluate("document.querySelector('#timeline-filters').getClientRects().length"), 0);
-    await evaluate("adminTest.click('Expandir filtros')");
     await evaluate("adminTest.click('Semana')");
     await waitFor("document.querySelector('table')?.innerText.includes('Turma sintética')");
     assert.equal(await evaluate(`${navigation}.previousElementSibling.textContent`), weekLabel);
@@ -23,10 +22,11 @@ test("períodos e filtros preservam navegação, seleção e temas em desktop e 
     for (const text of ["Combine somente", "Ocupações não representam carga horária pedagógica", "Esta consulta não comprova turno livre"])
       assert.equal(await evaluate(`document.body.innerText.includes(${JSON.stringify(text)})`), false);
 
+    await evaluate("document.querySelector('[aria-controls=timeline-filters]').click()");
     await evaluate("adminTest.select('Tipo de ambiente', 'Laboratorio'); adminTest.select('Ambiente', '10'); adminTest.select('Instrutor', 't0'); adminTest.select('Turno', '1'); adminTest.select('Tipo de ocupação', 'Aula')");
     await waitFor("document.querySelector('table')?.innerText.includes('Turma sintética')");
     const values = "[...document.querySelectorAll('#timeline-filters select')].map(s => s.value)";
-    const selected = await evaluate(values);
+    const selected = await evaluate<string[]>(values);
     const requests = await evaluate("adminTest.calls.length");
     for (const width of [1366, 360]) {
       await command("Emulation.setDeviceMetricsOverride", { width, height: 850, deviceScaleFactor: 1, mobile: width === 360 });
@@ -38,7 +38,7 @@ test("períodos e filtros preservam navegação, seleção e temas em desktop e 
         await waitFor("document.querySelector('[aria-controls=timeline-filters]').getAttribute('aria-expanded') === 'false'");
         assert.equal(await evaluate("document.querySelector('#timeline-filters').getClientRects().length"), 0);
         assert.deepEqual(await evaluate(values), selected);
-        await evaluate("adminTest.click('Expandir filtros')");
+        await evaluate("document.querySelector('[aria-controls=timeline-filters]').click()");
         await waitFor("document.querySelector('[aria-controls=timeline-filters]').getAttribute('aria-expanded') === 'true'");
         assert.deepEqual(await evaluate(values), selected);
         assert.equal(await evaluate("document.documentElement.scrollWidth <= innerWidth + 1"), true);
@@ -46,12 +46,20 @@ test("períodos e filtros preservam navegação, seleção e temas em desktop e 
         await writeFile(join(screenshots, `${width}-${theme}.png`), Buffer.from(screenshot.data, "base64"));
       }
     }
+    assert.equal(await evaluate("document.querySelector('[aria-controls=timeline-filters] span').textContent"), `${selected.filter(Boolean).length} selecionados`);
+    await command("Input.dispatchKeyEvent", { type: "keyDown", key: "Escape", code: "Escape", windowsVirtualKeyCode: 27 });
+    await waitFor("document.querySelector('[aria-controls=timeline-filters]').getAttribute('aria-expanded') === 'false'");
+    assert.equal(await evaluate("document.activeElement.getAttribute('aria-controls')"), "timeline-filters");
+    await evaluate("document.querySelector('[aria-controls=timeline-filters]').click()");
+    await evaluate("document.body.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true }))");
+    await waitFor("document.querySelector('[aria-controls=timeline-filters]').getAttribute('aria-expanded') === 'false'");
     assert.equal(await evaluate("adminTest.calls.length"), requests);
     await evaluate("document.querySelector('[aria-label=\"Período anterior\"]').click()");
     await waitFor(`${navigation}.previousElementSibling.textContent === 'Fevereiro · Semana 4/5'`);
     assert.deepEqual(await evaluate(values), selected);
     await evaluate("document.querySelector('[aria-label=\"Próximo período\"]').click()");
     await waitFor(`${navigation}.previousElementSibling.textContent === ${JSON.stringify(weekLabel)}`);
+    await evaluate("document.querySelector('[aria-controls=timeline-filters]').click()");
     await evaluate("adminTest.click('Limpar filtros')");
     await waitFor(`${values}.every(value => value === '')`);
 
