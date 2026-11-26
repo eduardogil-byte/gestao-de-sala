@@ -1,48 +1,35 @@
-import { useEffect, useId, useState, type FormEvent } from "react";
-import { Check, Info, Plus, Search } from "lucide-react";
+import { useId, useState, type FormEvent } from "react";
+import { Info, Plus, Search } from "lucide-react";
 import { useData } from "../lib/data";
-import { read, put, register } from "../lib/api";
-import { dayNames, hour, resultMessage } from "../lib/utils";
+import { register } from "../lib/api";
+import { resultMessage } from "../lib/utils";
 import { TeacherProfile } from "../components/TeacherProfile";
-import { Busy, Card, Empty, Field, MetricCard, Modal, Notice, SearchableSelect, SectionHeading, SubmitButton, Title } from "../components/UI";
-import type { Availability, User } from "../types";
+import { Busy, Card, Empty, Field, MetricCard, Modal, Notice, SectionHeading, SubmitButton, Title, useConfirmation } from "../components/UI";
+import type { User } from "../types";
 
 export function Teachers({ user, onImport }: { user: User; onImport?: () => void }) {
   const admin = user.roles.includes("Admin");
   const { data, reload, loading } = useData();
   const [teacherId, setTeacherId] = useState(admin ? "" : user.id);
   const [profileOpen, setProfileOpen] = useState(false);
+  const [profileState, setProfileState] = useState({ busy: false, dirty: false });
+  const confirm = useConfirmation();
+  async function closeProfile() {
+    if (profileState.busy) return;
+    if (profileState.dirty && !await confirm({ title: "Descartar alterações?", message: "As alterações das informações profissionais ainda não foram salvas.", confirmLabel: "Descartar alterações", danger: true })) return;
+    setProfileOpen(false);
+    setProfileState({ busy: false, dirty: false });
+  }
   const [createOpen, setCreateOpen] = useState(false);
   const [helpOpen, setHelpOpen] = useState(false);
   const helpId = useId();
   const [query, setQuery] = useState("");
-  const [available, setAvailable] = useState<Availability[]>([]);
-  const [availabilityLoading, setAvailabilityLoading] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  useEffect(() => {
-    let current = true;
-    setAvailable([]);
-    setError("");
-    if (!teacherId) { setAvailabilityLoading(false); return () => { current = false; }; }
-    setAvailabilityLoading(true);
-    read<Availability[]>(`/teachers/${encodeURIComponent(teacherId)}/availability`)
-      .then((rows) => { if (current) setAvailable(rows); })
-      .catch((cause) => { if (current) setError(resultMessage(cause)); })
-      .finally(() => { if (current) setAvailabilityLoading(false); });
-    return () => { current = false; };
-  }, [teacherId]);
-  async function saveAvailability() {
-    if (!teacherId || busy || availabilityLoading) return;
-    setBusy(true); setError(""); setSuccess("");
-    try { await put(`/teachers/${encodeURIComponent(teacherId)}/availability`, available); setSuccess("Disponibilidade atualizada."); }
-    catch (cause) { setError(resultMessage(cause)); }
-    finally { setBusy(false); }
-  }
   async function create(event: FormEvent) {
     event.preventDefault();
     if (!admin || busy) return;
@@ -55,11 +42,6 @@ export function Teachers({ user, onImport }: { user: User; onImport?: () => void
       setSuccess("Instrutor cadastrado.");
     } catch (cause) { setError(resultMessage(cause)); }
     finally { setBusy(false); }
-  }
-  function toggle(weekday: number, shiftId: number) {
-    const found = available.some((item) => item.weekday === weekday && item.shiftId === shiftId);
-    setAvailable(found ? available.filter((item) => item.weekday !== weekday || item.shiftId !== shiftId)
-      : [...available, { weekday, shiftId }]);
   }
   const shown = data.teachers.filter((item) => (admin || item.id === user.id) && `${item.displayName} ${admin ? item.email ?? "" : ""}`
     .toLocaleLowerCase("pt-BR").includes(query.trim().toLocaleLowerCase("pt-BR")));
@@ -81,7 +63,7 @@ export function Teachers({ user, onImport }: { user: User; onImport?: () => void
             <button type="button" aria-label="Informações sobre os instrutores" aria-describedby={helpOpen ? helpId : undefined}
               className="flex h-11 w-11 items-center justify-center rounded-full text-muted-ink hover:bg-canvas hover:text-ink focus-visible:outline focus-visible:outline-2 focus-visible:outline-skybrand-500"
               onFocus={() => setHelpOpen(true)} onBlur={() => setHelpOpen(false)} onClick={() => setHelpOpen(true)} onKeyDown={(event) => { if (event.key === "Escape") { event.stopPropagation(); setHelpOpen(false); } }}><Info size={17} aria-hidden="true" /></button>
-            {helpOpen && <span id={helpId} role="tooltip" className="absolute right-0 top-full z-20 w-64 max-w-[calc(100vw-3rem)] rounded-lg border border-line bg-surface p-3 text-sm text-ink shadow-soft">Selecione um instrutor para consultar o perfil e a disponibilidade.</span>}
+            {helpOpen && <span id={helpId} role="tooltip" className="absolute right-0 top-full z-20 w-64 max-w-[calc(100vw-3rem)] rounded-lg border border-line bg-surface p-3 text-sm text-ink shadow-soft">Selecione um instrutor para consultar o perfil.</span>}
           </span>
         </div>
         {admin && <div className="flex w-full flex-col gap-3 sm:w-auto sm:flex-row sm:items-center">
@@ -101,29 +83,12 @@ export function Teachers({ user, onImport }: { user: User; onImport?: () => void
           </div>)}</div>
         </>}
     </Card>
-    {profileOpen && teacherId && (selected || !admin) && <Modal title={`Perfil · ${selected?.displayName ?? user.displayName}`} width="max-w-4xl" onClose={() => { if (!busy) setProfileOpen(false); }}><div className="space-y-4">
+    {profileOpen && teacherId && (selected || !admin) && <Modal title={selected?.displayName ?? user.displayName} width="max-w-2xl" onClose={() => void closeProfile()}><div className="space-y-4">
+      {admin && selected?.email && <p className="break-words text-sm text-muted-ink">{selected.email}</p>}
       {error && <Notice message={error} />}
       {success && <Notice type="success" message={success} />}
-      <TeacherProfile key={teacherId} teacherId={teacherId} admin={admin} />
-      <Card className="p-4 sm:p-5 space-y-4"><SectionHeading title="Disponibilidade por turno"
-        subtitle={`Disponibilidade informada por ${selected?.displayName ?? user.displayName}. A agenda efetiva depende das atribuições e reservas.`} />
-        {admin && <SearchableSelect label="Instrutor" value={teacherId} onChange={setTeacherId}
-          options={data.teachers.map((item) => ({ value: item.id, label: item.displayName }))} />}
-        {availabilityLoading ? <Busy /> : data.shifts.length === 0 ? <Empty title="Nenhum turno cadastrado" /> : <>
-          <div className="data-table-wrap"><table className="min-w-full text-sm"><thead><tr><th className="table-head px-3 py-3">Dia</th>
-            {data.shifts.map((shift) => <th className="table-head px-3 py-3 text-center" key={shift.id}>{shift.name}
-              <span className="block font-normal">{hour(shift.startsAt)}–{hour(shift.endsAt)}</span></th>)}</tr></thead>
-            <tbody>{dayNames.slice(0, 5).map((day, index) => <tr key={day} className="border-b border-line"><th scope="row" className="px-3 py-3 text-left font-medium text-ink">{day}</th>
-              {data.shifts.map((shift) => { const active = available.some((item) => item.weekday === index + 1 && item.shiftId === shift.id);
-                return <td key={shift.id} className="p-2 text-center"><button type="button" aria-label={`${day} · ${shift.name}`}
-                  aria-pressed={active} disabled={busy || availabilityLoading} onClick={() => toggle(index + 1, shift.id)}
-                  className={`min-h-11 min-w-11 rounded-lg border font-semibold focus-visible:outline focus-visible:outline-2 focus-visible:outline-sky-400 ${active ? "border-sky-500 bg-sky-700 text-white" : "border-line text-muted-ink hover:border-sky-400"}`}>
-                  {active ? <Check size={18} aria-hidden="true" className="mx-auto" /> : "+"}</button></td>; })}</tr>)}</tbody>
-          </table></div>
-          <p className="muted">Marque os dias e turnos em que o docente informou disponibilidade.</p>
-          <button type="button" onClick={() => void saveAvailability()} disabled={busy || availabilityLoading} className="btn-primary">{busy ? "Salvando..." : "Salvar disponibilidade"}</button>
-        </>}
-      </Card>
+      <TeacherProfile key={teacherId} teacherId={teacherId} admin={admin} onStateChange={setProfileState} />
+      <div className="flex justify-end border-t border-line pt-4"><button type="button" className="btn-secondary" disabled={profileState.busy} onClick={() => void closeProfile()}>Fechar</button></div>
     </div></Modal>}
     {admin && createOpen && <Modal title="Cadastrar instrutor" width="max-w-xl" onClose={() => { if (!busy) { setCreateOpen(false); setPassword(""); setError(""); } }}>
       {error && <div className="mb-3"><Notice message={error} /></div>}

@@ -293,8 +293,8 @@ test("integrações administrativas usam contratos existentes e preservam estado
     });
     await t.test("docentes: Admin consulta e edita perfil; Professor vê apenas o próprio", async () => {
       await reset("teachers", "Admin");
-      await waitFor("[...document.querySelectorAll('textarea')].some(t => t.value === 'Formação registrada')");
-      assert.equal(await evaluate("document.body.innerText.includes('Cursos habilitados') && document.body.innerText.includes('UCs habilitadas') && document.body.innerText.includes('Capacidades vinculadas')"), true);
+      await waitFor("document.body.innerText.includes('Formação registrada')");
+      assert.equal(await evaluate("document.body.innerText.includes('Habilitações') && document.body.innerText.includes('Capacidades vinculadas')"), true);
       await evaluate("adminTest.input('Buscar docente', 'Docente 0')");
       await waitFor("[...document.querySelectorAll('.card')].some(c => c.textContent.includes('Docentes exibidos') && c.textContent.includes('1'))");
       assert.equal(await evaluate("document.querySelector('table tbody').querySelectorAll('tr').length"), 1);
@@ -306,21 +306,15 @@ test("integrações administrativas usam contratos existentes e preservam estado
       await capture("docentes-tablet");
       await command("Emulation.setDeviceMetricsOverride", { width: 1440, height: 900, deviceScaleFactor: 1, mobile: false });
       await capture("docentes-desktop");
+      await evaluate("adminTest.click('Editar informa\u00e7\u00f5es')");
+      await waitFor("!!document.querySelector('textarea')");
       await evaluate("(() => { const field = [...document.querySelectorAll('label')].find(l => l.querySelector('span')?.textContent === 'Formação').querySelector('textarea'); Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value').set.call(field, 'Formação atualizada'); field.dispatchEvent(new Event('input', {bubbles:true})); })()");
-      await evaluate("adminTest.click('Salvar perfil')");
+      await evaluate("adminTest.click('Salvar alterações')");
       const profilePath = "/api/teachers/t0/pedagogical-profile";
       await waitFor(`adminTest.pending.some(r => r.path === ${JSON.stringify(profilePath)})`);
       assert.equal(await evaluate(`adminTest.pending.find(r => r.path === ${JSON.stringify(profilePath)}).body.education`), "Formação atualizada");
       await reply(profilePath, null, 204);
       await waitFor("document.body.innerText.includes('Perfil pedagógico atualizado')");
-      await evaluate("document.querySelector('button[aria-label=\"Terça · Manhã\"]').click()");
-      await waitFor("document.querySelector('button[aria-label=\"Terça · Manhã\"]').getAttribute('aria-pressed') === 'true'");
-      await evaluate("adminTest.click('Salvar disponibilidade')");
-      const availabilityPath = "/api/teachers/t0/availability";
-      await waitFor(`adminTest.pending.some(r => r.path === ${JSON.stringify(availabilityPath)})`);
-      assert.deepEqual(await evaluate<any>(`adminTest.pending.find(r => r.path === ${JSON.stringify(availabilityPath)}).body`),
-        [{ weekday: 1, shiftId: 1 }, { weekday: 2, shiftId: 1 }]);
-      await reply(availabilityPath, null, 204);
       await evaluate("document.querySelector('[role=dialog] button[aria-label=Fechar]').click()");
       await waitFor("!document.querySelector('[role=dialog]')");
       await evaluate("adminTest.click('Cadastrar instrutor')");
@@ -330,15 +324,17 @@ test("integrações administrativas usam contratos existentes e preservam estado
       await reply("/api/auth/register", { role: "Professor" }, 201);
       await waitFor("document.body.innerText.includes('Instrutor cadastrado')");
       await reset("teachers", "Professor");
-      await waitFor("[...document.querySelectorAll('textarea')].some(t => t.value === 'Formação registrada')");
+      await waitFor("document.body.innerText.includes('Formação registrada')");
       assert.equal(await evaluate("document.querySelector('table tbody').querySelectorAll('tr').length"), 1);
       assert.equal(await evaluate("document.body.innerText.includes('docente0@example.test')"), false);
       assert.equal(await evaluate("document.body.innerText.includes('Cadastrar instrutor') || document.body.innerText.includes('Salvar perfil') || document.body.innerText.includes('Buscar docente')"), false);
-      assert.equal(await evaluate("[...document.querySelectorAll('textarea')].every(t => t.readOnly)"), true);
+      assert.equal(await evaluate("document.querySelectorAll('textarea').length === 0"), true);
       assert.equal(await evaluate("adminTest.calls.some(r => r.path.includes('/pedagogical-profile') && !r.path.includes('/t0/'))"), false);
     });
     await t.test("habilitações carregam curso, módulo e UCs do catálogo institucional", async () => {
       await reset("teachers", "Admin");
+      await waitFor("document.body.innerText.includes('Gerenciar habilita\u00e7\u00f5es')");
+      await evaluate("adminTest.click('Gerenciar habilita\u00e7\u00f5es')");
       await waitFor("document.body.innerText.includes('Habilitações por curso e UC')");
       await evaluate("adminTest.select('Curso para habilitação', '1')");
       await waitFor("document.body.innerText.includes('Módulo sintético')");
@@ -365,6 +361,8 @@ test("integrações administrativas usam contratos existentes e preservam estado
           code: 'UC-X', name: 'UC de outro curso', plannedHours: 12 }]`);
       await waitFor("!!document.querySelector('button[aria-label^=\"Abrir perfil de\"]')");
       await evaluate("document.querySelector('button[aria-label^=\"Abrir perfil de\"]').click()");
+      await waitFor("document.body.innerText.includes('Gerenciar habilita\u00e7\u00f5es')");
+      await evaluate("adminTest.click('Gerenciar habilita\u00e7\u00f5es')");
       await waitFor("document.body.innerText.includes('Habilitações por curso e UC')");
       await evaluate("adminTest.select('Curso para habilitação', '5')");
       await waitFor("document.body.innerText.includes('Módulo de outro curso')");
