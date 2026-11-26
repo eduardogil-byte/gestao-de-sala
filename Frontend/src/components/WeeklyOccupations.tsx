@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { useData, type Catalog } from "../lib/data";
 import { indexOccupations } from "../lib/roomTimeline";
 import { dateBR, hour, localDate, statusText } from "../lib/utils";
@@ -31,13 +32,16 @@ function Activity({ item, data, onOpen }: {
 }
 
 export function WeeklyOccupations({ occupations, loading = false, error = "", onOpen, today = localDate(new Date()),
-  dates = weekDates(today), rooms: filteredRooms, shifts: filteredShifts, renderActivity, range, onDropSlot }: {
+  dates = weekDates(today), rooms: filteredRooms, shifts: filteredShifts, renderActivity, range, onDropSlot, adaptive = false }: {
   occupations: AgendaOccupation[]; loading?: boolean; error?: string;
   onOpen: (item: AgendaOccupation) => void; today?: string; dates?: string[];
   rooms?: Room[]; shifts?: Shift[]; renderActivity?: (item: AgendaOccupation) => React.ReactNode;
   onDropSlot?: (roomId: number, date: string, shiftId: number, event: React.DragEvent<HTMLTableCellElement>) => void;
   range?: { from: string; to: string } | null;
+  adaptive?: boolean;
 }) {
+  const [mobileGrid, setMobileGrid] = useState(false);
+  const [collapsedRooms, setCollapsedRooms] = useState<number[]>([]);
   const { data, error: catalogError } = useData();
   const { slots } = indexOccupations(occupations);
   const rooms = [...(filteredRooms ?? data.rooms)];
@@ -49,10 +53,30 @@ export function WeeklyOccupations({ occupations, loading = false, error = "", on
   return <Card className="mb-5 overflow-hidden">
     <div className="p-4 border-b border-line">
       <SectionHeading title="Ocupações da Semana" subtitle={`${dateBR(dates[0])} a ${dateBR(dates[6])}`} />
+      {adaptive && <div className="mt-3 flex gap-2 md:hidden" role="group" aria-label="Formato da semana">
+        <button type="button" className={mobileGrid ? "btn-secondary" : "btn-primary"} aria-pressed={!mobileGrid} onClick={() => setMobileGrid(false)}>Lista por dia</button>
+        <button type="button" className={mobileGrid ? "btn-primary" : "btn-secondary"} aria-pressed={mobileGrid} onClick={() => setMobileGrid(true)}>Grade</button>
+      </div>}
     </div>
     {loading ? <Busy /> : failure ? <div className="p-4"><Notice message={failure} /></div> : <div className="p-4 space-y-5">
+      {adaptive && !mobileGrid && <div className="space-y-4 md:hidden" aria-label="Lista semanal por dia">{dates.map(date => <section key={date} className="rounded-lg border border-line p-3 space-y-3">
+        <h3 className="font-semibold text-ink">{dateBR(date)}{date === today ? " · Hoje" : ""}</h3>
+        {range && (date < range.from || date >= range.to) ? <p className="muted">Fora do período consultado</p> : !rooms.length ? <Empty text="Nenhum ambiente para os filtros selecionados." /> : rooms.map(room => <div key={room.id} className="space-y-2">
+          <h4 className="font-semibold text-ink">{[room.code, room.name].filter(Boolean).join(" · ")}</h4>
+          {shifts.map(shift => { const rows = slots.get(`${room.id}|${date}|${shift.id}`) ?? []; return <div key={shift.id} className="space-y-2 border-l-2 border-line pl-3">
+            <p className="text-sm text-muted-ink">{shift.name}</p>
+            {rows.length ? rows.map(item => <div key={item.id}>{renderActivity ? renderActivity(item) : <Activity item={item} data={data} onOpen={onOpen} />}</div>) : <p className="text-sm text-muted-ink">Sem registro · disponibilidade desconhecida</p>}
+          </div>; })}
+          {!shifts.length && <p className="muted">Turnos não cadastrados; disponibilidade desconhecida.</p>}
+          {occupations.filter(item => item.roomId === room.id && item.date === date && !shifts.some(shift => shift.id === item.shiftId)).map(item => <div key={item.id}><p className="muted">Turno não identificado</p>{renderActivity ? renderActivity(item) : <Activity item={item} data={data} onOpen={onOpen} />}</div>)}
+        </div>)}
+      </section>)}</div>}
+      <div className={`${adaptive && !mobileGrid ? "hidden md:block" : ""} space-y-5`}>
       {!rooms.length ? <Empty text="Nenhum ambiente para os filtros selecionados." /> : rooms.map(room => <section key={room.id} className="border border-line rounded-lg overflow-hidden" aria-label={room.name}>
-        <h3 className="bg-canvas p-3 font-bold text-ink border-b border-line">{[room.code, room.name].filter(Boolean).join(" \u00b7 ")}</h3>
+        <h3 className="bg-canvas font-bold text-ink border-b border-line">{adaptive ? <button type="button" className="flex min-h-11 w-full items-center justify-between gap-3 p-3 text-left focus-visible:outline focus-visible:outline-2 focus-visible:outline-skybrand-500" aria-expanded={!collapsedRooms.includes(room.id)} aria-controls={`weekly-room-${room.id}`} onClick={() => setCollapsedRooms(current => current.includes(room.id) ? current.filter(id => id !== room.id) : [...current, room.id])}>
+          <span>{[room.code, room.name].filter(Boolean).join(" · ")}</span><span className="text-sm font-normal">{occupations.filter(item => item.roomId === room.id && dates.includes(item.date)).length} ocupações · {collapsedRooms.includes(room.id) ? "Expandir" : "Recolher"}</span>
+        </button> : <span className="block p-3">{[room.code, room.name].filter(Boolean).join(" · ")}</span>}</h3>
+        <div id={adaptive ? `weekly-room-${room.id}` : undefined} hidden={adaptive && collapsedRooms.includes(room.id)}>
         <div className="overflow-x-auto" role="region" aria-label={`Grade semanal de ${room.name}`} tabIndex={0}>
           <table className="w-full min-w-[1150px] table-fixed text-sm">
             <caption className="sr-only">Turnos e ocupações de {room.name}</caption>
@@ -65,7 +89,9 @@ export function WeeklyOccupations({ occupations, loading = false, error = "", on
         </div>
         {!shifts.length && <p className="p-3 text-muted-ink">Turnos não cadastrados; disponibilidade desconhecida.</p>}
         {occupations.filter(item => item.roomId === room.id && dates.includes(item.date) && !shifts.some(shift => shift.id === item.shiftId)).map(item => <div className="p-3 border-t border-line" key={item.id}><p className="text-xs text-muted-ink">{dateBR(item.date)} - Turno não identificado</p>{renderActivity ? renderActivity(item) : <Activity item={item} data={data} onOpen={onOpen} />}</div>)}
+        </div>
       </section>)}
+      </div>
     </div>}
   </Card>;
 }
