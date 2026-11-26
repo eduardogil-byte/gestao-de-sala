@@ -39,6 +39,7 @@ export function UnitResourceRequirements({ path, admin }: { path: string; admin:
     {loading && <Busy />}{error && <Notice message={error} />}{success && <Notice type="success" message={success} />}
     {!loading && rows.length === 0 && <Notice type="info" message="Nenhum recurso configurado para esta UC. Compatibilidade técnica não comprovada." />}
     {!loading && <fieldset disabled={!admin || busy} className="space-y-3">
+      {rows.length > 0 && <h3 className="text-sm font-bold text-ink">Recursos escolhidos ({rows.length})</h3>}
       {rows.map((row) => <div key={row.resourceCatalogItemId} className="grid gap-3 rounded-panel border border-line p-3 sm:grid-cols-[1fr_10rem_auto] sm:items-end">
         <p className="text-ink font-medium">{row.name} <span className="muted">· {row.category}</span></p>
         <Field label={`Quantidade necessária de ${row.name}`}><input className="field" type="number" min={1} max={100000} required value={row.quantity}

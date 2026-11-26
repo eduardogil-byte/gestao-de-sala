@@ -1,29 +1,12 @@
 import { useEffect, useRef, useState } from "react";
-import {
-  BookOpen,
-  Plus,
-  Users,
-  AlertTriangle,
-  Search,
-  SlidersHorizontal,
-  ChevronDown,
-} from "lucide-react";
+import { AlertTriangle, Eye, Pencil, Plus, Search } from "lucide-react";
 import { useData } from "../lib/data";
 import { post, put, read } from "../lib/api";
-import { dateBR, resultMessage } from "../lib/utils";
+import { dateBR, localDate, resultMessage } from "../lib/utils";
 import { NeedFields, defaultNeed } from "../components/NeedFields";
 import { semesterDates } from "../lib/semesterDates";
-import {
-  Card,
-  Badge,
-  Empty,
-  Field,
-  Notice,
-  SubmitButton,
-  Title,
-  Modal,
-  useConfirmation,
-} from "../components/UI";
+import { Badge, Field, Notice, SubmitButton, Modal, useConfirmation } from "../components/UI";
+import { PageHeading, Panel, SenaiScope, StatCard, Tabs } from "../components/senai/SenaiUI";
 import type { Course, CourseModule, CurricularUnit, Need, User } from "../types";
 
 const weekdays = ["Domingo", "Segunda", "Terça", "Quarta", "Quinta", "Sexta", "Sábado"];
@@ -34,6 +17,7 @@ type ClassUnits = { legacyWithoutModule: boolean; presentialHours: number; eadHo
   unitsWithoutHours: number; units: (UnitOffer & { code: string; name: string; plannedHours: number | null;
     resources: UnitResource[]; teacherId: string | null })[] };
 type EligibleTeacher = { teacherId: string; displayName: string };
+type ClassTab = "resumo" | "ucs" | "instrutores";
 type ShiftPreview = { classId: number; currentShiftId: number | null; currentShiftName: string | null;
   shiftId: number; shiftName: string; links: { label: string; count: number }[]; previewToken: string };
 
@@ -47,22 +31,7 @@ export function Academic({ user, onPlanning }: { user: User; onPlanning?: () => 
   const [semesterFilter, setSemesterFilter] = useState("");
   const [shiftFilter, setShiftFilter] = useState("");
   const [courseFilter, setCourseFilter] = useState("");
-  const [filtersOpen, setFiltersOpen] = useState(false);
-  const filtersRef = useRef<HTMLDivElement>(null);
-  const filtersButtonRef = useRef<HTMLButtonElement>(null);
-  useEffect(() => {
-    if (!filtersOpen) return;
-    filtersRef.current?.querySelector("select")?.focus();
-    const dismiss = (event: PointerEvent) => {
-      if (!filtersRef.current?.contains(event.target as Node)) setFiltersOpen(false);
-    };
-    const escape = (event: KeyboardEvent) => {
-      if (event.key === "Escape") { setFiltersOpen(false); filtersButtonRef.current?.focus(); }
-    };
-    document.addEventListener("pointerdown", dismiss);
-    document.addEventListener("keydown", escape);
-    return () => { document.removeEventListener("pointerdown", dismiss); document.removeEventListener("keydown", escape); };
-  }, [filtersOpen]);
+  const [classTab, setClassTab] = useState<ClassTab>("resumo");
   const [createModal, setCreateModal] = useState<"class" | "semester" | null>(null);
   const [legacyOpen, setLegacyOpen] = useState(false);
   const [year, setYear] = useState(new Date().getFullYear());
@@ -453,7 +422,7 @@ export function Academic({ user, onPlanning }: { user: User; onPlanning?: () => 
               </div>
             </form>
           </div>);
-  const assignmentForm = (<div className="border-t border-line pt-3 space-y-3">
+  const assignmentForm = (<div className="space-y-3">
           <h4 className="font-semibold text-ink">Instrutor responsável</h4>
           <div className="grid gap-3 sm:grid-cols-2">
             <Field label="Instrutor habilitado"><select className="field" value={assignmentTeacherId} disabled={eligibleLoading || !!action}
@@ -471,11 +440,7 @@ export function Academic({ user, onPlanning }: { user: User; onPlanning?: () => 
           <button type="button" className="btn-primary" disabled={!assignmentTeacherId || action === "offered-unit"}
             onClick={() => void assignOfferedUnit()}>Salvar instrutor responsável</button>
         </div>);
-  const legacyForm = (<Card className="p-5 mb-6">
-          <div className="flex gap-2 items-center mb-5">
-            <BookOpen className="text-skybrand-600" size={19} />
-            <h3 className="section-title">Atribuir disciplina a uma turma</h3>
-          </div>
+  const legacyForm = (<Panel title="Atribuir disciplina a uma turma" subtitle="Registro no formato anterior, sem vínculo com uma UC ofertada.">
           <form
             className="space-y-4"
             onSubmit={(e) => {
@@ -583,8 +548,8 @@ export function Academic({ user, onPlanning }: { user: User; onPlanning?: () => 
                 />
               </Field>
             </div>
-            <div className="border-t border-slate-100 pt-4">
-              <h4 className="font-semibold text-sm mb-3">
+            <div className="border-t border-line pt-4">
+              <h4 className="mb-3 text-sm font-bold">
                 Requisitos da disciplina
               </h4>
               <NeedFields
@@ -599,128 +564,125 @@ export function Academic({ user, onPlanning }: { user: User; onPlanning?: () => 
               </SubmitButton>
             </div>
           </form>
-        </Card>);
-  const legacyHistory = (<Card className="overflow-hidden">
-          <div className="p-5 border-b border-slate-100 flex justify-between">
-            <h3 className="section-title">Disciplinas atribuídas</h3>
-            <span className="text-xs text-slate-400">
-              {data.assignments.length} atribuições
-            </span>
-          </div>
-          {data.assignments.length === 0 ? (
-            <Empty text="Cadastre uma disciplina para gerar a grade." />
-          ) : (
-            <div>
-              {data.assignments.map((a) => (
-                <div
-                  key={a.id}
-                  className="p-4 border-b border-slate-100 last:border-0 flex items-start gap-3"
-                >
-                  <div className="p-2 bg-slate-100 text-slate-600 rounded-xl">
-                    <Users size={17} />
-                  </div>
-                  <div>
-                    <p className="font-semibold text-sm">{a.disciplineName}</p>
-                    <p className="text-xs text-slate-600 mt-1">Turma: {data.classes.find((c) => c.id === a.classGroupId)?.name ?? "Não identificada"}</p>
-                    <p className="text-xs text-slate-600">Instrutor: {data.teachers.find((t) => t.id === a.teacherId)?.displayName || "Não identificado"}</p>
-                    <p className="text-xs text-slate-600">UC: {a.curricularUnitId ? a.disciplineName : "Não vinculada"}</p>
-                    <p className="text-xs text-slate-600">Dia: {a.weekday === null ? "Não definido" : weekdays[a.weekday] ?? "Não identificado"} · Turno da atribuição: {data.shifts.find((shift) => shift.id === a.preferredShiftId)?.name ?? "Não definido"}</p>
-                    <Badge status={a.endedAtUtc ? "Inativa" : "Ativa"} />
-                    <p className="text-xs text-sky-700 mt-1">
-                      {a.meetingsPerWeek} turno(s)/semana{" "}
-                      {a.lessonPlanLink && (
-                        <>
-                          •{" "}
-                          <a
-                            className="underline"
-                            href={a.lessonPlanLink}
-                            rel="noreferrer"
-                            target="_blank"
-                          >
-                            Plano de ensino
-                          </a>
-                        </>
-                      )}
-                    </p>
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-        </Card>);
+        </Panel>);
+  const assignmentItem = (a: (typeof data.assignments)[number]) => <li key={a.id} className="sg-item flex-wrap">
+    <div className="sg-item-text">
+      <strong>{a.disciplineName}</strong>
+      <small>Turma: {data.classes.find((c) => c.id === a.classGroupId)?.name ?? "Não identificada"}</small>
+      <small>Instrutor: {data.teachers.find((t) => t.id === a.teacherId)?.displayName || "Não identificado"}</small>
+      <small>UC: {a.curricularUnitId ? a.disciplineName : "Não vinculada"}</small>
+      <small>Dia: {a.weekday === null ? "Não definido" : weekdays[a.weekday] ?? "Não identificado"} · Turno da atribuição: {data.shifts.find((shift) => shift.id === a.preferredShiftId)?.name ?? "Não definido"}</small>
+      <small>{a.meetingsPerWeek} turno(s)/semana{a.lessonPlanLink && <> • <a className="sg-anchor-link" href={a.lessonPlanLink} rel="noreferrer" target="_blank">Plano de ensino</a></>}</small>
+    </div>
+    <Badge status={a.endedAtUtc ? "Inativa" : "Ativa"} />
+  </li>;
+  const legacyHistory = (<Panel title="Disciplinas atribuídas" action={<span className="sg-count">{data.assignments.length} atribuições</span>}>
+    {data.assignments.length === 0 ? <p className="sg-empty">Cadastre uma disciplina para gerar a grade.</p> :
+      <ul>{data.assignments.map(assignmentItem)}</ul>}
+  </Panel>);
   const selectedClass = data.classes.find((item) => item.id === expandedClassId);
-  const filterCount = Number(!!semesterFilter) + Number(!!shiftFilter) + Number(!!courseFilter);
+  const filterCount = Number(!!query) + Number(!!semesterFilter) + Number(!!shiftFilter) + Number(!!courseFilter);
   const visibleClasses = data.classes.filter((item) => (!semesterFilter || item.semesterId === Number(semesterFilter)) &&
     (!shiftFilter || item.shiftId === Number(shiftFilter)) && (!courseFilter || item.courseId === Number(courseFilter)) &&
     `${item.code ?? ""} ${item.name}`.toLocaleLowerCase("pt-BR").includes(query.trim().toLocaleLowerCase("pt-BR")));
-  const openClass = (id: number) => { setExpandedClassId(id); setAssignmentClassId(String(id)); setAssignmentUnitId(""); setEditingClass(null); setOfferingError(""); setError(""); };
-  const tabs = [{ key: "classes", label: "Turmas" }, { key: "semesters", label: "Semestres" }] as const;
-  return <div className="space-y-5">
-    <Title title="Turmas e semestres" />
-    {success && !selectedClass && <Notice type="success" message={success} onClose={() => setSuccess("")} />}
-    {error && !createModal && !selectedClass && <Notice message={error} onClose={() => setError("")} />}
-    <div role="tablist" aria-label="Turmas e semestres" className="flex gap-2 border-b border-line pb-3">
-      {tabs.map((item, index) => <button type="button" role="tab" id={`academic-tab-${item.key}`} aria-controls={`academic-panel-${item.key}`} aria-selected={tab === item.key} tabIndex={tab === item.key ? 0 : -1} key={item.key}
-        className={tab === item.key ? "btn-primary" : "btn-secondary"} onClick={() => setTab(item.key)} onKeyDown={(event) => {
-          if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return;
-          event.preventDefault(); const next = event.key === "Home" ? 0 : event.key === "End" ? 1 : 1 - index;
-          setTab(tabs[next].key); document.getElementById(`academic-tab-${tabs[next].key}`)?.focus();
-        }}>{item.label}</button>)}
-    </div>
-    <section role="tabpanel" id="academic-panel-classes" aria-labelledby="academic-tab-classes" hidden={tab !== "classes"}>
-      <Card className="p-4 sm:p-5 space-y-4">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <h2 className="section-title">Turmas cadastradas</h2>
-          {admin && <button type="button" className="btn-primary" onClick={() => openCreate("class")}>Nova turma</button>}
-        </div>
-        <section aria-label="Filtros de turmas" className="flex flex-col gap-3 sm:flex-row sm:items-end">
-          <label className="relative min-w-0 flex-1"><span className="field-label">Buscar turma</span>
-            <Search size={17} aria-hidden="true" className="absolute left-3 bottom-3 text-muted-ink" />
-            <input className="field !pl-10" type="search" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Nome ou código" />
-          </label>
-          <div ref={filtersRef} className="relative sm:shrink-0" onBlur={(event) => { if (!event.currentTarget.contains(event.relatedTarget)) setFiltersOpen(false); }}>
-            <button ref={filtersButtonRef} type="button" className="btn-secondary w-full sm:w-auto" aria-expanded={filtersOpen} aria-controls="class-filters-panel" onClick={() => setFiltersOpen(!filtersOpen)}>
-              <SlidersHorizontal size={17} aria-hidden="true" />Filtros
-              {filterCount > 0 && <span className="rounded-full bg-canvas px-2 py-0.5 text-xs text-ink">{filterCount}<span className="sr-only"> selecionados</span></span>}
-              <ChevronDown size={16} aria-hidden="true" className={`transition-transform ${filtersOpen ? "rotate-180" : ""}`} />
-            </button>
-            {filtersOpen && <div id="class-filters-panel" role="region" aria-label="Opções de filtro" className="absolute right-0 top-full z-20 mt-2 w-full space-y-4 rounded-panel border border-line bg-surface p-4 shadow-soft sm:w-80">
-              <Field label="Filtrar semestre"><select className="field" value={semesterFilter} onChange={(event) => setSemesterFilter(event.target.value)}><option value="">Todos os semestres</option>{data.semesters.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></Field>
-              <Field label="Filtrar turno"><select className="field" value={shiftFilter} onChange={(event) => setShiftFilter(event.target.value)}><option value="">Todos os turnos</option>{data.shifts.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></Field>
-              <Field label="Filtrar curso"><select className="field" value={courseFilter} onChange={(event) => setCourseFilter(event.target.value)}><option value="">Todos os cursos</option>{courses.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></Field>
-              <div className="flex items-center justify-between gap-3 border-t border-line pt-3">
-                <button type="button" className="btn-quiet" disabled={!filterCount} onClick={() => { setSemesterFilter(""); setShiftFilter(""); setCourseFilter(""); }}>Limpar filtros</button>
-                <button type="button" className="btn-primary" onClick={() => { setFiltersOpen(false); filtersButtonRef.current?.focus(); }}>Concluir</button>
-              </div>
-            </div>}
+  const openClass = (id: number) => { setExpandedClassId(id); setClassTab("resumo"); setAssignmentClassId(String(id)); setAssignmentUnitId(""); setEditingClass(null); setOfferingError(""); setError(""); setSuccess(""); };
+  const today = localDate(new Date());
+  // Situação calculada somente pelas datas cadastradas; a API não registra um estado do semestre.
+  const period = (item?: { startDate: string; endDate: string }) => !item ? "Não informado" :
+    item.endDate.slice(0, 10) < today ? "Encerrado" : item.startDate.slice(0, 10) > today ? "Futuro" : "Em andamento";
+  const periodBadge = (item?: { startDate: string; endDate: string }) =>
+    <span className={`sg-status ${period(item) === "Em andamento" ? "is-active" : ""}`}>{period(item)}</span>;
+  const courseName = (id?: number | null) => courses.find((row) => row.id === id)?.name;
+  const semesterOf = (id: number) => data.semesters.find((row) => row.id === id);
+  const shiftOf = (id?: number | null) => data.shifts.find((row) => row.id === id);
+  const teacherName = (id: string) => data.teachers.find((teacher) => teacher.id === id)?.displayName ?? "Responsável registrado";
+  const pendingShift = data.classes.filter((item) => !shiftOf(item.shiftId)).length;
+  const classAssignments = data.assignments.filter((item) => item.classGroupId === expandedClassId);
+  const detailPanel = (id: ClassTab, content: React.ReactNode) =>
+    <div role="tabpanel" id={`class-detail-panel-${id}`} aria-labelledby={`class-detail-tab-${id}`} hidden={classTab !== id} className="sg-stack">{content}</div>;
+  const unitsStatus = <>
+    {classUnitsError && <Notice message={classUnitsError} />}
+    {!classUnits && !classUnitsError && <p className="sg-note">Carregando UCs da turma…</p>}
+    {classUnits?.legacyWithoutModule && <p className="sg-warning">Turma anterior sem módulo vinculado. Atribuições e reservas existentes permanecem válidas.</p>}
+  </>;
+  return <>
+    <SenaiScope>
+      <PageHeading eyebrow="Cadastros / Turmas e semestres" title="Turmas e semestres" subtitle="Turmas, períodos letivos, unidades curriculares e instrutores responsáveis."
+        action={admin ? <>
+          <button type="button" className="btn-primary" hidden={tab !== "classes"} onClick={() => openCreate("class")}><Plus size={17} aria-hidden="true" />Nova turma</button>
+          <button type="button" className="btn-primary" hidden={tab !== "semesters"} onClick={() => openCreate("semester")}><Plus size={17} aria-hidden="true" />Novo semestre</button>
+        </> : undefined} />
+      {success && !selectedClass && <Notice type="success" message={success} onClose={() => setSuccess("")} />}
+      {error && !createModal && !selectedClass && <Notice message={error} onClose={() => setError("")} />}
+      {academicError && !createModal && <Notice message={academicError} />}
+      <section aria-label="Resumo acadêmico" className="sg-stats sg-stats-4">
+        <StatCard label="Turmas" value={data.classes.length} detail="cadastradas" />
+        <StatCard tone="green" label="Semestres" value={data.semesters.length} detail={`${data.semesters.filter((item) => period(item) === "Em andamento").length} em andamento`} />
+        <StatCard label="Alunos" value={data.classes.reduce((total, item) => total + item.students, 0)} detail="soma das turmas cadastradas" />
+        <StatCard tone="amber" label="Turno pendente" value={pendingShift} detail="turmas sem turno oficial" />
+      </section>
+      <Tabs label="Turmas e semestres" idPrefix="academic" active={tab} onChange={(next) => setTab(next as typeof tab)}
+        items={[{ id: "classes", label: "Turmas" }, { id: "semesters", label: "Semestres" }]} />
+      <section role="tabpanel" id="academic-panel-classes" aria-labelledby="academic-tab-classes" hidden={tab !== "classes"} className="sg-stack">
+        <div className="card sg-panel">
+          <div className="sg-toolbar" role="search" aria-label="Filtros de turmas">
+            <div className="sg-search"><Field label="Buscar turma"><input className="field" type="search" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Pesquisar nome ou código" /></Field><Search size={16} aria-hidden="true" /></div>
+            <Field label="Filtrar semestre"><select className="field" value={semesterFilter} onChange={(event) => setSemesterFilter(event.target.value)}><option value="">Todos os semestres</option>{data.semesters.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></Field>
+            <Field label="Filtrar curso"><select className="field" value={courseFilter} onChange={(event) => setCourseFilter(event.target.value)}><option value="">Todos os cursos</option>{courses.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></Field>
+            <Field label="Filtrar turno"><select className="field" value={shiftFilter} onChange={(event) => setShiftFilter(event.target.value)}><option value="">Todos os turnos</option>{data.shifts.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></Field>
+            <div className="sg-filters-end">
+              <span className="sg-count" role="status">{visibleClasses.length} de {data.classes.length} turmas</span>
+              {filterCount > 0 && <button type="button" className="btn-quiet" onClick={() => { setQuery(""); setSemesterFilter(""); setShiftFilter(""); setCourseFilter(""); }}>Limpar filtros</button>}
+            </div>
           </div>
+          {!visibleClasses.length ? <div className="sg-panel-body"><p className="sg-empty"><strong>Nenhuma turma encontrada</strong><br />Cadastre uma turma ou ajuste os filtros.</p></div> :
+            <div role="region" aria-label="Lista de turmas cadastradas" tabIndex={0} className="sg-list-scroll">
+              <table className="sg-table sg-classes-table">
+                <thead><tr>{["Turma", "Curso", "Semestre", "Turno", "Alunos"].map((label) => <th key={label} scope="col">{label}</th>)}<th scope="col" className="sg-col-actions">Ações</th></tr></thead>
+                <tbody>{visibleClasses.map((item) => <tr key={item.id} className="cursor-pointer" onClick={(event) => { if (!(event.target as HTMLElement).closest("button")) openClass(item.id); }}>
+                  <td><button type="button" aria-label={`Abrir informações de ${item.name}`} className="sg-name-button" onClick={() => openClass(item.id)}>{item.name}</button><small>{item.code || "Código não informado"}</small></td>
+                  <td>{courseName(item.courseId) ?? "Curso não vinculado"}</td>
+                  <td>{semesterOf(item.semesterId)?.name ?? "Semestre não informado"}</td>
+                  <td>{shiftOf(item.shiftId)?.name ?? <span className="sg-badge is-danger">Turno pendente</span>}</td>
+                  <td className="tabular-nums">{item.students}</td>
+                  <td><div className="sg-row-actions"><button type="button" className="sg-icon-button" title="Ver detalhes" aria-label={`Ver detalhes de ${item.name}`} onClick={() => openClass(item.id)}><Eye size={17} aria-hidden="true" /></button></div></td>
+                </tr>)}</tbody>
+              </table>
+            </div>}
+        </div>
+        <details className="card sg-panel" onToggle={(event) => setLegacyOpen(event.currentTarget.open)}><summary>Registros anteriores</summary>{legacyOpen && <div className="sg-panel-body sg-stack">{admin && legacyForm}{legacyHistory}</div>}</details>
+      </section>
+      <section role="tabpanel" id="academic-panel-semesters" aria-labelledby="academic-tab-semesters" hidden={tab !== "semesters"} className="sg-stack">
+        <section className="card sg-panel">
+          <div className="sg-panel-head"><div><h2>Semestres cadastrados</h2><p>Períodos letivos e turmas vinculadas. A situação é calculada pelas datas.</p></div></div>
+          {!data.semesters.length ? <div className="sg-panel-body"><p className="sg-empty">Comece cadastrando um semestre.</p></div> :
+            <div className="sg-list-scroll" role="region" aria-label="Lista de semestres cadastrados" tabIndex={0}>
+              <table className="sg-table sg-classes-table">
+                <thead><tr>{["Semestre", "Início", "Término", "Turmas", "Situação"].map((label) => <th key={label} scope="col">{label}</th>)}<th scope="col" className="sg-col-actions">Ações</th></tr></thead>
+                <tbody>{data.semesters.map((item) => { const total = data.classes.filter((row) => row.semesterId === item.id).length; return <tr key={item.id}>
+                  <td><strong>{item.name}</strong></td><td>{dateBR(item.startDate)}</td><td>{dateBR(item.endDate)}</td><td>{total} turmas</td><td>{periodBadge(item)}</td>
+                  <td><div className="sg-row-actions"><button type="button" className="sg-icon-button" title="Ver turmas" aria-label={`Ver turmas de ${item.name}`}
+                    onClick={() => { setSemesterFilter(String(item.id)); setQuery(""); setShiftFilter(""); setCourseFilter(""); setTab("classes"); }}><Eye size={17} aria-hidden="true" /></button></div></td>
+                </tr>; })}</tbody>
+              </table>
+            </div>}
         </section>
-        {!visibleClasses.length ? <Empty title="Nenhuma turma encontrada" text="Cadastre uma turma ou ajuste os filtros." /> : <div role="region" aria-label="Lista de turmas cadastradas" tabIndex={0} className="max-h-[min(60dvh,28rem)] overflow-auto overscroll-contain rounded-panel border border-line focus-visible:outline focus-visible:outline-2 focus-visible:outline-skybrand-500">
-          <table className="w-full min-w-[42rem] text-left text-sm">
-            <thead><tr>{["Turma", "Curso", "Semestre", "Turno", "Alunos"].map((label) => <th key={label} scope="col" className={`table-head sticky top-0 z-10 p-3 ${label === "Alunos" ? "text-right" : ""}`}>{label}</th>)}</tr></thead>
-            <tbody>{visibleClasses.map((item) => <tr key={item.id} className="cursor-pointer border-t border-line text-ink transition-colors hover:bg-canvas focus-within:bg-canvas" onClick={(event) => { if (!(event.target as HTMLElement).closest("button")) openClass(item.id); }}>
-              <td className="p-3"><button type="button" aria-label={`Abrir informações de ${item.name}`} className="rounded text-left font-semibold underline decoration-line underline-offset-4 hover:decoration-current focus-visible:outline focus-visible:outline-2 focus-visible:outline-skybrand-500" onClick={() => openClass(item.id)}>{item.name}</button><span className="block text-xs text-muted-ink">{item.code || "Código não informado"}</span></td>
-              <td className="p-3 text-muted-ink">{courses.find((row) => row.id === item.courseId)?.name ?? "Curso não vinculado"}</td>
-              <td className="p-3 text-muted-ink">{data.semesters.find((row) => row.id === item.semesterId)?.name ?? "Semestre não informado"}</td>
-              <td className="p-3 text-muted-ink">{data.shifts.find((row) => row.id === item.shiftId)?.name ?? "Turno pendente"}</td>
-              <td className="p-3 text-right tabular-nums">{item.students}</td>
-            </tr>)}</tbody>
-          </table>
-        </div>}
-      </Card>
-      {selectedClass && <Modal title="Informações" width="max-w-3xl" onClose={() => void closeClass()}><div className="space-y-4">
+        <Panel title="Turnos institucionais" subtitle="Horários cadastrados, usados pelas turmas.">
+          {data.shifts.length === 0 ? <p className="sg-empty">Nenhum turno cadastrado.</p> :
+            <dl className="sg-facts">{data.shifts.map((shift) => <div key={shift.id}><dt>{shift.name}</dt><dd>{shift.startsAt.slice(0, 5)}–{shift.endsAt.slice(0, 5)}</dd><dd className="sg-note">{shift.pedagogicalHours ? `${shift.pedagogicalHours} h pedagógicas por encontro` : "Horas pedagógicas não informadas"} · {data.classes.filter((item) => item.shiftId === shift.id).length} turma(s)</dd></div>)}</dl>}
+        </Panel>
+      </section>
+    </SenaiScope>
+    <SenaiScope modals>
+      {selectedClass && <Modal title="Informações" width="max-w-4xl" onClose={() => void closeClass()}><div className="sg-stack">
         {error && <Notice message={error} />}{success && <Notice type="success" message={success} />}
-        <div className="flex flex-wrap items-center justify-between gap-3"><div><p className="font-semibold text-ink">{selectedClass.name}</p><p className="muted">{data.semesters.find((item) => item.id === selectedClass.semesterId)?.name} · {selectedClass.students} alunos</p></div>
-          <div className="flex flex-wrap gap-2">{admin && <button type="button" className="btn-secondary" disabled={!!action} onClick={() => setEditingClass({ id: selectedClass.id, code: selectedClass.code || "", name: selectedClass.name, shiftId: selectedClass.shiftId == null ? "" : String(selectedClass.shiftId) })}>Editar</button>}
+        <div className="sg-detail-head"><div><p className="sg-detail-name">{selectedClass.name}</p>
+          <div className="sg-meta"><span className="sg-code">{selectedClass.code || "Sem código"}</span><span className="sg-note">{semesterOf(selectedClass.semesterId)?.name} · {selectedClass.students} alunos</span>{periodBadge(semesterOf(selectedClass.semesterId))}</div></div>
+          <div className="sg-actions">{admin && <button type="button" className="btn-secondary" disabled={!!action} onClick={() => setEditingClass({ id: selectedClass.id, code: selectedClass.code || "", name: selectedClass.name, shiftId: selectedClass.shiftId == null ? "" : String(selectedClass.shiftId) })}><Pencil size={16} aria-hidden="true" />Editar</button>}
             {onPlanning && <button type="button" className="btn-secondary" disabled={!!action} onClick={async () => { if (await closeClass()) onPlanning(); }}>Ir para Planejamento</button>}
           </div>
         </div>
-        <dl className="grid grid-cols-2 gap-3 rounded-panel border border-line bg-canvas p-4 text-sm">
-          <div><dt className="text-muted-ink">Código</dt><dd className="font-medium text-ink">{selectedClass.code || "Não informado"}</dd></div>
-          <div><dt className="text-muted-ink">Turno</dt><dd className="font-medium text-ink">{data.shifts.find((item) => item.id === selectedClass.shiftId)?.name ?? "Não informado"}</dd></div>
-          <div className="col-span-2"><dt className="text-muted-ink">Curso</dt><dd className="font-medium text-ink">{courses.find((item) => item.id === selectedClass.courseId)?.name ?? "Não vinculado"}</dd></div>
-        </dl>
-        {editingClass && (                  <form className="mt-3 rounded-panel border border-line p-4" onSubmit={(event) => void saveClassEdit(event)}>
+        {editingClass && (                  <form className="sg-edit-box" onSubmit={(event) => void saveClassEdit(event)}>
                     <fieldset disabled={!!action} className="space-y-3">
                     <legend className="font-semibold text-ink mb-3">Editar turma</legend>
                     <div className="grid gap-3 sm:grid-cols-2">
@@ -738,33 +700,60 @@ export function Academic({ user, onPlanning }: { user: User; onPlanning?: () => 
                     </div>
                     </fieldset>
                   </form>)}
-        <h3 className="font-semibold text-ink">UCs e instrutores</h3>
-        {classUnitsError && <Notice message={classUnitsError} />}
-                          {!classUnits && !classUnitsError && <p className="muted">Carregando UCs da turma…</p>}
-                          {classUnits?.legacyWithoutModule && <p className="muted">Turma anterior sem módulo vinculado. Atribuições e reservas existentes permanecem válidas.</p>}
-                          {classUnits && !classUnits.legacyWithoutModule && <>
-                            <p className="font-medium text-ink">Carga horária informada: presencial {classUnits.presentialHours} h · EAD {classUnits.eadHours} h
-                              {classUnits.unitsWithoutHours > 0 && ` · ${classUnits.unitsWithoutHours} UC(s) sem CH informada`}</p>
-                            {classUnits.units.map((unit) => <div key={unit.curricularUnitId} className="rounded-lg border border-line p-3 space-y-2"><p className="text-muted-ink">
-                              {unit.code} · {unit.name} · {unit.deliveryMode === "Ead" ?
-                                `EAD (${unit.eadScheduleMode === "HorarioDefinido" ? "encontros on-line com horário definido" : "sem horário fixo"})` : "Presencial"}
-                              · CH {unit.plannedHours == null ? "não informada" : `${unit.plannedHours} h`}
-                              {unit.resources.length > 0 && ` · Recursos: ${unit.resources.map((resource) => resource.name).join(", ")}`}
-                              {unit.teacherId && ` · Instrutor: ${data.teachers.find((teacher) => teacher.id === unit.teacherId)?.displayName ?? "Responsável registrado"}`}
-                            </p>{!unit.teacherId && <p className="text-sm font-medium text-muted-ink">Instrutor não definido</p>}
-                            {admin && <button type="button" className="btn-secondary" disabled={!!action} onClick={async () => { if (assignmentUnitId !== String(unit.curricularUnitId) && !await discardChanges(!!assignmentTeacherId)) return; setOfferingError(""); setAssignmentUnitId(String(unit.curricularUnitId)); }}>Definir instrutor</button>}
-                            {admin && assignmentUnitId === String(unit.curricularUnitId) && <section aria-label={`Definir instrutor de ${unit.name}`}>{assignmentForm}</section>}
-                            </div>)}
-                          </>}
+        <Tabs label="Seções da turma" idPrefix="class-detail" active={classTab} onChange={(next) => setClassTab(next as ClassTab)} items={[
+          { id: "resumo", label: "Resumo" },
+          { id: "ucs", label: "Unidades curriculares", count: classUnits && !classUnits.legacyWithoutModule ? classUnits.units.length : undefined },
+          { id: "instrutores", label: "Instrutores e atribuições", count: classAssignments.length },
+        ]} />
+        {detailPanel("resumo", <>
+          {classUnits && !classUnits.legacyWithoutModule && <div className="sg-stats sg-stats-4 sg-stats-compact">
+            <StatCard label="UCs" value={classUnits.units.length} detail="ofertadas à turma" />
+            <StatCard tone="green" label="Presencial" value={`${classUnits.presentialHours} h`} detail="carga horária informada" />
+            <StatCard label="EAD" value={`${classUnits.eadHours} h`} detail="carga horária informada" />
+            <StatCard tone="amber" label="Sem instrutor" value={classUnits.units.filter((unit) => !unit.teacherId).length} detail="UCs sem responsável" />
+          </div>}
+          <Panel title="Informações gerais">
+            <dl className="sg-facts">
+              {[["Código", selectedClass.code || "Não informado"], ["Curso", courseName(selectedClass.courseId) ?? "Não vinculado"],
+                ["Semestre", semesterOf(selectedClass.semesterId)?.name ?? "Não informado"],
+                ["Turno", shiftOf(selectedClass.shiftId) ? `${shiftOf(selectedClass.shiftId)!.name}` : "Não informado"],
+                ["Horário do turno", shiftOf(selectedClass.shiftId) ? `${shiftOf(selectedClass.shiftId)!.startsAt.slice(0, 5)}–${shiftOf(selectedClass.shiftId)!.endsAt.slice(0, 5)}` : "Não informado"],
+                ["Alunos", String(selectedClass.students)]].map(([label, value]) => <div key={label}><dt>{label}</dt><dd>{value}</dd></div>)}
+            </dl>
+          </Panel>
+        </>)}
+        {detailPanel("ucs", <Panel title="UCs e instrutores" subtitle="Unidades curriculares ofertadas, carga horária, modalidade e responsável.">
+          <div className="sg-stack">
+            {unitsStatus}
+            {classUnits && !classUnits.legacyWithoutModule && <>
+              <p className="text-sm font-bold">Carga horária informada: presencial {classUnits.presentialHours} h · EAD {classUnits.eadHours} h
+                {classUnits.unitsWithoutHours > 0 && ` · ${classUnits.unitsWithoutHours} UC(s) sem CH informada`}</p>
+              {classUnits.units.map((unit) => <div key={unit.curricularUnitId} className="sg-unit-card"><p>
+                {unit.code} · {unit.name} · {unit.deliveryMode === "Ead" ?
+                  `EAD (${unit.eadScheduleMode === "HorarioDefinido" ? "encontros on-line com horário definido" : "sem horário fixo"})` : "Presencial"}
+                {" "}· CH {unit.plannedHours == null ? "não informada" : `${unit.plannedHours} h`}
+                {unit.resources.length > 0 && ` · Recursos: ${unit.resources.map((resource) => resource.name).join(", ")}`}
+                {unit.teacherId && ` · Instrutor: ${teacherName(unit.teacherId)}`}
+              </p>{!unit.teacherId && <span className="sg-badge is-danger">Instrutor não definido</span>}
+              {admin && <button type="button" className="btn-secondary" disabled={!!action} onClick={async () => { if (assignmentUnitId !== String(unit.curricularUnitId) && !await discardChanges(!!assignmentTeacherId)) return; setOfferingError(""); setAssignmentUnitId(String(unit.curricularUnitId)); }}>Definir instrutor</button>}
+              {admin && assignmentUnitId === String(unit.curricularUnitId) && <section aria-label={`Definir instrutor de ${unit.name}`} className="sg-assign">{assignmentForm}</section>}
+              </div>)}
+            </>}
+          </div>
+        </Panel>)}
+        {detailPanel("instrutores", <>
+          <Panel title="Responsáveis pelas UCs" subtitle="Para alterar um responsável, use a aba Unidades curriculares.">
+            {unitsStatus}
+            {classUnits && !classUnits.legacyWithoutModule && (classUnits.units.length === 0 ? <p className="sg-empty">Nenhuma UC ofertada.</p> :
+              <ul>{classUnits.units.map((unit) => <li key={unit.curricularUnitId} className="sg-item flex-wrap"><div className="sg-item-text">
+                <strong>{unit.teacherId ? teacherName(unit.teacherId) : "Instrutor não definido"}</strong><small>{unit.code} — {unit.name}</small>
+              </div></li>)}</ul>)}
+          </Panel>
+          <Panel title="Atribuições acadêmicas" subtitle="Vínculos registrados para esta turma, inclusive anteriores.">
+            {classAssignments.length === 0 ? <p className="sg-empty">Nenhuma atribuição registrada para esta turma.</p> : <ul>{classAssignments.map(assignmentItem)}</ul>}
+          </Panel>
+        </>)}
       </div></Modal>}
-      <details className="mt-5 rounded-panel border border-line bg-surface p-4" onToggle={(event) => setLegacyOpen(event.currentTarget.open)}><summary className="cursor-pointer font-semibold text-ink">Registros anteriores</summary>{legacyOpen && <div className="mt-4 space-y-4">{admin && legacyForm}{legacyHistory}</div>}</details>
-    </section>
-    <section role="tabpanel" id="academic-panel-semesters" aria-labelledby="academic-tab-semesters" hidden={tab !== "semesters"}>
-      <Card className="p-4 sm:p-5 space-y-4"><div className="flex items-center justify-between gap-3"><h2 className="section-title">Semestres cadastrados</h2>{admin && <button type="button" className="btn-primary" onClick={() => openCreate("semester")}>Novo semestre</button>}</div>
-        {!data.semesters.length ? <Empty text="Comece cadastrando um semestre." /> : <ul className="space-y-3">{data.semesters.map((item) => <li key={item.id} className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-line p-4"><div><strong className="text-ink">{item.name}</strong><p className="muted">{dateBR(item.startDate)} a {dateBR(item.endDate)} · {data.classes.filter((row) => row.semesterId === item.id).length} turmas</p></div>
-        </li>)}</ul>}
-      </Card>
-    </section>
     {admin && shiftPreview && <Modal title="Confirmar mudança de turno" width="max-w-xl" descriptionId="class-shift-warning" onClose={() => { if (!action) setShiftPreview(null); }}>
       <div className="space-y-4">
         {shiftError && <Notice message={shiftError} />}
@@ -778,5 +767,6 @@ export function Academic({ user, onPlanning }: { user: User; onPlanning?: () => 
       {error && <div className="mb-3"><Notice message={error} /></div>}
       <fieldset disabled={!!action}>{createModal === "class" ? classForm : semesterForm}</fieldset>
     </Modal>}
-  </div>;
+    </SenaiScope>
+  </>;
 }

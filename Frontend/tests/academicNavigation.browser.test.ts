@@ -16,6 +16,8 @@ test("Turmas e Semestres usam listas, modais e atribuição contextual", { skip:
     await evaluate("adminTest.input('Buscar turma', 'inexistente')");
     await waitFor("document.body.innerText.includes('Nenhuma turma encontrada')");
     await evaluate("adminTest.input('Buscar turma', ''); [...document.querySelectorAll('button')].find(item => item.textContent.includes('Turma teste')).click()");
+    await waitFor("!!document.querySelector('[role=dialog] [role=tab]')");
+    await evaluate("[...document.querySelectorAll('[role=dialog] [role=tab]')].find(item => item.textContent.startsWith('Unidades curriculares')).click()");
     await waitFor("document.body.innerText.includes('UC teste')");
     assert.equal(await evaluate("document.querySelector('[role=dialog] h2')?.textContent"), 'Informações');
     await evaluate("adminTest.click('Editar')");

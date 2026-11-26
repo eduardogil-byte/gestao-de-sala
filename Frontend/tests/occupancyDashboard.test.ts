@@ -141,7 +141,7 @@ test("painel mostra resumo, classificação, distribuição, limiares e limitaç
     assert.match(markup, /Percentual indeterminado/);
     assert.match(markup, /Ocupação por turno/);
     assert.match(markup, /Tarde/);
-    assert.match(markup, /fevereiro de 2027/);
+    assert.doesNotMatch(markup, /Evolução da ocupação/);
     assert.match(markup, /Ver cronograma/);
     const comparison = renderToStaticMarkup(createElement(ComparisonView, {
       first: report, second: { ...report, semesterId: 2, occupancyPercent: 70, capacityHours: 200 },
@@ -162,7 +162,6 @@ test("sem ocupações e sem gráficos apresenta estados vazios sem inventar perc
     const markup = renderToStaticMarkup(createElement(OccupancyView, { report: empty, onTimeline: () => {} }));
     assert.match(markup, /Nenhum ambiente cadastrado/);
     assert.match(markup, /Sem distribuição por turno/);
-    assert.match(markup, /Sem distribuição mensal/);
     assert.doesNotMatch(markup, /0% · Oportunidade/);
   } finally { await server.close(); }
 });
