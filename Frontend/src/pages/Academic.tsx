@@ -13,6 +13,7 @@ import { post, put, read } from "../lib/api";
 import { dateBR, resultMessage } from "../lib/utils";
 import { NeedFields, defaultNeed } from "../components/NeedFields";
 import { semesterDates } from "../lib/semesterDates";
+import { ClassContinuationForm } from "../components/ClassContinuationForm";
 import {
   Card,
   Badge,
@@ -24,13 +25,15 @@ import {
   Modal,
   useConfirmation,
 } from "../components/UI";
-import type { Course, CourseModule, CurricularUnit, Need, User } from "../types";
+import type { ClassGroup, ClassSemesterHistory, Course, CourseModule, CurricularUnit, Need, User } from "../types";
 
 const weekdays = ["Domingo", "Segunda", "Terça", "Quarta", "Quinta", "Sexta", "Sábado"];
 type UnitResource = { resourceCatalogItemId: number; name: string; category: string; quantity: number };
 type UnitOffer = { curricularUnitId: number; deliveryMode: "Presencial" | "Ead";
   eadScheduleMode: "SemHorarioFixo" | "HorarioDefinido" | null };
 type ClassUnits = { legacyWithoutModule: boolean; presentialHours: number; eadHours: number;
+  links?: { assignments: number; bookings: number; occupations: number; plans: number } | null;
+  previousUnits?: { curricularUnitId: number; code: string; name: string }[];
   unitsWithoutHours: number; units: (UnitOffer & { code: string; name: string; plannedHours: number | null;
     resources: UnitResource[]; teacherId: string | null })[] };
 type EligibleTeacher = { teacherId: string; displayName: string };
@@ -78,6 +81,24 @@ export function Academic({ user, onPlanning }: { user: User; onPlanning?: () => 
   const [expandedClassId, setExpandedClassId] = useState<number | null>(null);
   const [classUnits, setClassUnits] = useState<ClassUnits | null>(null);
   const [classUnitsError, setClassUnitsError] = useState("");
+  const [continuingClass, setContinuingClass] = useState<ClassGroup | null>(null);
+  const [classHistory, setClassHistory] = useState<ClassSemesterHistory[]>([]);
+  const [historyError, setHistoryError] = useState("");
+  const [historyBusy, setHistoryBusy] = useState(false);
+  const [historyRetry, setHistoryRetry] = useState(0);
+  useEffect(() => {
+    setClassHistory([]); setHistoryError(""); setHistoryBusy(false);
+    if (expandedClassId === null) return;
+    let active = true;
+    setHistoryBusy(true);
+    read<ClassSemesterHistory[]>(`/classes/${expandedClassId}/history`)
+      .then((rows) => { if (active) setClassHistory(rows); })
+      .catch((reason) => { if (active) setHistoryError(resultMessage(reason)); })
+      .finally(() => { if (active) setHistoryBusy(false); });
+    return () => { active = false; };
+  }, [expandedClassId, historyRetry]);
+  const [classModuleName, setClassModuleName] = useState("");
+  const [unitSuccess, setUnitSuccess] = useState<{ id: number; message: string } | null>(null);
   const [assignmentClassId, setAssignmentClassId] = useState("");
   const [assignmentUnitId, setAssignmentUnitId] = useState("");
   const [assignmentTeacherId, setAssignmentTeacherId] = useState("");
@@ -87,7 +108,25 @@ export function Academic({ user, onPlanning }: { user: User; onPlanning?: () => 
   const [offeringError, setOfferingError] = useState("");
   const [academicLoading, setAcademicLoading] = useState(false);
   const [academicError, setAcademicError] = useState("");
-  const [editingClass, setEditingClass] = useState<{ id: number; code: string; name: string; shiftId: string } | null>(null);
+  const [editingClass, setEditingClass] = useState<{ id: number; code: string; name: string; shiftId: string; courseId: string; courseModuleId: string } | null>(null);
+  const editingOriginal = data.classes.find((item) => item.id === editingClass?.id);
+  const editingCurriculumChanged = !!editingClass && (
+    editingClass.courseId !== String(editingOriginal?.courseId ?? "") ||
+    editingClass.courseModuleId !== String(editingOriginal?.courseModuleId ?? ""));
+  const [editModules, setEditModules] = useState<CourseModule[]>([]);
+  const [editModulesBusy, setEditModulesBusy] = useState(false);
+  const [editModulesError, setEditModulesError] = useState("");
+  useEffect(() => {
+    setEditModules([]); setEditModulesError(""); setEditModulesBusy(false);
+    if (!editingClass?.courseId) return;
+    let active = true;
+    setEditModulesBusy(true);
+    read<CourseModule[]>(`/courses/${editingClass.courseId}/modules`)
+      .then((items) => { if (active) setEditModules(items); })
+      .catch((reason) => { if (active) setEditModulesError(resultMessage(reason)); })
+      .finally(() => { if (active) setEditModulesBusy(false); });
+    return () => { active = false; };
+  }, [editingClass?.id, editingClass?.courseId]);
   const [as, setAs] = useState({
     classGroupId: "",
     teacherId: "",
@@ -110,8 +149,17 @@ export function Academic({ user, onPlanning }: { user: User; onPlanning?: () => 
   }, []);
   useEffect(() => {
     setClassUnits(null); setClassUnitsError("");
+    setUnitSuccess(null);
+    setClassModuleName("");
     if (expandedClassId === null) return;
     let active = true;
+    const group = data.classes.find((item) => item.id === expandedClassId);
+    if (group?.courseId && group.courseModuleId) {
+      setClassModuleName("Carregando…");
+      read<CourseModule[]>(`/courses/${group.courseId}/modules`)
+        .then((items) => { if (active) setClassModuleName(items.find((item) => item.id === group.courseModuleId)?.name ?? "Não encontrado"); })
+        .catch(() => { if (active) setClassModuleName("Não foi possível carregar"); });
+    }
     read<ClassUnits>(`/classes/${expandedClassId}/units`)
       .then((value) => { if (active) setClassUnits(value); })
       .catch((cause) => { if (active) setClassUnitsError(resultMessage(cause)); });
@@ -140,14 +188,16 @@ export function Academic({ user, onPlanning }: { user: User; onPlanning?: () => 
   }, [assignmentClassId, assignmentUnitId, admin]);
   async function assignOfferedUnit() {
     if (!assignmentClassId || !assignmentUnitId || !assignmentTeacherId || action) return;
-    setAction("offered-unit"); setOfferingError(""); setSuccess("");
+    setAction("offered-unit"); setOfferingError(""); setSuccess(""); setUnitSuccess(null);
     try {
       await put(`/classes/${assignmentClassId}/units/${assignmentUnitId}/teacher`, { teacherId: assignmentTeacherId });
       const updated = await read<ClassUnits>(`/classes/${assignmentClassId}/units`);
       setOfferedUnits(updated);
       if (expandedClassId === Number(assignmentClassId)) setClassUnits(updated);
+      const teacherName = eligibleTeachers.find((item) => item.teacherId === assignmentTeacherId)?.displayName ?? "Instrutor";
+      setUnitSuccess({ id: Number(assignmentUnitId), message: `${teacherName} definido como responsável.` });
       setAssignmentTeacherId("");
-      setSuccess("Instrutor responsável registrado para a UC ofertada.");
+      setAssignmentUnitId("");
     } catch (cause) { setOfferingError(resultMessage(cause)); }
     finally { setAction(""); }
   }
@@ -203,16 +253,30 @@ export function Academic({ user, onPlanning }: { user: User; onPlanning?: () => 
   async function saveClassEdit(event: React.FormEvent) {
     event.preventDefault();
     if (!editingClass || action) return;
+    const original = data.classes.find((item) => item.id === editingClass.id);
+    const curriculumChanged = editingClass.courseId !== String(original?.courseId ?? "") ||
+      editingClass.courseModuleId !== String(original?.courseModuleId ?? "");
+    const target = editingClass.shiftId ? Number(editingClass.shiftId) : null;
+    const shiftChanged = target !== null && target !== original?.shiftId;
+    if (curriculumChanged && !shiftChanged && !await confirm({ title: "Confirmar mudança de curso ou módulo?",
+      message: `${classUnits?.links ? `Esta turma possui ${classUnits.links.bookings} reserva(s), ${classUnits.links.assignments} atribuição(ões), ${classUnits.links.occupations} ocupação(ões) e ${classUnits.links.plans} planejamento(s). ` : "A turma pode possuir reservas e atribuições. "}Todos esses registros e as UCs anteriores serão preservados. A lista atual passará a usar as UCs e capacidades do novo módulo. Novas UCs entram como presenciais e precisam de instrutor responsável. Deseja continuar?`,
+      confirmLabel: "Confirmar alteração" })) return;
     setAction("edit-class"); setError(""); setSuccess("");
     try {
-      const original = data.classes.find((item) => item.id === editingClass.id);
-      const target = editingClass.shiftId ? Number(editingClass.shiftId) : null;
       if (target !== null && target !== original?.shiftId) {
         const preview = await read<ShiftPreview>(`/classes/${editingClass.id}/shift-change?shiftId=${target}`);
         setShiftError(""); setShiftPreview(preview);
       } else {
-        await put(`/classes/${editingClass.id}`, { name: editingClass.name, code: editingClass.code, shiftId: target });
-        await reload(); setEditingClass(null); setSuccess("Turma atualizada.");
+        await put(`/classes/${editingClass.id}`, { name: editingClass.name, code: editingClass.code, shiftId: target,
+          ...(curriculumChanged ? { courseId: Number(editingClass.courseId), courseModuleId: Number(editingClass.courseModuleId), curriculumChangeConfirmed: true } : {}) });
+        await reload();
+        if (curriculumChanged) {
+          setUnitSuccess(null); setAssignmentUnitId(""); setAssignmentTeacherId("");
+          const updated = await read<ClassUnits>(`/classes/${editingClass.id}/units`);
+          setClassUnits(updated); setOfferedUnits(updated);
+          setClassModuleName(editModules.find((item) => item.id === Number(editingClass.courseModuleId))?.name ?? "Não vinculado");
+        }
+        setEditingClass(null); setSuccess("Turma atualizada.");
       }
     } catch (reason) { setError(resultMessage(reason)); }
     finally { setAction(""); }
@@ -221,11 +285,24 @@ export function Academic({ user, onPlanning }: { user: User; onPlanning?: () => 
     if (!shiftPreview || action) return;
     setAction("change-shift"); setShiftError("");
     try {
-      await put(`/classes/${shiftPreview.classId}/shift-change`, {
-        shiftId: shiftPreview.shiftId, confirmed: true, previewToken: shiftPreview.previewToken,
-      });
+      const combinedChange = editingClass?.id === shiftPreview.classId && editingCurriculumChanged;
+      if (combinedChange && editingClass) {
+        await put(`/classes/${shiftPreview.classId}`, {
+          name: editingClass.name, code: editingClass.code, shiftId: shiftPreview.shiftId,
+          courseId: Number(editingClass.courseId), courseModuleId: Number(editingClass.courseModuleId),
+          curriculumChangeConfirmed: true, shiftChangeConfirmed: true, shiftPreviewToken: shiftPreview.previewToken,
+        });
+        setUnitSuccess(null); setAssignmentUnitId(""); setAssignmentTeacherId("");
+        const updated = await read<ClassUnits>(`/classes/${editingClass.id}/units`);
+        setClassUnits(updated); setOfferedUnits(updated);
+        setClassModuleName(editModules.find((item) => item.id === Number(editingClass.courseModuleId))?.name ?? "Não vinculado");
+      } else {
+        await put(`/classes/${shiftPreview.classId}/shift-change`, {
+          shiftId: shiftPreview.shiftId, confirmed: true, previewToken: shiftPreview.previewToken,
+        });
+      }
       await reload(); setShiftPreview(null); setEditingClass(null);
-      setSuccess("Turno oficial atualizado. Os registros vinculados foram preservados.");
+      setSuccess(combinedChange ? "Turma atualizada. Os registros vinculados foram preservados." : "Turno oficial atualizado. Os registros vinculados foram preservados.");
     } catch (reason) { setShiftError(resultMessage(reason)); }
     finally { setAction(""); }
   }
@@ -254,9 +331,10 @@ export function Academic({ user, onPlanning }: { user: User; onPlanning?: () => 
   };
   const editingDirty = () => {
     const original = data.classes.find((item) => item.id === editingClass?.id);
-    return !!editingClass && !!original && (editingClass.name !== original.name || editingClass.code !== (original.code || "") || editingClass.shiftId !== (original.shiftId == null ? "" : String(original.shiftId)));
+    return !!editingClass && !!original && (editingClass.name !== original.name || editingClass.code !== (original.code || "") || editingClass.shiftId !== (original.shiftId == null ? "" : String(original.shiftId)) ||
+      editingClass.courseId !== String(original.courseId ?? "") || editingClass.courseModuleId !== String(original.courseModuleId ?? ""));
   };
-  const cancelEditing = async () => { if (!action && await discardChanges(editingDirty())) setEditingClass(null); };
+  const cancelEditing = async () => { if (!action && await discardChanges(editingDirty())) { setEditingClass(null); setError(""); } };
   const closeClass = async () => {
     if (action || !await discardChanges(editingDirty() || !!assignmentTeacherId)) return false;
     setExpandedClassId(null); setAssignmentClassId(""); setEditingClass(null); return true;
@@ -453,24 +531,28 @@ export function Academic({ user, onPlanning }: { user: User; onPlanning?: () => 
               </div>
             </form>
           </div>);
-  const assignmentForm = (<div className="border-t border-line pt-3 space-y-3">
-          <h4 className="font-semibold text-ink">Instrutor responsável</h4>
+  const assignmentForm = (<form className="border-t border-line pt-3 space-y-3" onSubmit={(event) => { event.preventDefault(); void assignOfferedUnit(); }}>
           <div className="grid gap-3 sm:grid-cols-2">
-            <Field label="Instrutor habilitado"><select className="field" value={assignmentTeacherId} disabled={eligibleLoading || !!action}
+            <Field label="Instrutor responsável"><select className="field" value={assignmentTeacherId} disabled={eligibleLoading || !!action}
               onChange={(event) => setAssignmentTeacherId(event.target.value)}>
               <option value="">Selecione o instrutor</option>{eligibleTeachers.map((item) =>
                 <option key={item.teacherId} value={item.teacherId}>{item.displayName}</option>)}</select></Field>
           </div>
+          <p className="text-sm text-muted-ink">Selecione quem ministrará esta UC nesta turma. A habilitação é cadastrada no perfil do instrutor.</p>
           {offeredUnits?.legacyWithoutModule && <Notice type="info" message="Turma anterior sem módulo vinculado; suas atribuições existentes permanecem disponíveis abaixo." />}
           {eligibleLoading && <p role="status" className="muted">Carregando instrutores…</p>}
-          {assignmentUnitId && !eligibleLoading && eligibleTeachers.length === 0 && !offeringError && <p className="muted">Nenhum instrutor habilitado para o curso e esta UC.</p>}
+          {assignmentUnitId && !eligibleLoading && eligibleTeachers.length === 0 && !offeringError && <p className="muted">Nenhum instrutor habilitado. Cadastre a habilitação para este curso e esta UC no perfil do instrutor.</p>}
           {assignmentUnitId && offeredUnits?.units.find((item) => item.curricularUnitId === Number(assignmentUnitId))?.teacherId &&
             <p className="muted">Responsável atual: {data.teachers.find((teacher) => teacher.id === offeredUnits.units.find((item) =>
               item.curricularUnitId === Number(assignmentUnitId))?.teacherId)?.displayName ?? "Instrutor cadastrado"}</p>}
           {offeringError && <Notice message={offeringError} />}
-          <button type="button" className="btn-primary" disabled={!assignmentTeacherId || action === "offered-unit"}
-            onClick={() => void assignOfferedUnit()}>Salvar instrutor responsável</button>
-        </div>);
+          <div className="flex flex-wrap gap-2">
+            <SubmitButton busy={action === "offered-unit"} disabled={!assignmentTeacherId || eligibleLoading}>Salvar</SubmitButton>
+            <button type="button" className="btn-secondary" disabled={!!action} onClick={async () => {
+              if (await discardChanges(!!assignmentTeacherId)) { setAssignmentUnitId(""); setAssignmentTeacherId(""); setOfferingError(""); }
+            }}>Cancelar</button>
+          </div>
+        </form>);
   const legacyForm = (<Card className="p-5 mb-6">
           <div className="flex gap-2 items-center mb-5">
             <BookOpen className="text-skybrand-600" size={19} />
@@ -708,54 +790,86 @@ export function Academic({ user, onPlanning }: { user: User; onPlanning?: () => 
           </table>
         </div>}
       </Card>
-      {selectedClass && <Modal title="Informações" width="max-w-3xl" onClose={() => void closeClass()}><div className="space-y-4">
-        {error && <Notice message={error} />}{success && <Notice type="success" message={success} />}
-        <div className="flex flex-wrap items-center justify-between gap-3"><div><p className="font-semibold text-ink">{selectedClass.name}</p><p className="muted">{data.semesters.find((item) => item.id === selectedClass.semesterId)?.name} · {selectedClass.students} alunos</p></div>
-          <div className="flex flex-wrap gap-2">{admin && <button type="button" className="btn-secondary" disabled={!!action} onClick={() => setEditingClass({ id: selectedClass.id, code: selectedClass.code || "", name: selectedClass.name, shiftId: selectedClass.shiftId == null ? "" : String(selectedClass.shiftId) })}>Editar</button>}
-            {onPlanning && <button type="button" className="btn-secondary" disabled={!!action} onClick={async () => { if (await closeClass()) onPlanning(); }}>Ir para Planejamento</button>}
+      {selectedClass && <Modal title={selectedClass.name} width="max-w-3xl" onClose={() => void closeClass()}><div className="space-y-6">
+        {error && !editingClass && <Notice message={error} />}{success && <Notice type="success" message={success} />}
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between"><p className="text-sm text-muted-ink">Código: {selectedClass.code || "Não informado"}</p>
+          <div className="flex flex-wrap gap-2">{admin && <button type="button" className="btn-secondary" disabled={!!action} onClick={() => setEditingClass({ id: selectedClass.id, code: selectedClass.code || "", name: selectedClass.name, shiftId: selectedClass.shiftId == null ? "" : String(selectedClass.shiftId), courseId: String(selectedClass.courseId ?? ""), courseModuleId: String(selectedClass.courseModuleId ?? "") })}>Editar turma</button>}
           </div>
         </div>
-        <dl className="grid grid-cols-2 gap-3 rounded-panel border border-line bg-canvas p-4 text-sm">
-          <div><dt className="text-muted-ink">Código</dt><dd className="font-medium text-ink">{selectedClass.code || "Não informado"}</dd></div>
-          <div><dt className="text-muted-ink">Turno</dt><dd className="font-medium text-ink">{data.shifts.find((item) => item.id === selectedClass.shiftId)?.name ?? "Não informado"}</dd></div>
-          <div className="col-span-2"><dt className="text-muted-ink">Curso</dt><dd className="font-medium text-ink">{courses.find((item) => item.id === selectedClass.courseId)?.name ?? "Não vinculado"}</dd></div>
+        <dl className="grid grid-cols-3 gap-4 rounded-panel border border-line bg-canvas p-4 text-sm">
+          <div className="min-w-0 col-span-3"><dt className="text-muted-ink">Curso</dt><dd className="break-words font-medium text-ink">{courses.find((item) => item.id === selectedClass.courseId)?.name ?? "Não vinculado"}</dd></div>
+          <div className="min-w-0 col-span-3"><dt className="text-muted-ink">Módulo</dt><dd className="break-words font-medium text-ink">{classModuleName || "Não vinculado"}</dd></div>
+          <div className="min-w-0"><dt className="text-muted-ink">Semestre</dt><dd className="break-words font-medium text-ink">{data.semesters.find((item) => item.id === selectedClass.semesterId)?.name ?? "Não informado"}</dd></div>
+          <div className="min-w-0"><dt className="text-muted-ink">Turno</dt><dd className="break-words font-medium text-ink">{data.shifts.find((item) => item.id === selectedClass.shiftId)?.name ?? "Não informado"}</dd></div>
+          <div className="min-w-0"><dt className="text-muted-ink">Alunos</dt><dd className="break-words font-medium tabular-nums text-ink">{selectedClass.students}</dd></div>
         </dl>
-        {editingClass && (                  <form className="mt-3 rounded-panel border border-line p-4" onSubmit={(event) => void saveClassEdit(event)}>
-                    <fieldset disabled={!!action} className="space-y-3">
-                    <legend className="font-semibold text-ink mb-3">Editar turma</legend>
-                    <div className="grid gap-3 sm:grid-cols-2">
-                    <Field label="Nome da turma" className="sm:col-span-2"><input className="field" aria-label="Nome da turma" required maxLength={100}
-                      value={editingClass.name} onChange={(event) => setEditingClass({ ...editingClass, name: event.target.value })} /></Field>
-                    <Field label="Código da turma"><input className="field" aria-label="Código da turma" maxLength={30}
-                      value={editingClass.code} onChange={(event) => setEditingClass({ ...editingClass, code: event.target.value })} /></Field>
-                    <Field label="Turno da turma"><select className="field" aria-label="Turno da turma" required value={editingClass.shiftId} onChange={(event) => setEditingClass({ ...editingClass, shiftId: event.target.value })}>
-                      <option value="">Selecione o turno</option>
-                      {data.shifts.map((shift) => <option key={shift.id} value={shift.id}>{shift.name}</option>)}
-                    </select></Field></div>
-                    <div className="flex flex-wrap justify-end gap-2">
-                    <button className="btn-secondary" type="button" onClick={() => void cancelEditing()}>Cancelar</button>
-                    <SubmitButton busy={action === "edit-class"}>Salvar</SubmitButton>
-                    </div>
-                    </fieldset>
-                  </form>)}
-        <h3 className="font-semibold text-ink">UCs e instrutores</h3>
+        <section aria-label="Unidades curriculares e instrutores" className="space-y-3">
+        <div className="space-y-1">
+          <div className="flex flex-col gap-1 sm:flex-row sm:items-baseline sm:justify-between sm:gap-4">
+            <h3 className="min-w-0 font-semibold text-ink">Unidades curriculares e instrutores</h3>
+            <p className="min-w-0 break-words text-sm text-muted-ink sm:text-right">Semestre: {data.semesters.find((item) => item.id === selectedClass.semesterId)?.name ?? "Não informado"}</p>
+          </div>
+          {admin && classUnits && !classUnits.legacyWithoutModule && classUnits.units.length > 0 && <p className="text-sm text-muted-ink">
+            {classUnits.units.filter((unit) => !unit.teacherId).length > 0
+              ? `${classUnits.units.filter((unit) => !unit.teacherId).length} de ${classUnits.units.length} UCs sem instrutor definido.`
+              : "Todas as UCs possuem instrutor definido."}
+          </p>}
+        </div>
         {classUnitsError && <Notice message={classUnitsError} />}
                           {!classUnits && !classUnitsError && <p className="muted">Carregando UCs da turma…</p>}
                           {classUnits?.legacyWithoutModule && <p className="muted">Turma anterior sem módulo vinculado. Atribuições e reservas existentes permanecem válidas.</p>}
                           {classUnits && !classUnits.legacyWithoutModule && <>
-                            <p className="font-medium text-ink">Carga horária informada: presencial {classUnits.presentialHours} h · EAD {classUnits.eadHours} h
-                              {classUnits.unitsWithoutHours > 0 && ` · ${classUnits.unitsWithoutHours} UC(s) sem CH informada`}</p>
-                            {classUnits.units.map((unit) => <div key={unit.curricularUnitId} className="rounded-lg border border-line p-3 space-y-2"><p className="text-muted-ink">
-                              {unit.code} · {unit.name} · {unit.deliveryMode === "Ead" ?
-                                `EAD (${unit.eadScheduleMode === "HorarioDefinido" ? "encontros on-line com horário definido" : "sem horário fixo"})` : "Presencial"}
-                              · CH {unit.plannedHours == null ? "não informada" : `${unit.plannedHours} h`}
-                              {unit.resources.length > 0 && ` · Recursos: ${unit.resources.map((resource) => resource.name).join(", ")}`}
-                              {unit.teacherId && ` · Instrutor: ${data.teachers.find((teacher) => teacher.id === unit.teacherId)?.displayName ?? "Responsável registrado"}`}
-                            </p>{!unit.teacherId && <p className="text-sm font-medium text-muted-ink">Instrutor não definido</p>}
-                            {admin && <button type="button" className="btn-secondary" disabled={!!action} onClick={async () => { if (assignmentUnitId !== String(unit.curricularUnitId) && !await discardChanges(!!assignmentTeacherId)) return; setOfferingError(""); setAssignmentUnitId(String(unit.curricularUnitId)); }}>Definir instrutor</button>}
+                            <p className="text-sm text-muted-ink">Carga horária informada: presencial {classUnits.presentialHours} h · EAD {classUnits.eadHours} h
+                              {classUnits.unitsWithoutHours > 0 && ` · ${classUnits.unitsWithoutHours} UC(s) sem carga horária informada`}</p>
+                            {classUnits.units.length === 0 && <p className="text-sm text-muted-ink">Nenhuma UC ofertada para esta turma.</p>}
+                            {classUnits.units.length > 0 && <div className="divide-y divide-line border-y border-line">{classUnits.units.map((unit) => <article key={unit.curricularUnitId} className="py-4 space-y-2">
+                              <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto] sm:items-center">
+                              <div className="min-w-0 space-y-1"><h4 className="break-words font-semibold text-ink">{unit.name}</h4>
+                              <p className="break-words text-sm text-muted-ink">{unit.code} · {unit.deliveryMode === "Ead" ?
+                                `EAD ${unit.eadScheduleMode === "HorarioDefinido" ? "com horário" : "sem horário fixo"}` : "Presencial"}
+                              · {unit.plannedHours == null ? "Carga horária não informada" : `${unit.plannedHours} h`}
+                            </p></div>
+                              <div className="min-w-0"><p className="text-sm text-muted-ink">Instrutor responsável</p><p className="break-words font-medium text-ink">{unit.teacherId
+                                ? data.teachers.find((teacher) => teacher.id === unit.teacherId)?.displayName ?? "Responsável registrado"
+                                : admin ? "Sem instrutor definido" : "Não informado"}</p></div>
+                            {admin && assignmentUnitId !== String(unit.curricularUnitId) && <button type="button" className="btn-secondary justify-self-start sm:justify-self-end" disabled={!!action} onClick={async () => { if (!await discardChanges(!!assignmentTeacherId)) return; setOfferingError(""); setAssignmentUnitId(String(unit.curricularUnitId)); }}>{unit.teacherId ? "Alterar instrutor" : "Definir instrutor"}</button>}
+                            </div>
+                            {unitSuccess?.id === unit.curricularUnitId && <p role="status" className="rounded-lg border border-line bg-canvas p-3 text-sm text-ink">{unitSuccess.message}</p>}
                             {admin && assignmentUnitId === String(unit.curricularUnitId) && <section aria-label={`Definir instrutor de ${unit.name}`}>{assignmentForm}</section>}
-                            </div>)}
+                            {unit.resources.length > 0 && <details className="text-sm">
+                              <summary className="min-h-11 cursor-pointer rounded py-3 font-medium text-ink focus-visible:outline focus-visible:outline-2 focus-visible:outline-skybrand-500">Ver recursos ({unit.resources.length})</summary>
+                              <ul className="space-y-2 pt-2 text-muted-ink">{unit.resources.map((resource) => <li key={resource.resourceCatalogItemId} className="break-words">{resource.name} · Quantidade: {resource.quantity}</li>)}</ul>
+                            </details>}
+                            </article>)}</div>}
                           </>}
+        </section>
+        <section aria-label="Histórico da turma" className="space-y-3">
+          {historyBusy && <p role="status" className="text-sm text-muted-ink">Carregando histórico…</p>}
+          {historyError && <div className="space-y-2"><Notice message={historyError} />
+            <button type="button" className="btn-secondary" onClick={() => setHistoryRetry(historyRetry + 1)}>Tentar novamente</button></div>}
+          {!historyBusy && !historyError && <details key={selectedClass.id} className="border-b border-line pb-3 text-sm">
+            <summary className="min-h-11 cursor-pointer rounded py-3 font-medium text-ink focus-visible:outline focus-visible:outline-2 focus-visible:outline-skybrand-500">Histórico de semestres ({classHistory.length})</summary>
+            <ul className="divide-y divide-line">{classHistory.map((record) => <li key={record.id} className="flex flex-col gap-2 py-3 sm:flex-row sm:items-center sm:justify-between">
+              <div className="min-w-0"><p className="break-words font-medium text-ink">{record.semesterName}{record.id === selectedClass.id ? " · Em consulta" : ""}</p>
+                <p className="break-words text-muted-ink">{record.moduleName ?? "Módulo não vinculado"} · {record.shiftName ?? "Turno não informado"}</p></div>
+              {record.id !== selectedClass.id && <button type="button" className="btn-secondary shrink-0" onClick={async () => {
+                if (await closeClass()) openClass(record.id);
+              }}>Consultar {record.semesterName}</button>}
+            </li>)}</ul>
+          </details>}
+        {(classUnits?.previousUnits?.length ?? 0) > 0 && <details className="border-b border-line pb-3 text-sm">
+          <summary className="min-h-11 cursor-pointer rounded py-3 font-medium text-ink focus-visible:outline focus-visible:outline-2 focus-visible:outline-skybrand-500">Unidades anteriores ({classUnits!.previousUnits!.length})</summary>
+          <p className="mt-3 text-muted-ink">Estas UCs e suas capacidades continuam cadastradas. Reservas, atribuições e planejamentos anteriores mantêm seus vínculos originais.</p>
+          <ul className="mt-3 space-y-2 text-ink">{classUnits!.previousUnits!.map((unit) => <li key={unit.curricularUnitId} className="break-words">{unit.code} · {unit.name}</li>)}</ul>
+        </details>}
+        </section>
+        {(admin || onPlanning) && <div className="flex flex-col gap-2 border-t border-line pt-4 sm:flex-row sm:justify-end">
+          {admin && <button type="button" className="btn-secondary" disabled={!!action || historyBusy || !!historyError} onClick={async () => {
+            if (!await discardChanges(!!assignmentTeacherId)) return;
+            setAssignmentUnitId(""); setAssignmentTeacherId(""); setContinuingClass(selectedClass);
+          }}>Continuar em outro semestre</button>}
+          {onPlanning && <button type="button" className="btn-secondary" disabled={!!action} onClick={async () => { if (await closeClass()) onPlanning(); }}>Ir para Planejamento</button>}
+        </div>}
       </div></Modal>}
       <details className="mt-5 rounded-panel border border-line bg-surface p-4" onToggle={(event) => setLegacyOpen(event.currentTarget.open)}><summary className="cursor-pointer font-semibold text-ink">Registros anteriores</summary>{legacyOpen && <div className="mt-4 space-y-4">{admin && legacyForm}{legacyHistory}</div>}</details>
     </section>
@@ -765,13 +879,70 @@ export function Academic({ user, onPlanning }: { user: User; onPlanning?: () => 
         </li>)}</ul>}
       </Card>
     </section>
-    {admin && shiftPreview && <Modal title="Confirmar mudança de turno" width="max-w-xl" descriptionId="class-shift-warning" onClose={() => { if (!action) setShiftPreview(null); }}>
+    {admin && continuingClass && <ClassContinuationForm source={continuingClass} semesters={data.semesters} shifts={data.shifts}
+      history={classHistory} courseName={courses.find((item) => item.id === continuingClass.courseId)?.name ?? "Curso não vinculado"}
+      onClose={() => setContinuingClass(null)} onCreated={async (id) => {
+        await reload(); setContinuingClass(null); setSemesterFilter(""); setShiftFilter(""); setCourseFilter(""); setQuery("");
+        openClass(id); setSuccess("Continuação criada. O histórico anterior foi preservado.");
+      }} />}
+        {admin && editingClass && <Modal title="Editar turma" onClose={() => void cancelEditing()} width="max-w-2xl">
+          {error && <Notice message={error} />}
+          <form className="space-y-4" onSubmit={(event) => void saveClassEdit(event)}>
+                    <fieldset disabled={!!action} className="space-y-3">
+
+                    <div className="grid gap-3 sm:grid-cols-2">
+                    <Field label="Nome da turma" className="sm:col-span-2"><input className="field" aria-label="Nome da turma" required maxLength={100}
+                      value={editingClass.name} onChange={(event) => setEditingClass({ ...editingClass, name: event.target.value })} /></Field>
+                    <Field label="Código da turma"><input className="field" aria-label="Código da turma" maxLength={30}
+                      value={editingClass.code} onChange={(event) => setEditingClass({ ...editingClass, code: event.target.value })} /></Field>
+                    <Field label="Turno da turma"><select className="field" aria-label="Turno da turma" required value={editingClass.shiftId} onChange={(event) => setEditingClass({ ...editingClass, shiftId: event.target.value })}>
+                      <option value="">Selecione o turno</option>
+                      {data.shifts.map((shift) => <option key={shift.id} value={shift.id}>{shift.name}</option>)}
+                    </select></Field>
+                    <Field label="Curso" className="sm:col-span-2"><select className="field" value={editingClass.courseId}
+                      onChange={(event) => setEditingClass({ ...editingClass, courseId: event.target.value, courseModuleId: "" })}>
+                      <option value="" disabled={!!data.classes.find((item) => item.id === editingClass.id)?.courseId}>Selecione um curso</option>
+                      {courses.map((course) => <option key={course.id} value={course.id}>{course.name}</option>)}
+                    </select></Field>
+                    <Field label="Módulo" className="sm:col-span-2"><select className="field" value={editingClass.courseModuleId}
+                      disabled={!editingClass.courseId || editModulesBusy || !!editModulesError} required={editingCurriculumChanged && !!editingClass.courseId}
+                      onChange={(event) => setEditingClass({ ...editingClass, courseModuleId: event.target.value })}>
+                      <option value="">{editModulesBusy ? "Carregando módulos…" : "Selecione um módulo"}</option>
+                      {editModules.map((module) => <option key={module.id} value={module.id}>{module.name}</option>)}
+                    </select></Field></div>
+                    {editModulesError && <Notice message={editModulesError} />}
+                    {editingClass.courseId && !editModulesBusy && !editModulesError && editModules.length === 0 && <p role="status" className="text-sm text-muted-ink">Este curso não possui módulos cadastrados.</p>}
+                    {editingCurriculumChanged &&
+                      <div role="status" className="rounded-panel border border-line bg-canvas p-4 text-sm text-ink">
+                        <p className="font-semibold">Atenção à mudança de curso ou módulo</p>
+                        <p>As UCs e capacidades exibidas passarão a ser as do novo módulo. As UCs anteriores, seus instrutores e todo o histórico serão preservados. Novas UCs entram como presenciais e precisam de instrutor responsável.</p>
+                        <p className="mt-2 font-medium">{classUnits?.links
+                          ? `Vínculos existentes: ${classUnits.links.bookings} reserva(s), ${classUnits.links.assignments} atribuição(ões), ${classUnits.links.occupations} ocupação(ões) e ${classUnits.links.plans} planejamento(s).`
+                          : "Reservas, atribuições e planejamentos existentes continuarão com seus dados atuais."}</p>
+                        <p>A alteração não remaneja nem cancela aulas ou reservas.</p>
+                      </div>}
+                    <div className="flex flex-wrap justify-end gap-2">
+                    <button className="btn-secondary" type="button" onClick={() => void cancelEditing()}>Cancelar</button>
+                    <SubmitButton busy={action === "edit-class"} disabled={editModulesBusy || !!editModulesError}>Salvar</SubmitButton>
+                    </div>
+                    </fieldset>
+                  </form>
+        </Modal>}
+
+    {admin && shiftPreview && <Modal title={editingCurriculumChanged ? "Confirmar alterações da turma" : "Confirmar mudança de turno"} width="max-w-xl" descriptionId="class-shift-warning" onClose={() => { if (!action) setShiftPreview(null); }}>
       <div className="space-y-4">
         {shiftError && <Notice message={shiftError} />}
         <div className="flex items-start gap-3"><AlertTriangle size={24} className="shrink-0 text-[var(--color-remove-ink)]" aria-hidden="true" /><p id="class-shift-warning" className="text-sm text-ink">A mudança será de <strong>{shiftPreview.currentShiftName ?? "Não definido"}</strong> para <strong>{shiftPreview.shiftName}</strong>.</p></div>
         {shiftPreview.links.length ? <div className="rounded-panel border border-line p-4 space-y-2"><h3 className="font-semibold text-ink">Vínculos que impediam a alteração direta</h3><ul className="space-y-2 text-sm">{shiftPreview.links.map((link) => <li key={link.label} className="flex justify-between gap-3 text-ink"><span>{link.label}</span><strong>{link.count}</strong></li>)}</ul><p className="text-xs text-muted-ink">A contagem inclui registros históricos, encerrados ou cancelados.</p></div> : <p className="text-sm text-muted-ink">Nenhum vínculo impeditivo encontrado.</p>}
-        <div className="rounded-lg border border-line bg-canvas p-3 text-sm text-ink space-y-2"><p><strong>Somente o turno oficial da turma será alterado.</strong> Nome e código não serão alterados nesta confirmação.</p><p>As atribuições, reservas, ocupações e planejamentos continuarão com seus dados e horários atuais. A troca não remaneja aulas nem reserva ambientes no novo turno.</p></div>
-        <div className="flex flex-wrap justify-end gap-2"><button type="button" className="btn-secondary" disabled={!!action} onClick={() => setShiftPreview(null)}>Cancelar</button><button type="button" className="btn-primary" disabled={!!action} onClick={() => void confirmShiftChange()}>{action === "change-shift" ? "Alterando…" : "Confirmar turno"}</button></div>
+        <div className="rounded-lg border border-line bg-canvas p-3 text-sm text-ink space-y-2">
+          {editingCurriculumChanged && editingClass ? <>
+            <p><strong>Turno, curso/módulo e os demais campos editados serão salvos juntos.</strong></p>
+            <p>Curso: {courses.find((item) => item.id === Number(editingClass.courseId))?.name ?? "Não informado"}. Módulo: {editModules.find((item) => item.id === Number(editingClass.courseModuleId))?.name ?? "Não informado"}.</p>
+            <p>As UCs atuais passarão a ser as do módulo escolhido. As UCs anteriores e seus instrutores serão preservados. Novas UCs entram como presenciais e precisam de instrutor responsável.</p>
+          </> : <p><strong>Somente o turno oficial da turma será alterado.</strong> Nome e código não serão alterados nesta confirmação.</p>}
+          <p>As atribuições, reservas, ocupações e planejamentos continuarão com seus dados e horários atuais. A troca não remaneja aulas nem reserva ambientes no novo turno.</p>
+        </div>
+        <div className="flex flex-wrap justify-end gap-2"><button type="button" className="btn-secondary" disabled={!!action} onClick={() => setShiftPreview(null)}>Cancelar</button><button type="button" className="btn-primary" disabled={!!action} onClick={() => void confirmShiftChange()}>{action === "change-shift" ? "Alterando…" : editingCurriculumChanged ? "Confirmar alterações" : "Confirmar turno"}</button></div>
       </div>
     </Modal>}
     {admin && createModal && <Modal title={createModal === "class" ? "Nova turma" : "Novo semestre"} width="max-w-2xl" onClose={() => void closeCreate()}>

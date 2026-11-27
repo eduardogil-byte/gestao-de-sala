@@ -601,6 +601,11 @@ namespace SalaGest.Api.Migrations
                         .HasMaxLength(30)
                         .HasColumnType("nvarchar(30)");
 
+                    b.Property<Guid>("ContinuityId")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier")
+                        .HasDefaultValueSql("NEWID()");
+
                     b.Property<int?>("CourseId")
                         .HasColumnType("int");
 
@@ -625,6 +630,9 @@ namespace SalaGest.Api.Migrations
                         .HasMaxLength(30)
                         .HasColumnType("nvarchar(30)");
 
+                    b.Property<int?>("PreviousClassGroupId")
+                        .HasColumnType("int");
+
                     b.Property<int>("SemesterId")
                         .HasColumnType("int");
 
@@ -640,7 +648,12 @@ namespace SalaGest.Api.Migrations
 
                     b.HasIndex("CourseModuleId");
 
+                    b.HasIndex("PreviousClassGroupId");
+
                     b.HasIndex("ShiftId");
+
+                    b.HasIndex("ContinuityId", "SemesterId")
+                        .IsUnique();
 
                     b.HasIndex("SemesterId", "NormalizedCode")
                         .IsUnique()
@@ -2071,6 +2084,11 @@ namespace SalaGest.Api.Migrations
                     b.HasOne("SalaGest.Api.Models.CourseModule", "CourseModule")
                         .WithMany()
                         .HasForeignKey("CourseModuleId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.HasOne("SalaGest.Api.Models.ClassGroup", null)
+                        .WithMany()
+                        .HasForeignKey("PreviousClassGroupId")
                         .OnDelete(DeleteBehavior.Restrict);
 
                     b.HasOne("SalaGest.Api.Models.Semester", "Semester")

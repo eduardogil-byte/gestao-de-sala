@@ -30,7 +30,7 @@ const labels: Record<string, string> = {
   ApprovedAtUtc: "Aprovado em", EndedAtUtc: "Encerrado em", Reason: "Motivo",
 };
 
-export function AuditHistory({ type, id, onReverse }: { type: "Occupation" | "Booking" | "Loan" | "Assignment" | "Room"; id: number; onReverse?: (changeId: number, action: "undo" | "redo") => void }) {
+export function AuditHistory({ type, id, onReverse, scrollable = true }: { type: "Occupation" | "Booking" | "Loan" | "Assignment" | "Room"; id: number; onReverse?: (changeId: number, action: "undo" | "redo") => void; scrollable?: boolean }) {
   const { data } = useData();
   const [rows, setRows] = useState<(AuditRow | OccupationRow)[]>([]);
   const [loading, setLoading] = useState(true);
@@ -72,7 +72,7 @@ export function AuditHistory({ type, id, onReverse }: { type: "Occupation" | "Bo
   if (loading) return <Busy />;
   if (error) return <Notice message={error} />;
   if (!rows.length) return <p className="text-sm text-slate-600">Nenhuma alteração registrada para este item.</p>;
-  return <ol className="space-y-3 max-h-80 overflow-y-auto">{rows.map((row) => <li key={row.id} className="rounded-lg border border-slate-200 p-3 text-sm">
+  return <ol className={`space-y-3 ${scrollable ? "max-h-80 overflow-y-auto" : ""}`}>{rows.map((row) => <li key={row.id} className="rounded-lg border border-slate-200 p-3 text-sm">
     <strong>{row.action}</strong><span className="block text-xs text-slate-600">{row.actorName} · {new Date("changedAtUtc" in row ? row.changedAtUtc : row.createdAtUtc).toLocaleString("pt-BR")}</span>
     {"beforeJson" in row ? <>
       <div className="grid sm:grid-cols-2 gap-3 mt-2"><div><h4 className="font-semibold mb-1">Antes</h4>{snapshot(row.beforeJson, "Sem valores anteriores")}</div><div><h4 className="font-semibold mb-1">Depois</h4>{snapshot(row.afterJson, "Sem valores posteriores")}</div></div>

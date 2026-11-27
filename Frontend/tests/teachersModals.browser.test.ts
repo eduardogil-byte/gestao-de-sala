@@ -1,9 +1,23 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { mkdtemp, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { chromePath, openAdminFixture } from "./helpers/browser.ts";
 
 test("instrutores abrem perfil e cadastro em modais com permissões preservadas", { skip: !chromePath, timeout: 60000 }, async () => {
   const { evaluate, waitFor, command, close } = await openAdminFixture('adminIntegrations');
+  const captures = await mkdtemp(join(tmpdir(), 'salagest-perfil-modais-'));
+  const checkLayouts = async (area: string) => {
+    for (const theme of ['light', 'dark']) for (const width of [360, 1366]) {
+      await evaluate(`document.documentElement.dataset.theme = '${theme}'`);
+      await command('Emulation.setDeviceMetricsOverride', { width, height: 850, deviceScaleFactor: 1, mobile: width === 360 });
+      assert.equal(await evaluate("document.documentElement.scrollWidth <= innerWidth + 1"), true);
+      assert.equal(await evaluate("(() => { const rect = [...document.querySelectorAll('[role=dialog]')].at(-1).getBoundingClientRect(); return rect.left >= 0 && rect.right <= innerWidth && rect.top >= 0 && rect.bottom <= innerHeight; })()"), true);
+      const shot = await command('Page.captureScreenshot', { format: 'png', captureBeyondViewport: false });
+      await writeFile(join(captures, `${area}-${theme}-${width}.png`), Buffer.from(shot.data, 'base64'));
+    }
+  };
   try {
     await evaluate("adminTest.reset('teachers')");
     await waitFor("!!document.querySelector('button[aria-label=\"Abrir perfil de Docente 0\"]')");
@@ -13,16 +27,69 @@ test("instrutores abrem perfil e cadastro em modais com permissões preservadas"
     await evaluate("adminTest.input('Buscar docente', 'Docente 0')");
     await waitFor("document.querySelector('table tbody').children.length === 1");
     await evaluate("document.querySelector('table tbody tr td:nth-child(2)').click()");
-    await waitFor("[...document.querySelectorAll('textarea')].some(item => item.value === 'Formação registrada')");
-    await evaluate("document.querySelector('button[aria-label=\"Terça · Manhã\"]').click(); adminTest.click('Salvar disponibilidade')");
-    await waitFor("adminTest.pending.some(item => item.path === '/api/teachers/t0/availability')");
-    await evaluate("adminTest.reply('/api/teachers/t0/availability', null, 204)");
-    await waitFor("document.querySelector('[role=dialog]')?.textContent.includes('Disponibilidade atualizada')");
-    for (const theme of ['light', 'dark']) for (const width of [360, 1366]) {
-      await evaluate(`document.documentElement.dataset.theme = '${theme}'`);
-      await command('Emulation.setDeviceMetricsOverride', { width, height: 850, deviceScaleFactor: 1, mobile: width === 360 });
-      assert.equal(await evaluate("document.documentElement.scrollWidth <= innerWidth + 1"), true);
-    }
+    await waitFor("document.querySelector('[role=dialog]')?.textContent.includes('Formação registrada')");
+    assert.equal(await evaluate("document.querySelectorAll('textarea').length"), 0);
+    assert.equal(await evaluate("!!document.querySelector('[aria-label=\"Gerenciar habilitações\"]')"), false);
+    assert.equal(await evaluate("document.querySelector('[role=dialog]')?.textContent.includes('Disponibilidade por turno')"), false);
+    assert.equal(await evaluate("adminTest.calls.some(item => item.path.endsWith('/availability'))"), false);
+    await evaluate("document.querySelector('details summary').click()");
+    await waitFor("document.querySelector('details')?.open && document.body.innerText.includes('UC sintética')");
+    await evaluate("adminTest.click('Editar informações')");
+    await waitFor("document.querySelector('textarea') === document.activeElement");
+    assert.equal(await evaluate("document.querySelectorAll('[role=dialog]').length"), 2);
+    assert.equal(await evaluate("[...document.querySelectorAll('[role=dialog]')].at(-1).querySelector('h2').textContent"), 'Editar informações profissionais');
+    await checkLayouts('editar');
+    const editEducation = async (value: string) => evaluate(`(() => {
+      const field = document.querySelector('textarea');
+      Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value').set.call(field, ${JSON.stringify(value)});
+      field.dispatchEvent(new Event('input', { bubbles: true }));
+    })()`);
+    await editEducation('Formação em edição');
+    await evaluate("[...document.querySelectorAll('[role=dialog]')].at(-1).querySelector('button[aria-label=Fechar]').click()");
+    await waitFor("document.querySelectorAll('[role=dialog]').length === 3");
+    await evaluate("[...document.querySelectorAll('[role=dialog]')].at(-1).querySelector('button.btn-secondary').click()");
+    await waitFor("document.querySelectorAll('[role=dialog]').length === 2");
+    assert.equal(await evaluate("document.querySelector('textarea').value"), 'Formação em edição');
+    await evaluate("adminTest.click('Salvar alterações')");
+    const path = '/api/teachers/t0/pedagogical-profile';
+    await waitFor(`adminTest.pending.some(item => item.path === '${path}')`);
+    await evaluate("document.querySelector('[role=dialog] button[aria-label=Fechar]').click()");
+    assert.equal(await evaluate("document.querySelectorAll('[role=dialog]').length"), 2);
+    await evaluate(`adminTest.reply('${path}', { error: 'Falha ao salvar perfil' }, 500)`);
+    await waitFor("document.body.innerText.includes('Falha ao salvar perfil')");
+    assert.equal(await evaluate("document.querySelector('textarea').value"), 'Formação em edição');
+    await evaluate("adminTest.click('Salvar alterações')");
+    await waitFor(`adminTest.pending.some(item => item.path === '${path}')`);
+    await evaluate(`adminTest.reply('${path}', null, 204)`);
+    await waitFor("!document.querySelector('textarea') && document.body.innerText.includes('Formação em edição')");
+    await evaluate("adminTest.click('Editar informações')");
+    await waitFor("!!document.querySelector('textarea')");
+    await editEducation('Alteração a descartar');
+    await evaluate("adminTest.click('Cancelar')");
+    await waitFor("document.querySelectorAll('[role=dialog]').length === 3");
+    await evaluate("adminTest.click('Descartar alterações')");
+    await waitFor("!document.querySelector('textarea')");
+    assert.equal(await evaluate("document.body.innerText.includes('Alteração a descartar')"), false);
+    await evaluate("adminTest.click('Gerenciar habilitações')");
+    await waitFor("!!document.querySelector('[aria-label=\"Gerenciar habilitações\"]')");
+    assert.equal(await evaluate("document.querySelectorAll('[role=dialog]').length"), 2);
+    assert.equal(await evaluate("[...document.querySelectorAll('[role=dialog]')].at(-1).querySelector('h2').textContent"), 'Gerenciar habilitações');
+    await evaluate("adminTest.select('Curso para habilitação', '1')");
+    await waitFor("[...document.querySelectorAll('option')].some(item => item.textContent.includes('Módulo sintético'))");
+    await evaluate("adminTest.select('Módulo para habilitação', '2')");
+    await waitFor("document.body.innerText.includes('UC · UC sintética')");
+    assert.equal(await evaluate("[...document.querySelectorAll('label')].find(item => item.textContent.includes('Habilitado para o curso')).querySelector('input').disabled"), true);
+    assert.equal(await evaluate("document.body.innerText.includes('desmarque primeiro as UCs')"), true);
+    await evaluate("[...document.querySelectorAll('label')].find(item => item.textContent.includes('UC · UC sintética')).querySelector('input').click()");
+    const unitPath = `${path}/courses/1/curricular-units/3`;
+    await waitFor(`adminTest.pending.some(item => item.path === '${unitPath}' && item.method === 'DELETE')`);
+    await evaluate(`adminTest.catalog['${path}'].curricularUnits = []; adminTest.reply('${unitPath}', null, 204)`);
+    await waitFor("document.body.innerText.includes('Habilitações atualizadas')");
+    assert.equal(await evaluate("[...document.querySelectorAll('label')].find(item => item.textContent.includes('UC · UC sintética')).querySelector('input').checked"), false);
+    assert.equal(await evaluate("[...document.querySelectorAll('label')].find(item => item.textContent.includes('Habilitado para o curso')).querySelector('input').disabled"), false);
+    await checkLayouts('habilitacoes');
+    await evaluate("adminTest.click('Concluir')");
+    await waitFor("document.querySelectorAll('[role=dialog]').length === 1");
     await evaluate("document.querySelector('[role=dialog] button[aria-label=Fechar]').click()");
     await waitFor("!document.querySelector('[role=dialog]')");
     await evaluate("adminTest.click('Cadastrar instrutor')");
@@ -35,7 +102,8 @@ test("instrutores abrem perfil e cadastro em modais com permissões preservadas"
     await waitFor("!!document.querySelector('button[aria-label=\"Abrir perfil de Docente 0\"]')");
     assert.equal(await evaluate("document.body.innerText.includes('Cadastrar instrutor') || !!document.querySelector('input[type=search]')"), false);
     await evaluate("document.querySelector('button[aria-label=\"Abrir perfil de Docente 0\"]').click()");
-    await waitFor("[...document.querySelectorAll('textarea')].some(item => item.value === 'Formação registrada')");
-    assert.equal(await evaluate("[...document.querySelectorAll('textarea')].every(item => item.readOnly)"), true);
-  } finally { await close(); }
+    await waitFor("document.querySelector('[role=dialog]')?.textContent.includes('Formação registrada')");
+    assert.equal(await evaluate("document.querySelectorAll('textarea').length"), 0);
+    assert.equal(await evaluate("document.body.innerText.includes('Editar informações') || document.body.innerText.includes('Gerenciar habilitações')"), false);
+  } finally { console.log(`Capturas do perfil: ${captures}`); await close(); }
 });

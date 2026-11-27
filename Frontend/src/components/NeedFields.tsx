@@ -43,14 +43,14 @@ export function NeedFields({ value, onChange, software, resourcePicker = false }
           <button type="button" aria-label={`Remover ${name}`} className="rounded p-1 hover:bg-white/10" onClick={() => set("softwareIds", value.softwareIds.filter((selected) => selected !== id))}><X size={14} aria-hidden="true" /></button>
         </li>;
       })}</ul> : <p className="muted">Nenhum software selecionado.</p>}
-      <button type="button" className="btn-secondary" aria-expanded={adding} onClick={() => setAdding((open) => !open)}><Plus size={16} aria-hidden="true" /> Adicionar recurso</button>
+      <button type="button" className="btn-secondary" aria-expanded={adding} onClick={() => setAdding((open) => !open)}><Plus size={16} aria-hidden="true" /> Adicionar software</button>
       {adding && <div className="rounded-panel border border-line p-3 space-y-2">
         {available.length ? <><SearchableSelect label="Software do catálogo" options={[{ value: "", label: "Selecione um software" }, ...available.map((item) => ({ value: String(item.id), label: item.name }))]} value={softwareId} onChange={setSoftwareId} searchThreshold={0} />
           <button type="button" className="btn-primary" disabled={!softwareId} onClick={() => {
             const id = Number(softwareId);
             if (available.some((item) => item.id === id)) set("softwareIds", [...value.softwareIds, id]);
             setSoftwareId("");
-          }}>Adicionar software</button></> : <p className="muted">Nenhum software disponível no catálogo.</p>}
+          }}>Incluir software</button></> : <p className="muted">Nenhum software disponível no catálogo.</p>}
       </div>}
       <p className="text-xs text-muted-ink">Softwares exigem computadores compatíveis para os alunos, mesmo sem marcar a opção acima.</p>
     </div> : software.length > 0 && <div>

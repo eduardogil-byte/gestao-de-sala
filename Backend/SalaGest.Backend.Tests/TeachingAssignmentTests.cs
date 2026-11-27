@@ -22,8 +22,10 @@ namespace SalaGest.Backend.Tests;
 
 public sealed class TeachingAssignmentTests
 {
-    [Fact]
-    public async Task ConfirmedShiftChangePreservesAllLinkedDataAndOtherClassFields()
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task ConfirmedShiftChangePreservesAllLinkedData(bool changeCurriculum)
     {
         await using var host = await AssignmentHost.CreateAsync();
         host.AsAdmin();
@@ -61,14 +63,54 @@ public sealed class TeachingAssignmentTests
             new ClassShiftChangeInput(target, false, preview.PreviewToken))).StatusCode);
         Assert.Equal(HttpStatusCode.Conflict, (await host.Client.PutAsJsonAsync(route,
             new ClassShiftChangeInput(target, true, "invalid"))).StatusCode);
-        Assert.Equal(HttpStatusCode.NoContent, (await host.Client.PutAsJsonAsync(route,
-            new { ShiftId = target, Confirmed = true, preview.PreviewToken, Name = "Não salvar", Code = "Não salvar" })).StatusCode);
+        int? targetModuleId = null;
+        if (changeCurriculum)
+        {
+            using (var scope = host.App.Services.CreateScope())
+            {
+                var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+                var module = new CourseModule { CourseId = host.OtherCourseId, Name = "Destino",
+                    NormalizedName = "DESTINO", Order = 2 };
+                db.CourseModules.Add(module); await db.SaveChangesAsync(); targetModuleId = module.Id;
+            }
+            var update = new ClassUpdate("Turma atualizada", "T2", target, host.OtherCourseId,
+                targetModuleId, true, true, preview.PreviewToken);
+            var updateRoute = $"/api/classes/{host.ClassId}";
+            foreach (var invalid in new[] {
+                update with { CurriculumChangeConfirmed = false },
+                update with { ShiftChangeConfirmed = false },
+                update with { ShiftPreviewToken = null },
+                update with { CourseId = host.CourseId },
+                update with { ShiftId = -1 }
+            }) Assert.Equal(HttpStatusCode.BadRequest, (await host.Client.PutAsJsonAsync(updateRoute, invalid)).StatusCode);
+            Assert.Equal(HttpStatusCode.Conflict, (await host.Client.PutAsJsonAsync(updateRoute,
+                update with { ShiftPreviewToken = "stale-preview" })).StatusCode);
+            host.AsTeacher();
+            Assert.Equal(HttpStatusCode.Forbidden, (await host.Client.PutAsJsonAsync(updateRoute, update)).StatusCode);
+            host.AsAdmin();
+            using (var scope = host.App.Services.CreateScope())
+            {
+                var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+                var unchanged = (await db.Classes.FindAsync(host.ClassId))!;
+                Assert.Equal(host.ShiftId, unchanged.ShiftId); Assert.Equal(host.CourseId, unchanged.CourseId);
+                Assert.Equal("M1", unchanged.Name); Assert.Null(unchanged.CourseModuleId);
+                Assert.Empty(await db.AuditEntries.Where(x => x.Action == "TurnoOficialAlterado").ToListAsync());
+            }
+            Assert.Equal(before, await LinkedShiftSnapshot(host));
+            Assert.Equal(HttpStatusCode.NoContent, (await host.Client.PutAsJsonAsync(updateRoute, update)).StatusCode);
+        }
+        else
+            Assert.Equal(HttpStatusCode.NoContent, (await host.Client.PutAsJsonAsync(route,
+                new { ShiftId = target, Confirmed = true, preview.PreviewToken, Name = "Não salvar", Code = "Não salvar" })).StatusCode);
         Assert.Equal(before, await LinkedShiftSnapshot(host));
         using var check = host.App.Services.CreateScope();
         var verify = check.ServiceProvider.GetRequiredService<AppDbContext>();
         var turma = (await verify.Classes.FindAsync(host.ClassId))!;
-        Assert.Equal(target, turma.ShiftId); Assert.Equal("M1", turma.Name); Assert.Null(turma.Code);
-        Assert.Equal(25, turma.Students); Assert.Equal(host.SemesterId, turma.SemesterId); Assert.Equal(host.CourseId, turma.CourseId);
+        Assert.Equal(target, turma.ShiftId); Assert.Equal(changeCurriculum ? "Turma atualizada" : "M1", turma.Name);
+        Assert.Equal(changeCurriculum ? "T2" : null, turma.Code);
+        Assert.Equal(targetModuleId, turma.CourseModuleId);
+        Assert.Equal(25, turma.Students); Assert.Equal(host.SemesterId, turma.SemesterId);
+        Assert.Equal(changeCurriculum ? host.OtherCourseId : host.CourseId, turma.CourseId);
         Assert.Single(await verify.AuditEntries.Where(x => x.Action == "TurnoOficialAlterado").ToListAsync());
     }
 

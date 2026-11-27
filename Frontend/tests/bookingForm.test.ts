@@ -39,19 +39,21 @@ test("recorrência começa na data escolhida e propõe apenas os dias selecionad
     assert.equal((week.match(/aria-pressed=/g) ?? []).length, 7);
     const month = renderToStaticMarkup(createElement(RepeatUntilCalendar, { start: "2026-11-11", value: "2026-11-11", weekdays: [3], today: "2026-11-11", onClose: () => {}, onConfirm: () => {} }));
     assert.match(month, /Cancelar/);
-    assert.match(month, />OK<\/button>/);
+    assert.match(month, />Aplicar data<\/button>/);
     assert.match(month, /disabled=""/);
     const { defaultNeed, NeedFields } = await server.ssrLoadModule("/src/components/NeedFields.tsx");
     assert.equal(defaultNeed.minRamGb, 0);
     const resources = renderToStaticMarkup(createElement(NeedFields, { value: { ...defaultNeed, minRamGb: 8 }, onChange: () => {}, software: [{ id: 1, name: "CAD" }], resourcePicker: true }));
-    assert.match(resources, /Adicionar recurso/);
+    assert.match(resources, /Adicionar software/);
     assert.match(resources, /Nenhum software selecionado/);
     const { ConfirmationProvider } = await server.ssrLoadModule("/src/components/UI.tsx");
     const markup = renderToStaticMarkup(createElement(ConfirmationProvider, null,
       createElement((await server.ssrLoadModule("/src/components/BookingForm.tsx")).BookingForm,
         { user: { id: "p", displayName: "Professor", email: "", roles: ["Professor"] }, onCreated: () => {} })));
-    assert.match(markup, /Turma \(opcional\)/);
-    assert.match(markup, /Atividade \/ justificativa \(obrigatória\)/);
+    assert.match(markup, /Turma/);
+    assert.match(markup, /Unidade curricular/);
+    assert.match(markup, /Capacidade \(opcional\)/);
+    assert.doesNotMatch(markup, /Atividade \/ justificativa|Vincular ao planejamento/);
     assert.match(markup, /Continuar para escolha da sala/);
   } finally { await server.close(); }
 });

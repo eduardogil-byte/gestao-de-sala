@@ -5,3 +5,5 @@
 *.ndf
 *.ldf
 *.tsbuildinfo
+.codex/
+__pycache__/

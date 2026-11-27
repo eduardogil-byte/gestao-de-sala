@@ -58,6 +58,28 @@ Este documento separa **regras confirmadas**, **propostas do coordenador** e **d
 - A operação dedicada exige confirmação e prévia atualizada, valida o turno e registra auditoria. A edição geral continua protegida contra troca direta de turno com vínculos.
 - A confirmação de turno não salva alterações de nome ou código feitas no mesmo formulário.
 
+## DC-12 — Troca de curso e módulo da turma (2026-11-26)
+
+- Pedido explícito do responsável: permitir a troca por Admin com aviso no formulário e confirmação antes de salvar, inclusive se houver reservas ou atribuições.
+- As UCs atuais passam a ser as do módulo escolhido; as capacidades continuam vinculadas às respectivas UCs do catálogo. Novas ofertas usam o padrão presencial já existente.
+- Ofertas anteriores, seus instrutores, atribuições, reservas, ocupações e planejamentos são preservados. A alteração não remaneja nem cancela registros existentes. Novos planejamentos usam o módulo atual.
+- O backend valida curso/módulo e confirmação e registra a alteração em auditoria. Nenhuma migration é necessária.
+
+## DC-13 — Continuidade da turma entre semestres (2026-11-26)
+
+- Pedido explícito do responsável: Admin pode continuar a turma em semestre posterior, inclusive no mesmo módulo, escolhendo turno e instrutores por UC.
+- Cada semestre tem um registro próprio, com identidade compartilhada e referência à turma de origem. O banco impede dois registros dessa identidade no mesmo semestre; o código da turma também mantém sua unicidade por semestre.
+- Nome, código, curso e alunos são copiados. As ofertas usam o módulo escolhido; modalidades existentes são mantidas para as mesmas UCs e novas ofertas usam o padrão presencial. Os instrutores são selecionados explicitamente e suas habilitações são validadas.
+- Reservas, ocupações, atribuições e planejamentos não são copiados nem alterados. O histórico permite consultar os registros dos outros semestres.
+- Migration `ClassContinuity` gerada com EF Core; a aplicação ao banco deve seguir o procedimento de migrations existente. `appsettings.json` preservado.
+
+## DC-14 — Edição conjunta de turno, curso e módulo (2026-11-27)
+
+- **Situação:** confirmada por pedido explícito do responsável pelo projeto.
+- Admin pode salvar turno e curso/módulo na mesma edição, com aviso e confirmação única após consultar os vínculos da turma. Essa operação também salva nome e código editados.
+- A gravação conjunta é transacional, exige confirmação de currículo e de turno, revalida a prévia dos vínculos e registra auditoria. Reservas, atribuições, ocupações, planejamentos e ofertas anteriores mantêm seus dados e horários.
+- Complementa DC-11 e DC-12: o fluxo que altera somente o turno continua dedicado e não salva nome ou código. Nenhuma migration é necessária.
+
 ## Como registrar novas decisões
 
 Acrescentar: data, ID, situação (`Confirmada`, `Proposta`, `Em aberto`), responsável pela decisão, regra, motivo e Issues afetadas. **Não mudar o status para Confirmada por dedução.**

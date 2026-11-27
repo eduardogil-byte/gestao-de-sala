@@ -21,14 +21,166 @@ namespace SalaGest.Backend.Tests;
 
 public sealed class PedagogicalBookingTests
 {
+    [Theory]
+    [InlineData("qualification-only")]
+    [InlineData("active-assignment")]
+    [InlineData("wrong-module")]
+    public async Task OfferingDoesNotBypassTeachingLinkOrActiveAssignment(string scenario)
+    {
+        await using var host = await Host.CreateAsync();
+        using (var scope = host.App.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+            var assignment = await db.Assignments.SingleAsync();
+            if (scenario == "active-assignment") assignment.TeacherId = "other";
+            else db.Assignments.Remove(assignment);
+            var group = await db.Classes.FindAsync(host.ClassId);
+            group!.ShiftId = 1;
+            if (scenario != "wrong-module")
+                group.CourseModuleId = (await db.CurricularUnits.FindAsync(host.UnitId))!.CourseModuleId;
+            if (scenario != "qualification-only")
+                db.ClassUnitOfferings.Add(new ClassUnitOffering { ClassGroupId = host.ClassId,
+                    CurricularUnitId = host.UnitId, TeacherId = "teacher", DeliveryMode = UnitDeliveryMode.Presencial });
+            else
+                db.TeacherUnitQualifications.Add(new TeacherUnitQualification {
+                    TeacherId = "teacher", CurricularUnitId = host.UnitId });
+            await db.SaveChangesAsync();
+        }
+        host.AsTeacher();
+        Assert.Empty((await host.Client.GetFromJsonAsync<List<System.Text.Json.JsonElement>>(
+            "/api/bookings/pedagogical-options"))!);
+        Assert.Equal(HttpStatusCode.Forbidden, (await host.Client.PostAsJsonAsync("/api/bookings",
+            host.Request())).StatusCode);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task OfferingTeacherCanListCreateEditAndConfirmBooking(bool admin)
+    {
+        await using var host = await Host.CreateAsync();
+        using (var scope = host.App.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+            db.Assignments.RemoveRange(await db.Assignments.ToListAsync());
+            var group = await db.Classes.FindAsync(host.ClassId);
+            group!.CourseModuleId = (await db.CurricularUnits.FindAsync(host.UnitId))!.CourseModuleId;
+            group.ShiftId = 1;
+            db.ClassUnitOfferings.Add(new ClassUnitOffering { ClassGroupId = host.ClassId,
+                CurricularUnitId = host.UnitId, TeacherId = "teacher", DeliveryMode = UnitDeliveryMode.Presencial });
+            await db.SaveChangesAsync();
+        }
+        if (admin) host.AsAdmin(); else host.AsTeacher();
+        var options = await host.Client.GetFromJsonAsync<List<System.Text.Json.JsonElement>>(
+            "/api/bookings/pedagogical-options" + (admin ? "?teacherId=teacher" : ""));
+        var option = Assert.Single(options!);
+        Assert.Equal(host.UnitId, option.GetProperty("curricularUnitId").GetInt32());
+        Assert.Equal(System.Text.Json.JsonValueKind.Null, option.GetProperty("weekday").ValueKind);
+        Assert.Single(option.GetProperty("capabilities").EnumerateArray());
+        var input = host.Request() with { TeacherId = admin ? "teacher" : null,
+            Recurrence = BookingRecurrence.Nenhuma, RepeatUntil = null, WeekdaysMask = 0 };
+        var created = await host.Client.PostAsJsonAsync("/api/bookings", input);
+        Assert.Equal(HttpStatusCode.Created, created.StatusCode);
+        var id = (await created.Content.ReadFromJsonAsync<System.Text.Json.JsonElement>()).GetProperty("id").GetInt32();
+        var listed = await host.Client.GetFromJsonAsync<List<System.Text.Json.JsonElement>>("/api/bookings");
+        var version = listed!.Single(x => x.GetProperty("id").GetInt32() == id).GetProperty("version").GetString()!;
+        Assert.Equal(HttpStatusCode.OK, (await host.Client.PutAsJsonAsync($"/api/bookings/{id}",
+            new BookingUpdate(input, version))).StatusCode);
+        Assert.Equal(HttpStatusCode.OK, (await host.Client.PostAsJsonAsync($"/api/bookings/{id}/confirm",
+            new ConfirmBooking(host.CompatibleRoomId, ExpectedAvailableDates: new List<DateOnly> { new(2027, 3, 1) }))).StatusCode);
+        host.AsOtherTeacher();
+        Assert.Empty((await host.Client.GetFromJsonAsync<List<System.Text.Json.JsonElement>>(
+            "/api/bookings/pedagogical-options"))!);
+        Assert.Equal(HttpStatusCode.Forbidden, (await host.Client.PostAsJsonAsync("/api/bookings",
+            input with { TeacherId = null })).StatusCode);
+    }
+
+    [Fact]
+    public async Task SimultaneousConfirmationsCreateOnlyOneOccupation()
+    {
+        await using var host = await Host.CreateAsync(true);
+        host.AsTeacher();
+        var input = host.Request() with { CurricularCapabilityId = null, Recurrence = BookingRecurrence.Nenhuma,
+            RepeatUntil = null, WeekdaysMask = 0, Reason = "" };
+        var ids = new List<int>();
+        for (var i = 0; i < 2; i++)
+        {
+            var created = await host.Client.PostAsJsonAsync("/api/bookings", input);
+            Assert.Equal(HttpStatusCode.Created, created.StatusCode);
+            ids.Add((await created.Content.ReadFromJsonAsync<System.Text.Json.JsonElement>()).GetProperty("id").GetInt32());
+        }
+        var responses = await Task.WhenAll(ids.Select(id => Task.Run(() => host.Client.PostAsJsonAsync(
+            $"/api/bookings/{id}/confirm", new ConfirmBooking(host.CompatibleRoomId, ExpectedAvailableDates: new List<DateOnly> { new(2027, 3, 1) })))));
+        Assert.Single(responses, r => r.StatusCode == HttpStatusCode.OK);
+        Assert.Single(responses, r => r.StatusCode == HttpStatusCode.Conflict);
+        using var scope = host.App.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+        Assert.Equal(1, await db.Occupations.CountAsync(o => o.BookingRequestId != null && ids.Contains(o.BookingRequestId.Value)));
+    }
+
+    [Theory]
+    [InlineData("room")]
+    [InlineData("teacher")]
+    [InlineData("class")]
+    public async Task ConfirmationBlocksRoomTeacherAndClassConflicts(string conflict)
+    {
+        await using var host = await Host.CreateAsync();
+        host.AsTeacher();
+        var created = await host.Client.PostAsJsonAsync("/api/bookings", host.Request() with {
+            CurricularCapabilityId = null, Recurrence = BookingRecurrence.Nenhuma, RepeatUntil = null, WeekdaysMask = 0 });
+        var id = (await created.Content.ReadFromJsonAsync<System.Text.Json.JsonElement>()).GetProperty("id").GetInt32();
+        using var scope = host.App.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+        var otherRoom = await db.Rooms.Where(r => r.Id != host.CompatibleRoomId).FirstAsync();
+        db.Occupations.Add(new RoomOccupation { RoomId = conflict == "room" ? host.CompatibleRoomId : otherRoom.Id,
+            TeacherId = conflict == "teacher" ? "teacher" : "other", ClassGroupId = conflict == "class" ? host.ClassId : null,
+            StartsAt = host.Request().StartsAt, EndsAt = host.Request().EndsAt, Kind = OccupationKind.Avulsa });
+        await db.SaveChangesAsync();
+        Assert.Equal(HttpStatusCode.Conflict, (await host.Client.PostAsJsonAsync($"/api/bookings/{id}/confirm",
+            new ConfirmBooking(host.CompatibleRoomId))).StatusCode);
+        Assert.Empty(await db.Occupations.Where(o => o.BookingRequestId == id).ToListAsync());
+    }
+
+    [Fact]
+    public async Task OptionalCapabilityRequiresClassAndUnitAndUsesCalendarWithoutWrittenReason()
+    {
+        await using var host = await Host.CreateAsync();
+        host.AsTeacher();
+        var input = host.Request() with { CurricularCapabilityId = null, Reason = "" };
+        Assert.Equal(HttpStatusCode.BadRequest, (await host.Client.PostAsJsonAsync("/api/bookings",
+            input with { ClassGroupId = null })).StatusCode);
+        Assert.Equal(HttpStatusCode.BadRequest, (await host.Client.PostAsJsonAsync("/api/bookings",
+            input with { CurricularUnitId = null })).StatusCode);
+        var created = await host.Client.PostAsJsonAsync("/api/bookings", input);
+        Assert.Equal(HttpStatusCode.Created, created.StatusCode);
+        var id = (await created.Content.ReadFromJsonAsync<System.Text.Json.JsonElement>()).GetProperty("id").GetInt32();
+        Assert.Equal(HttpStatusCode.Conflict, (await host.Client.PostAsJsonAsync($"/api/bookings/{id}/confirm",
+            new ConfirmBooking(host.CompatibleRoomId))).StatusCode);
+        Assert.Equal(HttpStatusCode.OK, (await host.Client.PostAsJsonAsync($"/api/bookings/{id}/confirm",
+            new ConfirmBooking(host.CompatibleRoomId, true, ExpectedAvailableDates: new List<DateOnly> { new(2027, 3, 1), new(2027, 3, 29) }))).StatusCode);
+        using var scope = host.App.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+        var dates = await db.Occupations.Where(o => o.BookingRequestId == id).Select(o => o.StartsAt.Day).ToListAsync();
+        Assert.Equal(new[] { 1, 29 }, dates.OrderBy(x => x));
+        Assert.Null((await db.Bookings.FindAsync(id))!.CurricularCapabilityId);
+    }
+
     [Fact]
     public async Task SpecificDates_PendingEdit_PartialConfirmation_AndTurnExceptionLimit()
     {
         await using var host = await Host.CreateAsync();
         host.AsTeacher();
+        using (var scope = host.App.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+            foreach (var day in new[] { 3, 5 })
+                db.Assignments.Add(new TeachingAssignment { TeacherId = "teacher", ClassGroupId = host.ClassId,
+                    CurricularUnitId = host.UnitId, Weekday = day, PreferredShiftId = 1 });
+            await db.SaveChangesAsync();
+        }
         var request = host.Request() with { Recurrence = BookingRecurrence.Nenhuma,
             RepeatUntil = new(2027, 3, 3), WeekdaysMask = (1 << 1) | (1 << 3),
-            CurricularUnitId = null, CurricularCapabilityId = null };
+            CurricularCapabilityId = null };
         var created = await host.Client.PostAsJsonAsync("/api/bookings", request);
         Assert.Equal(HttpStatusCode.Created, created.StatusCode);
         var id = (await created.Content.ReadFromJsonAsync<System.Text.Json.JsonElement>()).GetProperty("id").GetInt32();
@@ -44,7 +196,7 @@ public sealed class PedagogicalBookingTests
             await db.SaveChangesAsync();
         }
         Assert.Equal(HttpStatusCode.Conflict, (await host.Client.PostAsJsonAsync($"/api/bookings/{id}/confirm", new ConfirmBooking(host.CompatibleRoomId))).StatusCode);
-        Assert.Equal(HttpStatusCode.OK, (await host.Client.PostAsJsonAsync($"/api/bookings/{id}/confirm", new ConfirmBooking(host.CompatibleRoomId, true))).StatusCode);
+        Assert.Equal(HttpStatusCode.OK, (await host.Client.PostAsJsonAsync($"/api/bookings/{id}/confirm", new ConfirmBooking(host.CompatibleRoomId, true, ExpectedAvailableDates: new List<DateOnly> { new(2027, 3, 1) }))).StatusCode);
         using var check = host.App.Services.CreateScope();
         var context = check.ServiceProvider.GetRequiredService<AppDbContext>();
         Assert.Equal(new[] { 1 }, (await context.Occupations.Where(o => o.BookingRequestId == id).ToListAsync()).Select(o => o.StartsAt.Day));
@@ -55,7 +207,6 @@ public sealed class PedagogicalBookingTests
             StartsAt = new(2027, 3, 1, 13, 0, 0), EndsAt = new(2027, 3, 1, 17, 0, 0), TurnExceptionConfirmed = true })).StatusCode);
     }
     [Theory]
-    [InlineData(false)]
     [InlineData(true)]
     public async Task TechnicalException_RequiresCurrentReasons_AndAuditsBothBookingModes(bool pedagogical)
     {
@@ -278,21 +429,20 @@ public sealed class PedagogicalBookingTests
             host.Request() with { CurricularCapabilityId = 99999 })).StatusCode);
         Assert.Equal(HttpStatusCode.BadRequest, (await host.Client.PostAsJsonAsync("/api/bookings",
             host.Request() with { CurricularUnitId = 99999 })).StatusCode);
+        var owned = await host.Client.PostAsJsonAsync("/api/bookings", host.Request());
+        var otherBookingId = (await owned.Content.ReadFromJsonAsync<System.Text.Json.JsonElement>())
+            .GetProperty("id").GetInt32();
         host.AsOtherTeacher();
         Assert.Equal(HttpStatusCode.Forbidden, (await host.Client.PostAsJsonAsync("/api/bookings",
             host.Request())).StatusCode);
-        var inaccessible = await host.Client.PostAsJsonAsync("/api/bookings",
-            host.Request() with { CurricularUnitId = null, CurricularCapabilityId = null });
-        var otherBookingId = (await inaccessible.Content.ReadFromJsonAsync<System.Text.Json.JsonElement>())
-            .GetProperty("id").GetInt32();
-        host.AsTeacher();
         Assert.Equal(HttpStatusCode.Forbidden, (await host.Client.GetAsync(
             $"/api/bookings/{otherBookingId}/suggestions")).StatusCode);
         Assert.Equal(HttpStatusCode.Forbidden, (await host.Client.GetAsync(
             $"/api/bookings/{otherBookingId}/availability?roomId={host.CompatibleRoomId}")).StatusCode);
+        host.AsTeacher();
         var legacy = host.Request() with { CurricularUnitId = null, CurricularCapabilityId = null };
         var response = await host.Client.PostAsJsonAsync("/api/bookings", legacy);
-        Assert.Equal(HttpStatusCode.Created, response.StatusCode);
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
         var options = await host.Client.GetFromJsonAsync<List<System.Text.Json.JsonElement>>(
             "/api/bookings/pedagogical-options");
         var option = Assert.Single(options!);
@@ -408,14 +558,19 @@ public sealed class PedagogicalBookingTests
         private Host(WebApplication app, SqliteConnection connection)
         { App = app; this.connection = connection; Client = app.GetTestClient(); }
 
-        public static async Task<Host> CreateAsync()
+        public static async Task<Host> CreateAsync(bool independentConnections = false)
         {
-            var connection = new SqliteConnection("Data Source=:memory:");
+            var connection = new SqliteConnection(independentConnections
+                ? $"Data Source={Path.Combine(Path.GetTempPath(), $"salagest-reservas-{Guid.NewGuid():N}.db")};Pooling=False"
+                : "Data Source=:memory:");
             await connection.OpenAsync();
             var builder = WebApplication.CreateBuilder();
             builder.WebHost.UseTestServer();
             builder.Logging.ClearProviders();
-            builder.Services.AddDbContext<AppDbContext>(o => o.UseSqlite(connection));
+            builder.Services.AddDbContext<AppDbContext>(o => {
+                if (independentConnections) o.UseSqlite(connection.ConnectionString);
+                else o.UseSqlite(connection);
+            });
             builder.Services.AddIdentityCore<AppUser>().AddRoles<IdentityRole>()
                 .AddEntityFrameworkStores<AppDbContext>().AddSignInManager();
             builder.Services.AddAuthentication("Test")
@@ -428,8 +583,11 @@ public sealed class PedagogicalBookingTests
             using var scope = app.Services.CreateScope();
             var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
             await db.Database.EnsureCreatedAsync();
-            db.Users.AddRange(new AppUser { Id = "teacher", UserName = "teacher" },
+            db.Users.AddRange(new AppUser { Id = "admin", UserName = "admin" },
+                new AppUser { Id = "teacher", UserName = "teacher" },
                 new AppUser { Id = "other", UserName = "other" });
+            db.Roles.Add(new IdentityRole { Id = "professor-role", Name = "Professor", NormalizedName = "PROFESSOR" });
+            db.UserRoles.Add(new IdentityUserRole<string> { UserId = "teacher", RoleId = "professor-role" });
             var semester = new Semester { Name = "2027.1", StartDate = new DateOnly(2027, 3, 1),
                 EndDate = new DateOnly(2027, 3, 31) };
             var shift = new SchoolShift { Name = "Manhã", StartsAt = new TimeOnly(8, 0), EndsAt = new TimeOnly(12, 0) };
@@ -477,10 +635,15 @@ public sealed class PedagogicalBookingTests
             WeekdaysMask: 2, CurricularUnitId: UnitId, CurricularCapabilityId: CapabilityId);
         public void AsTeacher() => SetRole("teacher");
         public void AsOtherTeacher() => SetRole("other");
+        public void AsAdmin() => SetRole("admin");
         private void SetRole(string id)
         { Client.DefaultRequestHeaders.Remove("X-Test-User"); Client.DefaultRequestHeaders.Add("X-Test-User", id); }
         public async ValueTask DisposeAsync()
-        { Client.Dispose(); await App.DisposeAsync(); await connection.DisposeAsync(); }
+        {
+            var path = connection.DataSource;
+            Client.Dispose(); await App.DisposeAsync(); await connection.DisposeAsync();
+            if (!string.IsNullOrEmpty(path) && path != ":memory:") File.Delete(path);
+        }
     }
 
     private sealed class HeaderAuthHandler(IOptionsMonitor<AuthenticationSchemeOptions> options,
@@ -491,7 +654,7 @@ public sealed class PedagogicalBookingTests
             if (!Request.Headers.TryGetValue("X-Test-User", out var id))
                 return Task.FromResult(AuthenticateResult.NoResult());
             var identity = new ClaimsIdentity(new[] { new Claim(ClaimTypes.NameIdentifier, id.ToString()),
-                new Claim(ClaimTypes.Role, "Professor") }, "Test");
+                new Claim(ClaimTypes.Role, id == "admin" ? "Admin" : "Professor") }, "Test");
             return Task.FromResult(AuthenticateResult.Success(new AuthenticationTicket(new ClaimsPrincipal(identity), "Test")));
         }
     }

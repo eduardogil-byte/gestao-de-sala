@@ -9,8 +9,8 @@ import type { Booking, Need, Shift, User } from "../types";
 
 type PedagogicalOption = {
   classGroupId: number; className: string; students: number;
-  curricularUnitId: number; unitName: string; weekday: number;
-  preferredShiftId: number; qualificationWarning: boolean;
+  curricularUnitId: number; unitName: string; weekday: number | null;
+  preferredShiftId: number | null; qualificationWarning: boolean;
   capabilities: { id: number; description: string }[];
 };
 
@@ -37,7 +37,10 @@ export function actualDates(from: string, to: string, days: number[]) {
     if (days.includes(asDay(d))) found.push(d);
   return found;
 }
-export function BookingForm({ onCreated, onSaved, editing, user }: { onCreated: (id: number, qualificationWarning: boolean) => void; onSaved?: () => void; editing?: Booking; user: User }) {
+export function BookingForm({ onCreated, onSaved, onCancel, onStateChange, editing, user }: {
+  onCreated: (id: number, qualificationWarning: boolean) => void; onSaved?: () => void; onCancel?: () => void;
+  onStateChange?: (state: { dirty: boolean; busy: boolean }) => void; editing?: Booking; user: User;
+}) {
   const confirm = useConfirmation();
   const { data, reload } = useData();
   const admin = user.roles.includes("Admin");
@@ -48,7 +51,7 @@ export function BookingForm({ onCreated, onSaved, editing, user }: { onCreated: 
     ? actualDates(editing.startsAt.slice(0, 10), editing.repeatUntil, [0,1,2,3,4,5,6].filter(d => (editing.weekdaysMask & (1 << d)) !== 0))
     : [editing?.startsAt.slice(0, 10) ?? today]);
   const [shiftId, setShiftId] = useState("");
-  const [reason, setReason] = useState(editing?.reason ?? "");
+  const reason = editing?.reason ?? "Aula";
   const [students, setStudents] = useState(editing?.students ?? 25);
   const [recurring, setRecurring] = useState(editing?.recurrence === "Semanal");
   const [weekdays, setWeekdays] = useState<number[]>(editing?.recurrence === "Semanal" ? [0, 1, 2, 3, 4, 5, 6].filter((day) => (editing.weekdaysMask & (1 << day)) !== 0) : [asDay(editing?.startsAt.slice(0, 10) ?? today)]);
@@ -57,7 +60,7 @@ export function BookingForm({ onCreated, onSaved, editing, user }: { onCreated: 
   const [eadDay, setEadDay] = useState(editing?.recurringEadWeekday == null ? "" : String(editing.recurringEadWeekday));
   const [perComputer, setPerComputer] = useState(editing?.studentsPerComputer ?? 1);
   const [classGroupId, setClassGroupId] = useState(editing?.classGroupId == null ? "" : String(editing.classGroupId));
-  const [pedagogical, setPedagogical] = useState(editing?.curricularUnitId != null);
+  const pedagogical = true;
   const [unitId, setUnitId] = useState(editing?.curricularUnitId == null ? "" : String(editing.curricularUnitId));
   const [capabilityId, setCapabilityId] = useState(editing?.curricularCapabilityId == null ? "" : String(editing.curricularCapabilityId));
   const [options, setOptions] = useState<PedagogicalOption[]>([]);
@@ -69,6 +72,8 @@ export function BookingForm({ onCreated, onSaved, editing, user }: { onCreated: 
   const officialShift = data.classes.find((group) => group.id === Number(classGroupId))?.shiftId;
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const [dirty, setDirty] = useState(false);
+  useEffect(() => { onStateChange?.({ dirty, busy }); }, [dirty, busy, onStateChange]);
   const classAssignments = data.assignments.filter((assignment) => assignment.classGroupId === Number(classGroupId) &&
     assignment.teacherId === (admin ? teacherId : user.id) && assignment.endedAtUtc == null &&
     (!pedagogical || !unitId || assignment.curricularUnitId === Number(unitId)));
@@ -100,12 +105,14 @@ export function BookingForm({ onCreated, onSaved, editing, user }: { onCreated: 
     setShiftId(next);
   }
   useEffect(() => {
-    if (!pedagogical || (admin && !teacherId)) { setOptions([]); return; }
+    if (!pedagogical || (admin && !teacherId)) { setOptions([]); setOptionsBusy(false); return; }
+    let active = true;
     setOptionsError("");
     setOptionsBusy(true);
     void read<PedagogicalOption[]>(`/bookings/pedagogical-options${admin ? `?teacherId=${encodeURIComponent(teacherId)}` : ""}`)
-      .then(setOptions).catch((e) => setOptionsError(resultMessage(e)))
-      .finally(() => setOptionsBusy(false));
+      .then((rows) => { if (active) setOptions(rows); }).catch((e) => { if (active) setOptionsError(resultMessage(e)); })
+      .finally(() => { if (active) setOptionsBusy(false); });
+    return () => { active = false; };
   }, [pedagogical, admin, teacherId]);
   const classOptions = options.filter((x) => String(x.classGroupId) === classGroupId);
   const units = classOptions.filter((x, i, all) =>
@@ -113,6 +120,24 @@ export function BookingForm({ onCreated, onSaved, editing, user }: { onCreated: 
   const selectedUnit = classOptions.find((x) => String(x.curricularUnitId) === unitId);
   const unitAssignments = classOptions.filter((x) => String(x.curricularUnitId) === unitId);
   const selectedUnitDay = uniqueShift(unitAssignments.map((x) => x.weekday));
+  useEffect(() => {
+    if (editing) return;
+    const classes = [...new Set(options.map((item) => item.classGroupId))];
+    if (!classGroupId && classes.length === 1) setClassGroupId(String(classes[0]));
+    if (classGroupId) {
+      const group = data.classes.find((item) => String(item.id) === classGroupId);
+      if (group) setStudents(group.students);
+      if (!unitId && units.length === 1) setUnitId(String(units[0].curricularUnitId));
+    }
+    if (selectedUnit) {
+      applyClassShift(classGroupId, unitId);
+      if (selectedUnitDay != null) {
+        const assignedDate = firstSelected(date, [selectedUnitDay]);
+        setDate(assignedDate); setSelectedDates([assignedDate]); setWeekdays([selectedUnitDay]);
+        if (repeatUntil < assignedDate) setRepeatUntil(assignedDate);
+      }
+    }
+  }, [options, classGroupId, unitId]);
   const start =
     recurring && weekdays.length ? firstSelected(date, weekdays) : selectedDates[0] ?? date;
   const dates = useMemo(
@@ -140,8 +165,8 @@ export function BookingForm({ onCreated, onSaved, editing, user }: { onCreated: 
       setError("Selecione dias e um término válido para a recorrência.");
       return;
     }
-    if (pedagogical && (!classGroupId || !unitId || !capabilityId)) {
-      setError("Selecione turma, UC e capacidade para a reserva pedagógica.");
+    if (pedagogical && (!classGroupId || !unitId)) {
+      setError("Selecione turma e UC.");
       return;
     }
     if (officialShift != null && shift.id !== officialShift && (!exceptionConfirmed || recurring || dates.length !== 1)) {
@@ -153,7 +178,7 @@ export function BookingForm({ onCreated, onSaved, editing, user }: { onCreated: 
         teacherId: admin ? teacherId : null,
         classGroupId: classGroupId ? Number(classGroupId) : null,
         curricularUnitId: pedagogical ? Number(unitId) : null,
-        curricularCapabilityId: pedagogical ? Number(capabilityId) : null,
+        curricularCapabilityId: capabilityId ? Number(capabilityId) : null,
         startsAt: `${start}T${shift.startsAt.slice(0, 8)}`,
         endsAt: `${start}T${shift.endsAt.slice(0, 8)}`,
         students,
@@ -167,8 +192,7 @@ export function BookingForm({ onCreated, onSaved, editing, user }: { onCreated: 
         reason,
         lessonPlanLink: lessonPlanLink || null,
         turnExceptionConfirmed: exceptionConfirmed,
-        ...(pedagogical ? defaultNeed :
-          !need.needsStudentComputers && need.softwareIds.length === 0
+        ...(!need.needsStudentComputers && need.softwareIds.length === 0
             ? { ...need, minRamGb: 0, minTier: "Basico", needsDedicatedGpu: false }
             : need),
       };
@@ -184,27 +208,32 @@ export function BookingForm({ onCreated, onSaved, editing, user }: { onCreated: 
       setBusy(false);
     }
   }
+  const resourceSummary = [need.needsProjector && "Projetor", need.needsTeacherComputer && "Computador do instrutor",
+    need.needsStudentComputers && "Computadores para alunos",
+    (need.needsStudentComputers || need.softwareIds.length > 0) && need.minRamGb > 0 && `${need.minRamGb} GB RAM`,
+    (need.needsStudentComputers || need.softwareIds.length > 0) && need.needsDedicatedGpu && "GPU dedicada",
+    ...need.softwareIds.map(id => data.software.find(item => item.id === id)?.name ?? "Software selecionado")].filter(Boolean).join(", ");
   return (
-    <form onSubmit={submit} className="space-y-5">
+    <form onSubmit={submit} onChange={(event) => { if ((event.target as HTMLInputElement).type !== "search") setDirty(true); }} className="space-y-5 [&_input]:scroll-mb-32 [&_select]:scroll-mb-32 [&_summary]:scroll-mb-32 [&_button]:scroll-mb-32">
       {error && <Notice message={error} />}
-      {admin && <Field label="Instrutor responsável">
-        <select className="field" required value={teacherId} onChange={(e) => {
-          setTeacherId(e.target.value); setClassGroupId(""); setUnitId(""); setCapabilityId(""); setExceptionConfirmed(false); setShiftId("");
-        }}>
-          <option value="">Selecione um instrutor</option>
-          {data.teachers.map((teacher) => <option key={teacher.id} value={teacher.id}>{teacher.displayName}</option>)}
-        </select>
-      </Field>}
-      <Checkbox label="Vincular ao planejamento pedagógico" checked={pedagogical}
-        onChange={(value) => { setPedagogical(value); setClassGroupId(""); setUnitId(""); setCapabilityId(""); setExceptionConfirmed(false); setShiftId(""); }} />
-      <p className="text-xs text-muted-ink">Reserva comum: turma opcional e requisitos informados aqui. Planejamento pedagógico: exige atribuição ativa, turma, UC e capacidade; os requisitos técnicos vêm da capacidade.</p>
+      <fieldset disabled={busy} className="space-y-5">
+      <section aria-label="Turma e atividade" className="space-y-3">
+      <h3 className="font-semibold text-ink">Turma e atividade</h3>
+      {admin && <SearchableSelect label="Instrutor responsável" required value={teacherId}
+        options={[{ value: "", label: "Selecione um instrutor" }, ...data.teachers.map((teacher) => ({ value: teacher.id, label: teacher.displayName }))]}
+        onChange={(value) => {
+          setTeacherId(value); setOptions([]); setClassGroupId(""); setUnitId(""); setCapabilityId(""); setExceptionConfirmed(false); setShiftId("");
+        }} />}
       {pedagogical && optionsBusy && <p className="text-sm text-slate-500">Carregando atribuições...</p>}
       {pedagogical && optionsError && <Notice message={optionsError} />}
-      {pedagogical && !optionsBusy && options.length === 0 && !optionsError &&
-        <Notice type="info" message="Não há turmas e UCs atribuídas ao seu perfil." />}
+      {pedagogical && (!admin || teacherId) && !optionsBusy && options.length === 0 && !optionsError &&
+        <Notice type="info" message={admin
+          ? "Não há turmas e UCs vinculadas ao instrutor selecionado. Defina o responsável pela UC na turma."
+          : "Não há turmas e UCs vinculadas ao seu perfil. Solicite o vínculo ao administrador."} />}
       <div className="grid sm:grid-cols-2 gap-3">
-        <SearchableSelect label={pedagogical ? "Turma obrigatória" : "Turma (opcional)"}
+        <SearchableSelect label="Turma"
           value={classGroupId} required={pedagogical}
+          disabled={optionsBusy || !!optionsError || (admin && !teacherId)}
           onChange={(value) => {
               setClassGroupId(value);
               setUnitId(""); setCapabilityId("");
@@ -217,12 +246,8 @@ export function BookingForm({ onCreated, onSaved, editing, user }: { onCreated: 
               ...(pedagogical ? data.classes.filter((c) => options.some((x) => x.classGroupId === c.id)) : data.classes)
                 .map((c) => ({ value: String(c.id), label: [c.code, c.name,
                   data.shifts.find((s) => s.id === c.shiftId)?.name].filter(Boolean).join(" · ") }))]} />
-        <Field label="Atividade / justificativa (obrigatória)">
-          <input className="field" required maxLength={250} value={reason}
-            onChange={(e) => setReason(e.target.value)} placeholder="Ex.: Prática de SolidWorks" />
-        </Field>
         {pedagogical && <Field label="Unidade curricular">
-          <select className="field" required value={unitId} onChange={(e) => {
+          <select className="field" required value={unitId} disabled={!classGroupId || optionsBusy || !!optionsError} onChange={(e) => {
             setUnitId(e.target.value); setCapabilityId("");
             applyClassShift(classGroupId, e.target.value);
             const assignments = classOptions.filter((x) => String(x.curricularUnitId) === e.target.value);
@@ -240,27 +265,19 @@ export function BookingForm({ onCreated, onSaved, editing, user }: { onCreated: 
             {units.map((x) => <option key={x.curricularUnitId} value={x.curricularUnitId}>{x.unitName}</option>)}
           </select>
         </Field>}
-        {pedagogical && <Field label="Capacidade">
-          <select className="field" required value={capabilityId} onChange={(e) => setCapabilityId(e.target.value)}>
-            <option value="">Selecione uma capacidade</option>
+        {pedagogical && <Field label="Capacidade (opcional)">
+          <select className="field" value={capabilityId} disabled={!selectedUnit} onChange={(e) => setCapabilityId(e.target.value)}>
+            <option value="">Sem capacidade específica</option>
             {selectedUnit?.capabilities.map((x) => <option key={x.id} value={x.id}>{x.description}</option>)}
           </select>
         </Field>}
         {pedagogical && selectedUnit?.qualificationWarning &&
           <Notice type="info" message="Habilitação para esta UC não cadastrada no perfil. A reserva pode prosseguir." />}
-        {pedagogical && selectedUnit &&
-          <p className="text-xs text-muted-ink">{selectedUnitDay == null ? "Há mais de um dia atribuído; selecione a data e o turno correspondentes." : `Dia atribuído: ${names[selectedUnitDay]}; use o turno correspondente.`}</p>}
-        <Field label="Alunos">
-          <input
-            className="field"
-            type="number"
-            required
-            min="1"
-            max="500"
-            value={students}
-            onChange={(e) => setStudents(Number(e.target.value))}
-          />
-        </Field>
+        <p className="self-end py-2 text-sm text-muted-ink">Alunos: <strong className="font-medium text-ink">{classGroupId ? students : "Selecione uma turma"}</strong></p>
+      </div>
+      </section>
+      <section aria-label="Datas e turno" className="space-y-3">
+        <h3 className="font-semibold text-ink">Datas e turno</h3>
         <Field label="Turno completo">
           <select
             className="field"
@@ -277,7 +294,13 @@ export function BookingForm({ onCreated, onSaved, editing, user }: { onCreated: 
           </select>
         </Field>
         {classGroupId && <p className="text-xs text-muted-ink sm:col-span-2">{officialShift == null ? "Turno oficial não cadastrado para esta turma. Solicite regularização à administração." : `Turno oficial da turma: ${data.shifts.find((item) => item.id === officialShift)?.name ?? "não identificado"}.`}{exceptionConfirmed ? " Exceção confirmada somente para esta data." : ""}</p>}
-        <WeeklyCalendar selectedDates={selectedDates} date={date} weekdays={weekdays} recurring={recurring} today={today} onSelect={(selected) => {
+        {selectedUnit && <p className="text-sm text-muted-ink">{selectedUnitDay == null
+          ? unitAssignments.every((item) => item.weekday == null) ? "Selecione as datas da reserva." : "Há mais de um dia atribuído; selecione as datas correspondentes."
+          : `Dia atribuído: ${names[selectedUnitDay]}.`}</p>}
+        <WeeklyCalendar selectedDates={selectedDates} date={date} weekdays={weekdays} recurring={recurring} today={today} onSelect={async (selected) => {
+          if (!recurring && selectedDates.length > 0 && weekStart(selectedDates[0]) !== weekStart(selected) &&
+            !await confirm({ title: "Substituir as datas selecionadas?", message: "As datas avulsas são selecionadas em uma semana por vez. Ao escolher esta data, a seleção da semana anterior será substituída.", confirmLabel: "Substituir datas" })) return;
+          setDirty(true);
           if (recurring) {
             const selectedDay = asDay(selected);
             const next = weekdays.includes(selectedDay) ? weekdays.filter((item) => item !== selectedDay) : [...weekdays, selectedDay];
@@ -294,17 +317,16 @@ export function BookingForm({ onCreated, onSaved, editing, user }: { onCreated: 
           if (repeatUntil < selected) setRepeatUntil(selected);
           if (repeatUntil > recurrenceLimit(selected)) setRepeatUntil(recurrenceLimit(selected));
         }} />
-      </div>
       {!recurring && <p className="text-sm text-muted-ink" role="status">Datas selecionadas: {selectedDates.length ? selectedDates.map(dateBR).join(", ") : "Nenhuma"}. Ao selecionar uma data em outra semana, a seleção anterior é substituída.</p>}
       <Checkbox
-        label="Repetir em outras semanas"
+        label="Repetir semanalmente"
         checked={recurring}
         onChange={(value) => { if (value && exceptionConfirmed) { setError("Exceção de turno não pode ser recorrente. Volte ao turno oficial para repetir."); return; } if (!value) setSelectedDates([date]); setRecurring(value); }}
       />
       {recurring && (
-        <div className="bg-slate-50 rounded-xl border border-slate-200 p-4 space-y-3">
-          <button type="button" className="field text-left" aria-label="Manter esta alocação até" aria-haspopup="dialog" onClick={() => setUntilOpen(true)}>
-            <span className="field-label !mb-0">Manter esta alocação até</span>{dateBR(repeatUntil)}
+        <div className="bg-surface rounded-xl border border-line p-4 space-y-3">
+          <button type="button" className="field text-left" aria-label="Repetir até" aria-haspopup="dialog" onClick={() => setUntilOpen(true)}>
+            <span className="field-label !mb-0">Repetir até</span>{dateBR(repeatUntil)}
           </button>
           <Field label="Dia com EAD semanal (opcional)">
             <select
@@ -320,7 +342,7 @@ export function BookingForm({ onCreated, onSaved, editing, user }: { onCreated: 
               ))}
             </select>
           </Field>
-          <p className="text-xs text-slate-600" role="status">
+          <p className="text-xs text-muted-ink" role="status">
             {dates.length} data(s) solicitada(s). A disponibilidade será verificada após escolher a sala. {" "}
             {dates.length > 0
               ? `Primeira: ${dateBR(dates[0])}. Última: ${dateBR(dates[dates.length - 1])}.`
@@ -329,10 +351,13 @@ export function BookingForm({ onCreated, onSaved, editing, user }: { onCreated: 
         </div>
       )}
       {untilOpen && <RepeatUntilCalendar start={start} value={repeatUntil} weekdays={weekdays} today={today}
-        onClose={() => setUntilOpen(false)} onConfirm={(selected) => { setRepeatUntil(selected); setUntilOpen(false); }} />}
-      {pedagogical ? <Notice type="info" message="Os requisitos técnicos desta capacidade serão consultados no Catálogo Pedagógico." /> : <div className="border-t pt-4 space-y-3">
-        <h3 className="font-semibold text-sm">Recursos necessários</h3>
-        <NeedFields value={need} onChange={setNeed} software={data.software} resourcePicker />
+        onClose={() => setUntilOpen(false)} onConfirm={(selected) => { setDirty(true); setRepeatUntil(selected); setUntilOpen(false); }} />}
+      </section>
+      <section aria-label="Recursos e plano de ensino" className="space-y-2">
+      <h3 className="font-semibold text-ink">Recursos necessários</h3>
+      <p className="text-sm text-muted-ink">{resourceSummary || "Nenhum recurso adicional selecionado."}</p>
+      <details><summary className="min-h-11 cursor-pointer rounded py-3 text-sm font-medium text-ink">Editar recursos e plano de ensino</summary><div className="border-t border-line pt-4 space-y-3">
+        <NeedFields value={need} onChange={(value) => { setDirty(true); setNeed(value); }} software={data.software} resourcePicker />
         {(need.needsStudentComputers || need.softwareIds.length > 0) && (
           <Field label="Alunos por computador (1, dupla ou grupo)">
             <input
@@ -345,7 +370,7 @@ export function BookingForm({ onCreated, onSaved, editing, user }: { onCreated: 
             />
           </Field>
         )}
-      </div>}
+      </div>
       <Field label="Link do plano de ensino (opcional)">
         <input
           type="url"
@@ -355,10 +380,14 @@ export function BookingForm({ onCreated, onSaved, editing, user }: { onCreated: 
           onChange={(e) => setLessonPlanLink(e.target.value)}
         />
       </Field>
+      </details>
+      </section>
       <p className="text-xs text-muted-ink">{editing ? "Ao salvar, consulte novamente a disponibilidade antes de confirmar a sala." : "Após criar a solicitação, escolha uma sala e confira as datas elegíveis antes de confirmar."}</p>
-      <div className="sticky bottom-0 z-10 flex justify-end border-t border-line bg-surface py-3">
+      <div className={`sticky bottom-0 z-10 gap-2 border-t border-line bg-surface py-3 ${onCancel ? "grid grid-cols-[auto_minmax(0,1fr)] sm:flex sm:justify-end" : "flex justify-end"}`}>
+        {onCancel && <button type="button" className="btn-secondary" disabled={busy} onClick={onCancel}>Cancelar</button>}
         <SubmitButton busy={busy}>{editing ? "Salvar alterações" : "Continuar para escolha da sala"}</SubmitButton>
       </div>
+      </fieldset>
     </form>
   );
 }

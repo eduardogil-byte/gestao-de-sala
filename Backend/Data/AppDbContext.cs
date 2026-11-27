@@ -115,6 +115,10 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : Ident
         b.Entity<ClassGroup>().Property(x => x.Name).HasMaxLength(100);
         b.Entity<ClassGroup>().Property(x => x.Code).HasMaxLength(30);
         b.Entity<ClassGroup>().Property(x => x.NormalizedCode).HasMaxLength(30);
+        b.Entity<ClassGroup>().Property(x => x.ContinuityId).HasDefaultValueSql("NEWID()");
+        b.Entity<ClassGroup>().HasIndex(x => new { x.ContinuityId, x.SemesterId }).IsUnique();
+        b.Entity<ClassGroup>().HasOne<ClassGroup>().WithMany()
+            .HasForeignKey(x => x.PreviousClassGroupId).OnDelete(DeleteBehavior.Restrict);
         b.Entity<ClassGroup>().HasOne(x => x.Shift).WithMany()
             .HasForeignKey(x => x.ShiftId).OnDelete(DeleteBehavior.Restrict);
         b.Entity<ClassGroup>().HasIndex(x => new { x.SemesterId, x.NormalizedCode }).IsUnique()

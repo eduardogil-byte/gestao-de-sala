@@ -25,6 +25,7 @@ public static partial class ApiEndpoints
         MapCurricularUnitResources(app);
         MapClassUnitOfferings(app);
         MapClassShiftChange(app);
+        MapClassContinuation(app);
         MapCurricularWorkload(app);
         MapTeacherPedagogicalProfiles(app);
         MapAssignments(app);
@@ -393,13 +394,44 @@ public static partial class ApiEndpoints
             var item = await db.Classes.FindAsync(id);
             if (item is null) return Results.NotFound();
             var oldShiftId = item.ShiftId;
+            var oldCourseId = item.CourseId;
+            var oldModuleId = item.CourseModuleId;
+            ClassShiftChangePreview? shiftPreview = null;
+            var curriculumChanged = (input.CourseId is not null && input.CourseId != item.CourseId) ||
+                (input.CourseModuleId is not null && input.CourseModuleId != item.CourseModuleId);
+            if (curriculumChanged)
+            {
+                if (!input.CurriculumChangeConfirmed)
+                    return Error("Confirme a alteração de curso ou módulo. Os vínculos anteriores serão preservados.");
+                if (input.CourseId is not int courseId || input.CourseModuleId is not int moduleId ||
+                    !await db.CourseModules.AnyAsync(m => m.Id == moduleId && m.CourseId == courseId))
+                    return Error("Selecione um curso e um módulo pertencente a ele.");
+                var unitIds = await db.CurricularUnits.Where(u => u.CourseModuleId == moduleId)
+                    .Select(u => u.Id).ToListAsync();
+                var offeredIds = await db.ClassUnitOfferings.Where(o => o.ClassGroupId == id)
+                    .Select(o => o.CurricularUnitId).ToListAsync();
+                // Ofertas anteriores permanecem para consulta e eventual retorno ao módulo.
+                db.ClassUnitOfferings.AddRange(unitIds.Except(offeredIds).Select(unitId =>
+                    new ClassUnitOffering { ClassGroupId = id, CurricularUnitId = unitId,
+                        DeliveryMode = UnitDeliveryMode.Presencial }));
+                item.CourseId = courseId;
+                item.CourseModuleId = moduleId;
+            }
             if (string.IsNullOrWhiteSpace(input.Name) || input.Name.Trim().Length > 100 ||
                 (input.Code?.Trim().Length ?? 0) > 30)
                 return Error("Informe nome de até 100 caracteres e código de até 30 caracteres.");
             if (input.ShiftId is int newShiftId && newShiftId != item.ShiftId)
             {
                 if (!await db.Shifts.AnyAsync(s => s.Id == newShiftId)) return Error("Turno não encontrado");
-                if (await db.Assignments.AnyAsync(a => a.ClassGroupId == id) ||
+                if (curriculumChanged)
+                {
+                    if (!input.ShiftChangeConfirmed || string.IsNullOrWhiteSpace(input.ShiftPreviewToken))
+                        return Error("Consulte os vínculos e confirme explicitamente a mudança de turno.");
+                    shiftPreview = await PreviewClassShift(db, item, newShiftId);
+                    if (shiftPreview.PreviewToken != input.ShiftPreviewToken)
+                        return Results.Conflict(new ApiError("O turno ou os vínculos da turma mudaram. Cancele e consulte novamente antes de confirmar."));
+                }
+                else if (await db.Assignments.AnyAsync(a => a.ClassGroupId == id) ||
                     await db.Bookings.AnyAsync(b => b.ClassGroupId == id) ||
                     await db.Occupations.AnyAsync(o => o.ClassGroupId == id) ||
                     await db.ScheduleUnitPlans.AnyAsync(p => p.ClassGroupId == id &&
@@ -412,12 +444,16 @@ public static partial class ApiEndpoints
             if (!string.IsNullOrEmpty(normalizedCode) && await db.Classes.AnyAsync(c => c.Id != id &&
                 c.SemesterId == item.SemesterId && c.NormalizedCode == normalizedCode))
                 return Results.Conflict(new ApiError("Já existe uma turma com este código no semestre."));
-            var before = new { item.Name, item.Code, ShiftId = oldShiftId };
+            var before = new { item.Name, item.Code, ShiftId = oldShiftId,
+                CourseId = oldCourseId, CourseModuleId = oldModuleId };
             item.Name = input.Name.Trim();
             item.Code = string.IsNullOrWhiteSpace(input.Code) ? null : input.Code.Trim();
             item.NormalizedCode = normalizedCode;
             AuditTrail.Add(db, "ClassGroup", id.ToString(), "Alterada", UserId(current), before,
-                new { item.Name, item.Code, item.ShiftId });
+                new { item.Name, item.Code, item.ShiftId, item.CourseId, item.CourseModuleId });
+            if (shiftPreview is not null)
+                AuditTrail.Add(db, "ClassGroup", id.ToString(), "TurnoOficialAlterado", UserId(current),
+                    new { ShiftId = oldShiftId }, new { item.ShiftId, Confirmed = true, shiftPreview.Links });
             await db.SaveChangesAsync();
             await shiftTx.CommitAsync();
             return Results.NoContent();

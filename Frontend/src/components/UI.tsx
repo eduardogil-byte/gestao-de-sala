@@ -99,23 +99,24 @@ export function Field({
     </label>
   );
 }
-export function SearchableSelect({ label, options, value, onChange, searchThreshold = 12, required = false }: {
+export function SearchableSelect({ label, options, value, onChange, searchThreshold = 12, required = false, disabled = false }: {
   label: string;
   options: { value: string; label: string }[];
   value: string;
   onChange: (value: string) => void;
   searchThreshold?: number;
   required?: boolean;
+  disabled?: boolean;
 }) {
   const [search, setSearch] = useState("");
   const query = search.trim().toLocaleLowerCase("pt-BR");
   const visible = options.filter((option) => option.value === value || option.label.toLocaleLowerCase("pt-BR").includes(query));
   return <div className="space-y-2">
     {options.length > searchThreshold && <Field label={`Buscar ${label.toLocaleLowerCase("pt-BR")}`}>
-      <input className="field" type="search" value={search} onChange={(event) => setSearch(event.target.value)} />
+      <input className="field" type="search" disabled={disabled} value={search} onChange={(event) => setSearch(event.target.value)} />
     </Field>}
     <Field label={label}>
-      <select className="field" value={value} required={required} onChange={(event) => onChange(event.target.value)}>
+      <select className="field" value={value} required={required} disabled={disabled} onChange={(event) => onChange(event.target.value)}>
         {visible.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
       </select>
     </Field>
@@ -147,7 +148,7 @@ export function Checkbox({
     </label>
   );
 }
-export function Badge({ status }: { status: string }) {
+export function Badge({ status, label }: { status: string; label?: string }) {
   const positive = ["Aprovada", "Aprovado", "Publicada", "Ativa"].includes(
     status,
   );
@@ -160,7 +161,7 @@ export function Badge({ status }: { status: string }) {
         aria-hidden="true"
         className={`w-1.5 h-1.5 rounded-full ${positive ? "bg-emerald-500" : negative ? "bg-red-500" : "bg-amber-500"}`}
       />
-      {statusText(status)}
+      {label ?? statusText(status)}
     </span>
   );
 }
@@ -239,7 +240,7 @@ export function Modal({
       : null;
     const dialog = dialogRef.current;
     const focusable = () => Array.from(dialog?.querySelectorAll<HTMLElement>(
-      'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])',
+      'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), summary, [tabindex]:not([tabindex="-1"])',
     ) ?? []).filter((element) => element.getClientRects().length > 0);
     const firstField = dialog?.querySelector<HTMLElement>(
       'input:not([disabled]), select:not([disabled]), textarea:not([disabled])',

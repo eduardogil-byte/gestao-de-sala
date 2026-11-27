@@ -135,6 +135,8 @@ public sealed class SchoolShift
 public sealed class ClassGroup
 {
     public int Id { get; set; }
+    public Guid ContinuityId { get; set; } = Guid.NewGuid();
+    public int? PreviousClassGroupId { get; set; }
     public string? Code { get; set; }
     public string? NormalizedCode { get; set; }
     public int SemesterId { get; set; }
