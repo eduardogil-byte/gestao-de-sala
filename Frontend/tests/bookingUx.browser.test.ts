@@ -6,9 +6,16 @@ test("datas específicas podem ser marcadas, desmarcadas e enviadas sem recorrê
   const { evaluate, waitFor, close } = await openAdminFixture("bookingUx");
   try {
     await waitFor("document.querySelector('select')?.options.length > 1");
-    await evaluate("adminTest.select('Turma obrigatória', '20')");
+    await evaluate("adminTest.select('Turma', '20')");
+    const before = await evaluate("[...document.querySelectorAll('p[role=status]')].find(p=>p.textContent.startsWith('Datas selecionadas')).textContent");
     await evaluate("document.querySelector('button[aria-label=\"Próxima semana\"]').click()");
     await evaluate("document.querySelector('[aria-label=\"Calendário semanal\"] button[aria-pressed]').click()");
+    await waitFor("document.querySelectorAll('[role=dialog]').length === 2");
+    await evaluate("adminTest.click('Cancelar')");
+    assert.equal(await evaluate("[...document.querySelectorAll('p[role=status]')].find(p=>p.textContent.startsWith('Datas selecionadas')).textContent"), before);
+    await evaluate("document.querySelector('[aria-label=\"Calendário semanal\"] button[aria-pressed]').click()");
+    await waitFor("document.querySelectorAll('[role=dialog]').length === 2");
+    await evaluate("adminTest.click('Substituir datas')");
     const freeDay = "document.querySelector('[aria-label=\"Calendário semanal\"] button[aria-pressed=false]:not([disabled])')";
     await evaluate(`${freeDay}.click()`);
     assert.equal(await evaluate("document.querySelectorAll('[aria-label=\"Calendário semanal\"] [aria-pressed=true]').length"), 2);
@@ -31,7 +38,7 @@ test("reserva: turno, calendários, recursos e modal móvel", { skip: !chromePat
   const { evaluate, waitFor, command } = browser;
   try {
     await waitFor("document.querySelector('select')?.options.length > 1");
-    await evaluate("adminTest.select('Turma obrigatória', '20')");
+    await evaluate("adminTest.select('Turma', '20')");
     await waitFor("document.querySelector('label:has(select) span') && [...document.querySelectorAll('label')].find(x => x.querySelector('span')?.textContent === 'Turno completo')?.querySelector('select')?.value === '1'");
     await evaluate("adminTest.select('Turno completo', '2')");
     await waitFor("document.querySelectorAll('[role=dialog]').length === 2");
@@ -49,8 +56,10 @@ test("reserva: turno, calendários, recursos e modal móvel", { skip: !chromePat
     await evaluate("document.querySelector('button[aria-label=\"Próxima semana\"]')?.click()");
     assert.notEqual(await evaluate<string>("document.querySelector('[aria-label=\"Calendário semanal\"] button[aria-pressed]')?.getAttribute('aria-label') ?? ''"), firstWeek);
     await evaluate("document.querySelector('[aria-label=\"Calendário semanal\"] button[aria-pressed]')?.click()");
+    await waitFor("document.querySelectorAll('[role=dialog]').length === 2");
+    await evaluate("adminTest.click('Substituir datas')");
     assert.equal(await evaluate("document.querySelectorAll('[aria-label=\"Calendário semanal\"] button[aria-pressed=\"true\"]').length"), 1);
-    await evaluate("[...document.querySelectorAll('label')].find(x => x.textContent?.includes('Repetir em outras semanas'))?.querySelector('input')?.click()");
+    await evaluate("[...document.querySelectorAll('label')].find(x => x.textContent?.includes('Repetir semanalmente'))?.querySelector('input')?.click()");
     const originalUntil = await evaluate<string>("document.querySelector('button[aria-haspopup=dialog]')?.textContent ?? ''");
     await evaluate("const trigger = document.querySelector('button[aria-haspopup=dialog]'); trigger?.focus(); trigger?.click()");
     await waitFor("document.querySelectorAll('[role=dialog]').length === 2");
@@ -62,12 +71,12 @@ test("reserva: turno, calendários, recursos e modal móvel", { skip: !chromePat
     await evaluate("document.querySelector('button[aria-haspopup=dialog]')?.click()");
     await waitFor("document.querySelectorAll('[role=dialog]').length === 2");
     await evaluate("[...document.querySelectorAll('[role=dialog]')].at(-1).querySelector('button:not([disabled])[aria-pressed=\"false\"]')?.click()");
-    await evaluate("adminTest.click('OK')");
+    await evaluate("adminTest.click('Aplicar data')");
     assert.notEqual(await evaluate<string>("document.querySelector('button[aria-haspopup=dialog]')?.textContent ?? ''"), originalUntil);
     await evaluate("document.querySelector('details').open = true");
-    await evaluate("adminTest.click('Adicionar recurso')");
-    await evaluate("adminTest.select('Software do catálogo', '1')");
     await evaluate("adminTest.click('Adicionar software')");
+    await evaluate("adminTest.select('Software do catálogo', '1')");
+    await evaluate("adminTest.click('Incluir software')");
     await waitFor("!!document.querySelector('button[aria-label=\"Remover CAD\"]')");
     await evaluate("document.querySelector('form')?.requestSubmit()");
     await waitFor("adminTest.requests.length === 1");
@@ -95,8 +104,8 @@ test("reserva: turno, calendários, recursos e modal móvel", { skip: !chromePat
     assert.notEqual(themeColors.light, themeColors.dark);
     assert.equal(themeColors.fits, true);
     await evaluate("[...document.querySelectorAll('label')].find(x => x.textContent?.includes('Vincular ao planejamento pedagógico'))?.querySelector('input')?.click()");
-    await waitFor("[...document.querySelectorAll('label')].some(x => x.querySelector('span')?.textContent === 'Turma obrigatória')");
-    await evaluate("adminTest.select('Turma obrigatória', '20')");
+    await waitFor("[...document.querySelectorAll('label')].some(x => x.querySelector('span')?.textContent === 'Turma')");
+    await evaluate("adminTest.select('Turma', '20')");
     await evaluate("adminTest.select('Unidade curricular', '40')");
     await evaluate("adminTest.select('Capacidade (opcional)', '50')");
     await waitFor("[...document.querySelectorAll('label')].find(x => x.querySelector('span')?.textContent === 'Turno completo')?.querySelector('select')?.value === '1'");

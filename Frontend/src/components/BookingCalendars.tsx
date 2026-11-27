@@ -78,7 +78,7 @@ export function RepeatUntilCalendar({ start, value, weekdays, today, onClose, on
   const [view, setView] = useState((value >= start && value <= max ? value : start).slice(0, 7) + "-01");
   const first = weekStart(view);
   const days = Array.from({ length: 42 }, (_, index) => nextDate(first, index));
-  return <Modal title="Manter esta alocação até" onClose={onClose} width="max-w-md">
+  return <Modal title="Repetir até" onClose={onClose} width="max-w-md">
     <div className="flex items-center justify-between gap-2 mb-3">
       <button type="button" className="btn-secondary !px-2" aria-label="Mês anterior" disabled={view.slice(0, 7) <= start.slice(0, 7)} onClick={() => setView(nextDate(view, -1).slice(0, 7) + "-01")}><ChevronLeft size={18} aria-hidden="true" /></button>
       <h3 className="text-sm font-semibold text-ink">{monthLabel(view)}</h3>
@@ -91,6 +91,6 @@ export function RepeatUntilCalendar({ start, value, weekdays, today, onClose, on
       </button>)}
     </div>
     <p className="mt-3 text-xs text-muted-ink">Dias contornados seguem a seleção semanal. Limite: {dateBR(max)}.</p>
-    <div className="mt-4 flex justify-end gap-2"><button type="button" className="btn-secondary" onClick={onClose}>Cancelar</button><button type="button" className="btn-primary" onClick={() => onConfirm(draft)}>OK</button></div>
+    <div className="mt-4 flex justify-end gap-2"><button type="button" className="btn-secondary" onClick={onClose}>Cancelar</button><button type="button" className="btn-primary" onClick={() => onConfirm(draft)}>Aplicar data</button></div>
   </Modal>;
 }
