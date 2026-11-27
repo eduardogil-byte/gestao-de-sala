@@ -13,6 +13,7 @@ import { post, put, read } from "../lib/api";
 import { dateBR, resultMessage } from "../lib/utils";
 import { NeedFields, defaultNeed } from "../components/NeedFields";
 import { semesterDates } from "../lib/semesterDates";
+import { ClassContinuationForm } from "../components/ClassContinuationForm";
 import {
   Card,
   Badge,
@@ -24,7 +25,7 @@ import {
   Modal,
   useConfirmation,
 } from "../components/UI";
-import type { Course, CourseModule, CurricularUnit, Need, User } from "../types";
+import type { ClassGroup, ClassSemesterHistory, Course, CourseModule, CurricularUnit, Need, User } from "../types";
 
 const weekdays = ["Domingo", "Segunda", "Terça", "Quarta", "Quinta", "Sexta", "Sábado"];
 type UnitResource = { resourceCatalogItemId: number; name: string; category: string; quantity: number };
@@ -80,6 +81,22 @@ export function Academic({ user, onPlanning }: { user: User; onPlanning?: () => 
   const [expandedClassId, setExpandedClassId] = useState<number | null>(null);
   const [classUnits, setClassUnits] = useState<ClassUnits | null>(null);
   const [classUnitsError, setClassUnitsError] = useState("");
+  const [continuingClass, setContinuingClass] = useState<ClassGroup | null>(null);
+  const [classHistory, setClassHistory] = useState<ClassSemesterHistory[]>([]);
+  const [historyError, setHistoryError] = useState("");
+  const [historyBusy, setHistoryBusy] = useState(false);
+  const [historyRetry, setHistoryRetry] = useState(0);
+  useEffect(() => {
+    setClassHistory([]); setHistoryError(""); setHistoryBusy(false);
+    if (expandedClassId === null) return;
+    let active = true;
+    setHistoryBusy(true);
+    read<ClassSemesterHistory[]>(`/classes/${expandedClassId}/history`)
+      .then((rows) => { if (active) setClassHistory(rows); })
+      .catch((reason) => { if (active) setHistoryError(resultMessage(reason)); })
+      .finally(() => { if (active) setHistoryBusy(false); });
+    return () => { active = false; };
+  }, [expandedClassId, historyRetry]);
   const [classModuleName, setClassModuleName] = useState("");
   const [unitSuccess, setUnitSuccess] = useState<{ id: number; message: string } | null>(null);
   const [assignmentClassId, setAssignmentClassId] = useState("");
@@ -766,6 +783,10 @@ export function Academic({ user, onPlanning }: { user: User; onPlanning?: () => 
         {error && !editingClass && <Notice message={error} />}{success && <Notice type="success" message={success} />}
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between"><p className="text-sm text-muted-ink">Código: {selectedClass.code || "Não informado"}</p>
           <div className="flex flex-wrap gap-2">{admin && <button type="button" className="btn-secondary" disabled={!!action} onClick={() => setEditingClass({ id: selectedClass.id, code: selectedClass.code || "", name: selectedClass.name, shiftId: selectedClass.shiftId == null ? "" : String(selectedClass.shiftId), courseId: String(selectedClass.courseId ?? ""), courseModuleId: String(selectedClass.courseModuleId ?? "") })}>Editar turma</button>}
+            {admin && <button type="button" className="btn-primary" disabled={!!action || historyBusy || !!historyError} onClick={async () => {
+              if (!await discardChanges(!!assignmentTeacherId)) return;
+              setAssignmentUnitId(""); setAssignmentTeacherId(""); setContinuingClass(selectedClass);
+            }}>Continuar turma</button>}
             {onPlanning && <button type="button" className="btn-secondary" disabled={!!action} onClick={async () => { if (await closeClass()) onPlanning(); }}>Ir para Planejamento</button>}
           </div>
         </div>
@@ -776,6 +797,19 @@ export function Academic({ user, onPlanning }: { user: User; onPlanning?: () => 
           <div><dt className="text-muted-ink">Turno</dt><dd className="font-medium text-ink">{data.shifts.find((item) => item.id === selectedClass.shiftId)?.name ?? "Não informado"}</dd></div>
           <div><dt className="text-muted-ink">Alunos</dt><dd className="font-medium tabular-nums text-ink">{selectedClass.students}</dd></div>
         </dl>
+        <section aria-label="Semestres desta turma" className="space-y-3">
+          <h3 className="font-semibold text-ink">Semestres desta turma</h3>
+          {historyBusy && <p role="status" className="text-sm text-muted-ink">Carregando histórico…</p>}
+          {historyError && <div className="space-y-2"><Notice message={historyError} />
+            <button type="button" className="btn-secondary" onClick={() => setHistoryRetry(historyRetry + 1)}>Tentar novamente</button></div>}
+          {!historyBusy && !historyError && <ul className="space-y-2">{classHistory.map((record) => <li key={record.id} className="flex flex-col gap-2 rounded-panel border border-line p-3 sm:flex-row sm:items-center sm:justify-between">
+            <div className="min-w-0"><p className="font-medium text-ink">{record.semesterName}{record.id === selectedClass.id ? " · Em consulta" : ""}</p>
+              <p className="break-words text-sm text-muted-ink">{record.moduleName ?? "Módulo não vinculado"} · {record.shiftName ?? "Turno não informado"}</p></div>
+            {record.id !== selectedClass.id && <button type="button" className="btn-secondary shrink-0" onClick={async () => {
+              if (await closeClass()) openClass(record.id);
+            }}>Consultar {record.semesterName}</button>}
+          </li>)}</ul>}
+        </section>
         <section aria-label="UCs e instrutores" className="space-y-4">
         <div className="space-y-1"><h3 className="font-semibold text-ink">UCs e instrutores</h3>
           {admin && classUnits && !classUnits.legacyWithoutModule && classUnits.units.length > 0 && <p className="text-sm text-muted-ink">
@@ -826,6 +860,12 @@ export function Academic({ user, onPlanning }: { user: User; onPlanning?: () => 
         </li>)}</ul>}
       </Card>
     </section>
+    {admin && continuingClass && <ClassContinuationForm source={continuingClass} semesters={data.semesters} shifts={data.shifts}
+      history={classHistory} courseName={courses.find((item) => item.id === continuingClass.courseId)?.name ?? "Curso não vinculado"}
+      onClose={() => setContinuingClass(null)} onCreated={async (id) => {
+        await reload(); setContinuingClass(null); setSemesterFilter(""); setShiftFilter(""); setCourseFilter(""); setQuery("");
+        openClass(id); setSuccess("Continuação criada. O histórico anterior foi preservado.");
+      }} />}
         {admin && editingClass && <Modal title="Editar turma" onClose={() => void cancelEditing()} width="max-w-2xl">
           {error && <Notice message={error} />}
           <form className="space-y-4" onSubmit={(event) => void saveClassEdit(event)}>

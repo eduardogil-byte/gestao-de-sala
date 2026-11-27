@@ -98,6 +98,8 @@ export type Semester = {
 };
 export type ClassGroup = {
   id: number;
+  continuityId?: string;
+  previousClassGroupId?: number | null;
   semesterId: number;
   courseId?: number | null;
   courseModuleId?: number | null;
@@ -105,6 +107,11 @@ export type ClassGroup = {
   code?: string | null;
   name: string;
   students: number;
+};
+export type ClassSemesterHistory = {
+  id: number; previousClassGroupId: number | null; semesterId: number; semesterName: string;
+  startDate: string; name: string; code: string | null; students: number;
+  courseName: string | null; moduleName: string | null; shiftName: string | null;
 };
 export type Availability = { weekday: number; shiftId: number };
 export type Assignment = {

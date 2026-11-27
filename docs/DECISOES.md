@@ -65,6 +65,14 @@ Este documento separa **regras confirmadas**, **propostas do coordenador** e **d
 - Ofertas anteriores, seus instrutores, atribuições, reservas, ocupações e planejamentos são preservados. A alteração não remaneja nem cancela registros existentes. Novos planejamentos usam o módulo atual.
 - O backend valida curso/módulo e confirmação e registra a alteração em auditoria. Nenhuma migration é necessária.
 
+## DC-13 — Continuidade da turma entre semestres (2026-11-26)
+
+- Pedido explícito do responsável: Admin pode continuar a turma em semestre posterior, inclusive no mesmo módulo, escolhendo turno e instrutores por UC.
+- Cada semestre tem um registro próprio, com identidade compartilhada e referência à turma de origem. O banco impede dois registros dessa identidade no mesmo semestre; o código da turma também mantém sua unicidade por semestre.
+- Nome, código, curso e alunos são copiados. As ofertas usam o módulo escolhido; modalidades existentes são mantidas para as mesmas UCs e novas ofertas usam o padrão presencial. Os instrutores são selecionados explicitamente e suas habilitações são validadas.
+- Reservas, ocupações, atribuições e planejamentos não são copiados nem alterados. O histórico permite consultar os registros dos outros semestres.
+- Migration `ClassContinuity` gerada com EF Core; a aplicação ao banco deve seguir o procedimento de migrations existente. `appsettings.json` preservado.
+
 ## Como registrar novas decisões
 
 Acrescentar: data, ID, situação (`Confirmada`, `Proposta`, `Em aberto`), responsável pela decisão, regra, motivo e Issues afetadas. **Não mudar o status para Confirmada por dedução.**

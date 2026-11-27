@@ -24,6 +24,9 @@ public record ClassUnitTeacherInput(string TeacherId);
 public record ClassUpdate(string Name, string? Code, int? ShiftId = null,
     int? CourseId = null, int? CourseModuleId = null, bool CurriculumChangeConfirmed = false);
 public record ClassCourseInput(int CourseId);
+public record ClassContinuationTeacher(int CurricularUnitId, string TeacherId);
+public record ClassContinuationCreate(int SemesterId, int CourseModuleId, int ShiftId,
+    List<ClassContinuationTeacher>? Teachers = null);
 public record AvailabilityInput(int Weekday, int ShiftId);
 public record AssignmentCreate(int ClassGroupId, string TeacherId, string? DisciplineName = null,
     int MeetingsPerWeek = 1, int? PreferredShiftId = null, bool NeedsProjector = false,

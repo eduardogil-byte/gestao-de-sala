@@ -23,6 +23,142 @@ namespace SalaGest.Backend.Tests;
 public sealed class ClassUnitOfferingTests
 {
     [Fact]
+    public async Task ContinuationHistoryKeepsFourSemestersSeparateFromOtherClasses()
+    {
+        await using var host = await Host.CreateAsync(); host.As("Admin");
+        var created = await host.Client.PostAsJsonAsync("/api/classes", host.CreateRequest(null));
+        var rootId = (await created.Content.ReadFromJsonAsync<System.Text.Json.JsonElement>()).GetProperty("id").GetInt32();
+        await host.Client.PostAsJsonAsync("/api/classes", host.CreateRequest(null) with { Name = "Outra identidade" });
+        var ids = new List<int> { rootId };
+        var semesterIds = new List<int>();
+        for (var i = 0; i < 3; i++)
+        {
+            using (var scope = host.App.Services.CreateScope()) {
+                var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+                var start = new DateOnly(2027, 7, 1).AddMonths(i * 6);
+                var semester = new Semester { Name = $"Continuação {i}", StartDate = start, EndDate = start.AddMonths(6).AddDays(-1) };
+                db.Semesters.Add(semester); await db.SaveChangesAsync(); semesterIds.Add(semester.Id);
+            }
+            var response = await host.Client.PostAsJsonAsync($"/api/classes/{ids.Last()}/continue",
+                new ClassContinuationCreate(semesterIds.Last(), host.ModuleId, host.ShiftId));
+            Assert.Equal(HttpStatusCode.Created, response.StatusCode);
+            ids.Add((await response.Content.ReadFromJsonAsync<System.Text.Json.JsonElement>()).GetProperty("id").GetInt32());
+        }
+        var history = await host.Client.GetFromJsonAsync<List<System.Text.Json.JsonElement>>($"/api/classes/{rootId}/history");
+        Assert.Equal(ids, history!.Select(x => x.GetProperty("id").GetInt32()));
+        Assert.Equal(HttpStatusCode.Conflict, (await host.Client.PostAsJsonAsync($"/api/classes/{rootId}/continue",
+            new ClassContinuationCreate(semesterIds.Last(), host.ModuleId, host.ShiftId))).StatusCode);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task ContinueClassPreservesIdentityAndHistoryWithoutCopyingActivities(bool changeModule)
+    {
+        await using var host = await Host.CreateAsync();
+        host.As("Admin");
+        var created = await host.Client.PostAsJsonAsync("/api/classes", host.CreateRequest([
+            new(host.PresentialUnitId, UnitDeliveryMode.Presencial),
+            new(host.EadUnitId, UnitDeliveryMode.Ead, EadScheduleMode.SemHorarioFixo)]));
+        var id = (await created.Content.ReadFromJsonAsync<System.Text.Json.JsonElement>()).GetProperty("id").GetInt32();
+        int semesterId, moduleId = host.ModuleId, unitId = host.PresentialUnitId;
+        Guid continuityId;
+        using (var scope = host.App.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+            var source = (await db.Classes.FindAsync(id))!;
+            continuityId = source.ContinuityId;
+            var semester = new Semester { Name = "2027/2", StartDate = new(2027, 7, 1), EndDate = new(2027, 12, 31) };
+            db.Semesters.Add(semester);
+            if (changeModule)
+            {
+                var module = new CourseModule { CourseId = host.CourseId, Name = "Segundo", NormalizedName = "SEGUNDO", Order = 2 };
+                var unit = new CurricularUnit { CourseModule = module, Code = "N", NormalizedCode = "N", Name = "Nova UC", NormalizedName = "NOVA UC" };
+                db.CurricularUnits.Add(unit);
+                await db.SaveChangesAsync();
+                moduleId = module.Id; unitId = unit.Id;
+                db.TeacherUnitQualifications.Add(new TeacherUnitQualification { TeacherId = host.TeacherId, CurricularUnitId = unitId });
+            }
+            (await db.ClassUnitOfferings.FindAsync(id, host.EadUnitId))!.TeacherId = host.TeacherId;
+            db.Assignments.Add(new TeachingAssignment { ClassGroupId = id, TeacherId = host.TeacherId,
+                CurricularUnitId = host.PresentialUnitId, Weekday = 1, PreferredShiftId = host.ShiftId });
+            var booking = new BookingRequest { ClassGroupId = id, TeacherId = host.TeacherId,
+                CurricularUnitId = host.PresentialUnitId, StartsAt = new(2027, 1, 4, 8, 0, 0), EndsAt = new(2027, 1, 4, 12, 0, 0), Students = 25 };
+            db.Bookings.Add(booking);
+            await db.SaveChangesAsync();
+            db.Occupations.Add(new RoomOccupation { ClassGroupId = id, TeacherId = host.TeacherId,
+                BookingRequestId = booking.Id, Room = new Room { Name = "Histórico", Kind = RoomKind.Comum, Seats = 30 },
+                StartsAt = booking.StartsAt, EndsAt = booking.EndsAt, Kind = OccupationKind.Avulsa });
+            db.ScheduleUnitPlans.Add(new ScheduleUnitPlan { Schedule = new Schedule { SemesterId = host.SemesterId },
+                ClassGroupId = id, CurricularUnitId = host.PresentialUnitId, PlannedHours = 40 });
+            await db.SaveChangesAsync(); semesterId = semester.Id;
+        }
+        var request = new ClassContinuationCreate(semesterId, moduleId, host.ShiftId, [new(unitId, host.TeacherId)]);
+        var options = await host.Client.GetFromJsonAsync<List<System.Text.Json.JsonElement>>($"/api/classes/{id}/continuation-options?moduleId={moduleId}");
+        Assert.Contains(options!, x => x.GetProperty("curricularUnitId").GetInt32() == unitId && x.GetProperty("teachers").GetArrayLength() > 0);
+        var response = await host.Client.PostAsJsonAsync($"/api/classes/{id}/continue", request);
+        Assert.Equal(HttpStatusCode.Created, response.StatusCode);
+        var nextId = (await response.Content.ReadFromJsonAsync<System.Text.Json.JsonElement>()).GetProperty("id").GetInt32();
+        Assert.Equal(HttpStatusCode.Conflict, (await host.Client.PostAsJsonAsync($"/api/classes/{id}/continue", request)).StatusCode);
+        var history = await host.Client.GetFromJsonAsync<List<System.Text.Json.JsonElement>>($"/api/classes/{nextId}/history");
+        Assert.Equal(new[] { id, nextId }, history!.Select(x => x.GetProperty("id").GetInt32()));
+        using (var scope = host.App.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+            var original = (await db.Classes.FindAsync(id))!;
+            var next = (await db.Classes.FindAsync(nextId))!;
+            Assert.Equal(continuityId, next.ContinuityId); Assert.Equal(id, next.PreviousClassGroupId);
+            Assert.Equal(original.Name, next.Name); Assert.Equal(original.Code, next.Code);
+            Assert.Equal(original.Students, next.Students); Assert.Equal(original.CourseId, next.CourseId);
+            Assert.Equal(host.SemesterId, original.SemesterId); Assert.Equal(host.ModuleId, original.CourseModuleId);
+            Assert.Equal(host.TeacherId, (await db.ClassUnitOfferings.FindAsync(nextId, unitId))!.TeacherId);
+            Assert.Equal(host.TeacherId, (await db.ClassUnitOfferings.FindAsync(id, host.EadUnitId))!.TeacherId);
+            if (!changeModule) {
+                var ead = (await db.ClassUnitOfferings.FindAsync(nextId, host.EadUnitId))!;
+                Assert.Equal(UnitDeliveryMode.Ead, ead.DeliveryMode); Assert.Null(ead.TeacherId);
+            }
+            Assert.Single(await db.Bookings.Where(x => x.ClassGroupId == id).ToListAsync());
+            Assert.Single(await db.Assignments.Where(x => x.ClassGroupId == id).ToListAsync());
+            Assert.Single(await db.Occupations.Where(x => x.ClassGroupId == id).ToListAsync());
+            Assert.Single(await db.ScheduleUnitPlans.Where(x => x.ClassGroupId == id).ToListAsync());
+            Assert.False(await db.Bookings.AnyAsync(x => x.ClassGroupId == nextId));
+            Assert.False(await db.Assignments.AnyAsync(x => x.ClassGroupId == nextId));
+            Assert.False(await db.Occupations.AnyAsync(x => x.ClassGroupId == nextId));
+            Assert.False(await db.ScheduleUnitPlans.AnyAsync(x => x.ClassGroupId == nextId));
+            db.Classes.Add(new ClassGroup { Name = "Duplicada sem código", ContinuityId = continuityId, SemesterId = semesterId, Students = 25 });
+            await Assert.ThrowsAsync<DbUpdateException>(() => db.SaveChangesAsync());
+        }
+        host.As("Professor");
+        Assert.Equal(HttpStatusCode.Forbidden, (await host.Client.PostAsJsonAsync($"/api/classes/{id}/continue", request)).StatusCode);
+        Assert.Equal(HttpStatusCode.Forbidden, (await host.Client.GetAsync($"/api/classes/{id}/continuation-options?moduleId={moduleId}")).StatusCode);
+        Assert.Equal(HttpStatusCode.OK, (await host.Client.GetAsync($"/api/classes/{id}/history")).StatusCode);
+    }
+
+    [Fact]
+    public async Task ContinueClassRejectsInvalidSemesterModuleShiftAndTeacherWithoutWriting()
+    {
+        await using var host = await Host.CreateAsync(); host.As("Admin");
+        var created = await host.Client.PostAsJsonAsync("/api/classes", host.CreateRequest(null));
+        var id = (await created.Content.ReadFromJsonAsync<System.Text.Json.JsonElement>()).GetProperty("id").GetInt32();
+        int semesterId;
+        using (var scope = host.App.Services.CreateScope()) {
+            var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+            var semester = new Semester { Name = "2028/1", StartDate = new(2028, 1, 1), EndDate = new(2028, 6, 30) };
+            db.Semesters.Add(semester); await db.SaveChangesAsync(); semesterId = semester.Id;
+        }
+        var request = new ClassContinuationCreate(semesterId, host.ModuleId, host.ShiftId);
+        foreach (var invalid in new[] {
+            request with { SemesterId = -1 }, request with { CourseModuleId = host.WrongModuleId },
+            request with { ShiftId = -1 }, request with { Teachers = [new(host.ForeignUnitId, host.TeacherId)] },
+            request with { Teachers = [new(host.PresentialUnitId, host.UnqualifiedTeacherId)] },
+            request with { Teachers = [new(host.PresentialUnitId, host.TeacherId), new(host.PresentialUnitId, host.TeacherId)] }
+        }) Assert.Equal(HttpStatusCode.BadRequest, (await host.Client.PostAsJsonAsync($"/api/classes/{id}/continue", invalid)).StatusCode);
+        Assert.Equal(HttpStatusCode.Conflict, (await host.Client.PostAsJsonAsync($"/api/classes/{id}/continue", request with { SemesterId = host.SemesterId })).StatusCode);
+        using var check = host.App.Services.CreateScope();
+        Assert.Equal(1, await check.ServiceProvider.GetRequiredService<AppDbContext>().Classes.CountAsync());
+    }
+
+    [Fact]
     public async Task CurriculumChangeRequiresConfirmationAndPreservesPreviousLinks()
     {
         await using var host = await Host.CreateAsync();
