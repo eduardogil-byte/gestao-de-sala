@@ -132,7 +132,7 @@ test("edição confirma curso e módulo, preserva vínculos e mantém rascunho a
     await waitFor("document.querySelectorAll('[role=dialog]').length===1 && document.body.innerText.includes('Turma atualizada')");
     assert.equal(await evaluate("document.querySelector('[role=dialog]').innerText.includes('Outro curso')"), true);
     assert.equal(await evaluate("document.querySelector('[role=dialog]').innerText.includes('Novo modulo')"), true);
-    await evaluate("[...document.querySelectorAll('[role=dialog] summary')].find(item=>item.textContent.includes('UCs anteriores')).click()");
+    await evaluate("[...document.querySelectorAll('[role=dialog] summary')].find(item=>item.textContent.includes('Unidades anteriores')).click()");
     assert.equal(await evaluate("document.querySelector('[role=dialog]').innerText.includes('UC anterior')"), true);
   } finally { await close(); }
 });

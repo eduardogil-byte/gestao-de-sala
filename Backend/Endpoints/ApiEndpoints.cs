@@ -396,14 +396,13 @@ public static partial class ApiEndpoints
             var oldShiftId = item.ShiftId;
             var oldCourseId = item.CourseId;
             var oldModuleId = item.CourseModuleId;
+            ClassShiftChangePreview? shiftPreview = null;
             var curriculumChanged = (input.CourseId is not null && input.CourseId != item.CourseId) ||
                 (input.CourseModuleId is not null && input.CourseModuleId != item.CourseModuleId);
             if (curriculumChanged)
             {
                 if (!input.CurriculumChangeConfirmed)
                     return Error("Confirme a alteração de curso ou módulo. Os vínculos anteriores serão preservados.");
-                if (input.ShiftId is int targetShift && targetShift != item.ShiftId)
-                    return Error("Altere o turno separadamente do curso e módulo.");
                 if (input.CourseId is not int courseId || input.CourseModuleId is not int moduleId ||
                     !await db.CourseModules.AnyAsync(m => m.Id == moduleId && m.CourseId == courseId))
                     return Error("Selecione um curso e um módulo pertencente a ele.");
@@ -424,7 +423,15 @@ public static partial class ApiEndpoints
             if (input.ShiftId is int newShiftId && newShiftId != item.ShiftId)
             {
                 if (!await db.Shifts.AnyAsync(s => s.Id == newShiftId)) return Error("Turno não encontrado");
-                if (await db.Assignments.AnyAsync(a => a.ClassGroupId == id) ||
+                if (curriculumChanged)
+                {
+                    if (!input.ShiftChangeConfirmed || string.IsNullOrWhiteSpace(input.ShiftPreviewToken))
+                        return Error("Consulte os vínculos e confirme explicitamente a mudança de turno.");
+                    shiftPreview = await PreviewClassShift(db, item, newShiftId);
+                    if (shiftPreview.PreviewToken != input.ShiftPreviewToken)
+                        return Results.Conflict(new ApiError("O turno ou os vínculos da turma mudaram. Cancele e consulte novamente antes de confirmar."));
+                }
+                else if (await db.Assignments.AnyAsync(a => a.ClassGroupId == id) ||
                     await db.Bookings.AnyAsync(b => b.ClassGroupId == id) ||
                     await db.Occupations.AnyAsync(o => o.ClassGroupId == id) ||
                     await db.ScheduleUnitPlans.AnyAsync(p => p.ClassGroupId == id &&
@@ -444,6 +451,9 @@ public static partial class ApiEndpoints
             item.NormalizedCode = normalizedCode;
             AuditTrail.Add(db, "ClassGroup", id.ToString(), "Alterada", UserId(current), before,
                 new { item.Name, item.Code, item.ShiftId, item.CourseId, item.CourseModuleId });
+            if (shiftPreview is not null)
+                AuditTrail.Add(db, "ClassGroup", id.ToString(), "TurnoOficialAlterado", UserId(current),
+                    new { ShiftId = oldShiftId }, new { item.ShiftId, Confirmed = true, shiftPreview.Links });
             await db.SaveChangesAsync();
             await shiftTx.CommitAsync();
             return Results.NoContent();

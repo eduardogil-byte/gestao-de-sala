@@ -22,7 +22,8 @@ public record ClassUnitOfferingInput(int CurricularUnitId, UnitDeliveryMode Deli
     EadScheduleMode? EadScheduleMode = null);
 public record ClassUnitTeacherInput(string TeacherId);
 public record ClassUpdate(string Name, string? Code, int? ShiftId = null,
-    int? CourseId = null, int? CourseModuleId = null, bool CurriculumChangeConfirmed = false);
+    int? CourseId = null, int? CourseModuleId = null, bool CurriculumChangeConfirmed = false,
+    bool ShiftChangeConfirmed = false, string? ShiftPreviewToken = null);
 public record ClassCourseInput(int CourseId);
 public record ClassContinuationTeacher(int CurricularUnitId, string TeacherId);
 public record ClassContinuationCreate(int SemesterId, int CourseModuleId, int ShiftId,

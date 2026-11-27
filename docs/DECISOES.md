@@ -73,6 +73,13 @@ Este documento separa **regras confirmadas**, **propostas do coordenador** e **d
 - Reservas, ocupações, atribuições e planejamentos não são copiados nem alterados. O histórico permite consultar os registros dos outros semestres.
 - Migration `ClassContinuity` gerada com EF Core; a aplicação ao banco deve seguir o procedimento de migrations existente. `appsettings.json` preservado.
 
+## DC-14 — Edição conjunta de turno, curso e módulo (2026-11-27)
+
+- **Situação:** confirmada por pedido explícito do responsável pelo projeto.
+- Admin pode salvar turno e curso/módulo na mesma edição, com aviso e confirmação única após consultar os vínculos da turma. Essa operação também salva nome e código editados.
+- A gravação conjunta é transacional, exige confirmação de currículo e de turno, revalida a prévia dos vínculos e registra auditoria. Reservas, atribuições, ocupações, planejamentos e ofertas anteriores mantêm seus dados e horários.
+- Complementa DC-11 e DC-12: o fluxo que altera somente o turno continua dedicado e não salva nome ou código. Nenhuma migration é necessária.
+
 ## Como registrar novas decisões
 
 Acrescentar: data, ID, situação (`Confirmada`, `Proposta`, `Em aberto`), responsável pela decisão, regra, motivo e Issues afetadas. **Não mudar o status para Confirmada por dedução.**

@@ -20,8 +20,8 @@ test("continuar turma mantém módulo, confirma descarte, preserva rascunho apó
     await evaluate(setup);
     await waitFor("document.body.innerText.includes('Turma persistente')");
     await evaluate("[...document.querySelectorAll('button')].find(b=>b.textContent==='Turma persistente').click()");
-    await waitFor("document.querySelector('[role=dialog]').innerText.includes('2027 A') && ![...document.querySelectorAll('button')].find(b=>b.textContent==='Continuar turma').disabled");
-    await evaluate("adminTest.click('Continuar turma')");
+    await waitFor("document.querySelector('[role=dialog]').innerText.includes('2027 A') && ![...document.querySelectorAll('button')].find(b=>b.textContent==='Continuar em outro semestre').disabled");
+    await evaluate("adminTest.click('Continuar em outro semestre')");
     await waitFor("document.body.innerText.includes('Instrutor de UC atual')");
     assert.equal(await evaluate("[...document.querySelectorAll('label')].find(l=>l.querySelector('span')?.textContent==='Módulo da continuação').querySelector('select').value"), '2');
     await evaluate("adminTest.select('Semestre de destino','2'); adminTest.select('Instrutor de UC atual','t0')");
@@ -54,11 +54,17 @@ test("continuar turma mantém módulo, confirma descarte, preserva rascunho apó
       adminTest.catalog['/api/classes/7/history']=history; adminTest.catalog['/api/classes/8/history']=history;
       adminTest.catalog['/api/classes/8/units']=adminTest.catalog['/api/classes/7/units'];
       adminTest.reply('/api/classes/7/continue',{id:8},201)`);
-    await waitFor("document.querySelectorAll('[role=dialog]').length===1 && document.body.innerText.includes('2027 B · Em consulta')");
+    await waitFor("document.querySelectorAll('[role=dialog]').length===1 && document.querySelector('[role=dialog] summary')?.textContent==='Histórico de semestres (2)'");
+    await evaluate("document.querySelector('[role=dialog] summary').click()");
+    await waitFor("document.body.innerText.includes('2027 B · Em consulta')");
+    assert.equal(await evaluate("document.querySelector('[aria-label=\"Unidades curriculares e instrutores\"] h3 + p').textContent"), 'Semestre: 2027 B');
     assert.equal(await evaluate("adminTest.calls.filter(r=>r.method==='POST').every(r=>r.path==='/api/classes/7/continue')"), true);
     await evaluate("adminTest.click('Consultar 2027 A')");
+    await waitFor("!!document.querySelector('[role=dialog] summary') && !document.querySelector('[role=dialog] details').open");
+    await evaluate("document.querySelector('[role=dialog] summary').click()");
     await waitFor("document.body.innerText.includes('2027 A · Em consulta')");
-    await evaluate("adminTest.click('Continuar turma')");
+    assert.equal(await evaluate("document.querySelector('[aria-label=\"Unidades curriculares e instrutores\"] h3 + p').textContent"), 'Semestre: 2027 A');
+    await evaluate("adminTest.click('Continuar em outro semestre')");
     await waitFor("document.body.innerText.includes('Semestre de destino')");
     assert.deepEqual(await evaluate("[...document.querySelectorAll('label')].find(l=>l.querySelector('span')?.textContent==='Semestre de destino').querySelector('select').innerText.split('\\n')"), ['Selecione um semestre','2028 A']);
   } finally { await close(); }
@@ -70,8 +76,8 @@ test("mudar módulo limpa instrutores e Professor apenas consulta histórico", {
     await evaluate(setup);
     await waitFor("document.body.innerText.includes('Turma persistente')");
     await evaluate("[...document.querySelectorAll('button')].find(b=>b.textContent==='Turma persistente').click()");
-    await waitFor("![...document.querySelectorAll('button')].find(b=>b.textContent==='Continuar turma').disabled");
-    await evaluate("adminTest.click('Continuar turma')");
+    await waitFor("![...document.querySelectorAll('button')].find(b=>b.textContent==='Continuar em outro semestre').disabled");
+    await evaluate("adminTest.click('Continuar em outro semestre')");
     await waitFor("document.body.innerText.includes('Instrutor de UC atual')");
     await evaluate("adminTest.select('Instrutor de UC atual','t0'); adminTest.select('Módulo da continuação','9')");
     await waitFor("document.body.innerText.includes('Instrutor de UC seguinte')");
@@ -81,10 +87,10 @@ test("mudar módulo limpa instrutores e Professor apenas consulta histórico", {
     assert.deepEqual(await evaluate("adminTest.pending.find(r=>r.path==='/api/classes/7/continue').body.teachers"), []);
     await evaluate("adminTest.reply('/api/classes/7/continue',{error:'Falha controlada'},409)");
     await waitFor("document.body.innerText.includes('Falha controlada')");
-    await evaluate("adminTest.reset('academic','Professor',{'/api/classes':[{id:7,name:'Turma antiga',semesterId:1,students:25}],'/api/classes/7/history':[{id:7,semesterId:1,semesterName:'Semestre A'}]})");
+    await evaluate("adminTest.reset('academic','Professor',{'/api/classes':[{id:7,name:'Turma antiga',semesterId:1,students:25}],'/api/classes/7/history':[{id:7,semesterId:1,semesterName:'Semestre A'}],'/api/classes/7/units':{legacyWithoutModule:true,presentialHours:0,eadHours:0,unitsWithoutHours:0,units:[]}})");
     await waitFor("document.body.innerText.includes('Turma antiga')");
     await evaluate("[...document.querySelectorAll('button')].find(b=>b.textContent==='Turma antiga').click()");
-    await waitFor("document.body.innerText.includes('Semestres desta turma')");
-    assert.equal(await evaluate("[...document.querySelectorAll('button')].some(b=>b.textContent==='Continuar turma')"), false);
+    await waitFor("document.body.innerText.includes('Histórico de semestres')");
+    assert.equal(await evaluate("[...document.querySelectorAll('button')].some(b=>b.textContent==='Continuar em outro semestre')"), false);
   } finally { await close(); }
 });
