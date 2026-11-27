@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { mkdir, writeFile } from "node:fs/promises";
 import { chromePath, openAdminFixture } from "./helpers/browser.ts";
 
 test("listas de instrutores e turmas rolam sem ampliar a página", { skip: !chromePath, timeout: 60000 }, async () => {
@@ -32,4 +33,39 @@ test("listas de instrutores e turmas rolam sem ampliar a página", { skip: !chro
       await waitFor("!document.querySelector('[role=dialog]')");
     }
   } finally { await close(); }
+});
+
+test("ambientes têm rolagem vertical própria e cabeçalho fixo na tabela", { skip: !chromePath, timeout: 60000 }, async () => {
+  const {evaluate,waitFor,command,close} = await openAdminFixture();
+  const region = "document.querySelector('[aria-label=\"Lista de ambientes cadastrados\"]')";
+  try {
+    await evaluate(`const originalFetch=window.fetch;window.fetch=async(input,init)=>String(input)==='/api/rooms'&&(!init?.method||init.method==='GET')
+      ?new Response(JSON.stringify(Array.from({length:40},(_,i)=>({...adminTest.catalog['/api/rooms'][0],id:i+10,name:'Ambiente '+(i+1),code:'AMB-'+(i+1)})))):originalFetch(input,init)`);
+    for(const role of ['Admin','Professor']) {
+      await evaluate(`adminTest.reset('rooms','${role}')`);
+      await waitFor(`${region}?.querySelectorAll('tbody tr').length===40`);
+      for(const theme of ['light','dark']) for(const width of [375,1366]) {
+        await evaluate(`document.documentElement.dataset.theme='${theme}'`);
+        await command('Emulation.setDeviceMetricsOverride',{width,height:850,deviceScaleFactor:1,mobile:width===375});
+        await waitFor(`${region}.scrollHeight>${region}.clientHeight`);
+        assert.equal(await evaluate(`${region}.clientHeight<=Math.min(innerHeight*.6,448)+1`),true);
+        assert.equal(await evaluate("document.documentElement.scrollWidth<=innerWidth+1"),true);
+        await evaluate(`${region}.scrollIntoView({block:'center'});${region}.scrollTop=0;${region}.focus()`);
+        const pageTop=await evaluate<number>('scrollY');
+        await command('Input.dispatchKeyEvent',{type:'keyDown',key:'ArrowDown',code:'ArrowDown',windowsVirtualKeyCode:40});
+        await command('Input.dispatchKeyEvent',{type:'keyUp',key:'ArrowDown',code:'ArrowDown',windowsVirtualKeyCode:40});
+        await waitFor(`${region}.scrollTop>0`);
+        assert.equal(await evaluate('scrollY'),pageTop);
+        await evaluate(`${region}.scrollTop=150`);
+        if(width===1366) assert.equal(await evaluate(`Math.abs(${region}.querySelector('th').getBoundingClientRect().top-${region}.getBoundingClientRect().top)<3`),true);
+        const folder=process.env.SALAGEST_ROOMS_SCROLL_CAPTURES;
+        if(folder) {
+          await mkdir(folder,{recursive:true});
+          await evaluate("new Promise(r=>setTimeout(r,250))");
+          const shot=await command('Page.captureScreenshot',{format:'png'}) as {data:string};
+          await writeFile(`${folder}/${role}-${theme}-${width}.png`,Buffer.from(shot.data,'base64'));
+        }
+      }
+    }
+  } finally {await close();}
 });

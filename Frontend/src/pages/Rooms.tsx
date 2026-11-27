@@ -345,8 +345,10 @@ export function Rooms({ user, onImport }: { user: User; onImport?: (kind: "Ambie
       ) : !catalogLoading && (
         <Card className="p-4 sm:p-5 space-y-4">
           <SectionHeading title="Ambientes" />
+          <div role="region" aria-label="Lista de ambientes cadastrados" tabIndex={0}
+            className="max-h-[min(60dvh,28rem)] overflow-y-auto overscroll-contain rounded-panel [scrollbar-gutter:stable] focus-visible:outline focus-visible:outline-2 focus-visible:outline-skybrand-500">
           <div className="hidden lg:block table-wrap"><table className="w-full text-sm"><thead><tr className="text-left text-muted-ink border-b border-line">
-            <th scope="col" className="p-3">Ambiente</th><th scope="col" className="p-3">Tipo e localização</th><th scope="col" className="p-3">Alunos</th><th scope="col" className="p-3">Turnos configurados</th><th scope="col" className="p-3">Turnos com ocupação</th><th scope="col" className="p-3">Situação</th><th scope="col" className="p-3">Ações</th>
+            <th scope="col" className="sticky top-0 z-10 bg-surface p-3">Ambiente</th><th scope="col" className="sticky top-0 z-10 bg-surface p-3">Tipo e localização</th><th scope="col" className="sticky top-0 z-10 bg-surface p-3">Alunos</th><th scope="col" className="sticky top-0 z-10 bg-surface p-3">Turnos configurados</th><th scope="col" className="sticky top-0 z-10 bg-surface p-3">Turnos com ocupação</th><th scope="col" className="sticky top-0 z-10 bg-surface p-3">Situação</th><th scope="col" className="sticky top-0 z-10 bg-surface p-3">Ações</th>
           </tr></thead><tbody>{list.map((room) => <tr key={room.id} onClick={(event) => openRoomInformation(event, room)} className="cursor-pointer border-b border-line last:border-0 align-top transition-colors hover:bg-canvas focus-within:bg-canvas">
             <td className="p-3"><strong className="text-ink">{room.code || `#${room.id}`}</strong><span className="block">{roomInformation(room)}</span>{bottleneckLabel(room)}</td>
             <td className="p-3">{roomKind(room.kind)}<span className="block text-muted-ink">{room.location || "Localização não informada"}</span></td>
@@ -361,6 +363,7 @@ export function Rooms({ user, onImport }: { user: User; onImport?: (kind: "Ambie
             <dl className="grid grid-cols-2 gap-2 text-sm"><div><dt className="text-muted-ink">Capacidade</dt><dd>{room.seats} alunos</dd></div><div><dt className="text-muted-ink">Turnos configurados</dt><dd>{shiftLabel(room)}</dd></div><div className="col-span-2"><dt className="text-muted-ink">Turnos com ocupação</dt><dd>{occupiedShiftLabel(room)}</dd></div></dl>
             {roomAction(room)}
           </article>)}</div>
+          </div>
         </Card>
       )}
       {admin && (
