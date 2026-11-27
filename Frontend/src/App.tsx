@@ -36,7 +36,7 @@ import { RoomOpportunities } from "./pages/RoomOpportunities";
 import { InstitutionalImport } from "./pages/InstitutionalImport";
 import { ExportData } from "./pages/ExportData";
 import { Agenda } from "./pages/Agenda";
-import { RoomTimeline } from "./pages/RoomTimeline";
+import { RoomTimeline, type TimelineContext } from "./pages/RoomTimeline";
 import { InstructorAgenda } from "./pages/InstructorAgenda";
 import { Rooms } from "./pages/Rooms";
 import { Academic } from "./pages/Academic";
@@ -81,6 +81,7 @@ function Workspace({ user, onLogout, onPasswordChanged, institutionalNotice = ""
   const [related, setRelated] = useState<{ page: Page; id: number } | null>(null);
   const [agendaFocus, setAgendaFocus] = useState<{ date: string; roomId: number; occupationId: number } | null>(null);
   const [timelineFilter, setTimelineFilter] = useState<{ semesterId: number; roomId: number; anchor: string; shiftId?: number } | null>(null);
+  const timelineContext = useRef<TimelineContext | null>(null);
   const [opportunityFilter, setOpportunityFilter] = useState<{ semesterId: number; roomId: number } | null>(null);
   const [exportFilter, setExportFilter] = useState<{ semesterId: number; secondSemesterId: number | null; roomId: number | null } | null>(null);
   const [importKind, setImportKind] = useState<"Ambientes" | "Recursos" | "Docentes">("Ambientes");
@@ -245,6 +246,7 @@ function Workspace({ user, onLogout, onPasswordChanged, institutionalNotice = ""
   }, [reloadAgenda]);
   const scrollToTop = () => window.scrollTo({ top: 0, behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth" });
   const open = (p: string) => {
+    if (page === "room-timeline" && timelineContext.current) timelineContext.current.scrollY = window.scrollY;
     setAccountOpen(false);
     setRelated(null);
     setAgendaFocus(null);
@@ -254,9 +256,10 @@ function Workspace({ user, onLogout, onPasswordChanged, institutionalNotice = ""
     if (p === "imports") setImportKind("Ambientes");
     setPage(p as Page);
     setMenu(false);
-    scrollToTop();
+    if (p !== "room-timeline" || !timelineContext.current) scrollToTop();
   };
   const openTimeline = (semesterId: number, roomId: number, anchor?: string, shiftId?: number) => {
+    timelineContext.current = null;
     const semester = data.semesters.find((item) => item.id === semesterId);
     setTimelineFilter({ semesterId, roomId, anchor: anchor ?? semester?.startDate ?? localDate(new Date()), shiftId });
     setPage("room-timeline");
@@ -503,7 +506,7 @@ function Workspace({ user, onLogout, onPasswordChanged, institutionalNotice = ""
               focus={agendaFocus}
             />
           ) : page === "room-timeline" ? (
-            <RoomTimeline user={user} openBookings={() => open("bookings")} initialFilter={timelineFilter} />
+            <RoomTimeline user={user} openBookings={() => open("bookings")} initialFilter={timelineFilter} contextRef={timelineContext} />
           ) : page === "opportunities" && admin ? (
             <RoomOpportunities initial={opportunityFilter} onTimeline={openTimeline} />
           ) : page === "imports" && admin ? (

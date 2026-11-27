@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { agendaPath, datesBetween, indexOccupations, isAgendaOccupation, movePeriod, period, summarize, weekStart } from "../src/lib/roomTimeline.ts";
+import { consecutiveSlots, agendaPath, datesBetween, indexOccupations, isAgendaOccupation, movePeriod, period, summarize, weekStart } from "../src/lib/roomTimeline.ts";
 import type { AgendaOccupation, Semester } from "../src/types.ts";
 
 const semester: Semester = { id: 4, name: "2027/1", startDate: "2027-02-03", endDate: "2027-07-17" };
@@ -63,4 +63,24 @@ test("dados incompletos ou malformados impedem a apresentação de uma grade eng
   assert.equal(isAgendaOccupation({ ...valid, shiftId: undefined }), false);
   assert.equal(isAgendaOccupation({ ...valid, conflicts: null }), false);
   assert.equal(isAgendaOccupation({ ...valid, roomId: "1" }), false);
+});
+
+
+test("sequências unem apenas professor e turma iguais em dias adjacentes e preservam cada registro", () => {
+  const days = ["2027-03-01", "2027-03-02", "2027-03-03"];
+  const records = days.map((date, index) => occupation(index + 1, { date, actualTeacherId: "t1", actualClassGroupId: 5,
+    status: "Confirmed", kind: "Aula", startsAt: `${date}T08:00:00`, endsAt: `${date}T12:00:00` }));
+  const group = (items: AgendaOccupation[]) => consecutiveSlots(days, indexOccupations(items).slots, 1, 2);
+  assert.deepEqual(group(records).map(row => row.items.map(item => item.id)), [[1, 2, 3]]);
+  const slots = indexOccupations(records).slots;
+  consecutiveSlots(days, slots, 1, 2);
+  assert.deepEqual(slots.get('1|2027-03-01|2')?.map(item => item.id), [1]);
+  for (const change of [{ actualTeacherId: "t2" }, { actualClassGroupId: 6 }, { conflicts: ["Room"] },
+    { isBorrowed: true }, { calendarKind: "Holiday" }, { dayStatus: "Ead" }, { bookingStatus: "Pendente" },
+    { actualTeacherId: null }, { actualClassGroupId: null }, { startsAt: "2027-03-02T09:00:00" }]) {
+    assert.equal(group([records[0], { ...records[1], ...change }, records[2]]).length, 3, JSON.stringify(change));
+  }
+  assert.equal(group([records[0], records[2]]).length, 3);
+  assert.equal(group([...records, { ...records[1], id: 4 }]).length, 3);
+  assert.equal(consecutiveSlots(days, indexOccupations(records).slots, 1, 2, { from: days[1], to: days[2] }).length, 3);
 });

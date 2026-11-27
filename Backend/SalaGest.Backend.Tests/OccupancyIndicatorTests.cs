@@ -24,6 +24,113 @@ namespace SalaGest.Backend.Tests;
 public sealed class OccupancyIndicatorTests
 {
     [Fact]
+    public async Task TimelineCapacityUsesConfiguredShiftsAndActualWeekMonthAndSemesterDates()
+    {
+        await using var host = await Host.CreateAsync();
+        using var scope = host.App.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+        var semester = await db.Semesters.FindAsync(host.SemesterId);
+        semester!.EndDate = new DateOnly(2027, 7, 18); // Twenty complete weeks.
+        db.AcademicCalendarEvents.RemoveRange(db.AcademicCalendarEvents);
+        (await db.Shifts.FindAsync(host.AfternoonId))!.EndsAt = new TimeOnly(17, 0);
+        var evening = new SchoolShift { Name = "Noite", StartsAt = new(18, 0), EndsAt = new(22, 0) };
+        db.Shifts.Add(evening);
+        await db.SaveChangesAsync();
+        foreach (var shift in new[] { host.MorningId, host.AfternoonId, evening.Id })
+            db.RoomOperatingShifts.Add(new RoomOperatingShift { SemesterId = host.SemesterId,
+                RoomId = host.RoomAId, ShiftId = shift, WeekdaysMask = 62 });
+        db.Occupations.AddRange(host.Occ(host.RoomAId, 1, 8, 12), host.Occ(host.RoomAId, 1, 8, 12),
+            host.Occ(host.RoomAId, 1, 13, 17));
+        await db.SaveChangesAsync();
+        foreach (var (to, hours, slots) in new[] {
+            (new DateOnly(2027, 3, 7), 60m, 15),
+            (new DateOnly(2027, 3, 31), 276m, 69), // March has 23 weekdays, not four fixed weeks.
+            (new DateOnly(2027, 7, 18), 1200m, 300) })
+        {
+            var report = (await OccupancyIndicators.ForSemester(db, host.SemesterId, host.RoomAId,
+                new IndicatorThresholds(80, 40), from: new DateOnly(2027, 3, 1), to: to))!;
+            Assert.Equal(hours, report.CapacityHours);
+            Assert.Equal(slots, report.EligibleSlots);
+            Assert.Equal(8m, report.OccupiedWithinCapacityHours);
+            Assert.Equal(2, report.OccupiedEligibleSlots); // Two shifts on one calendar date; overlap is not counted twice.
+            Assert.Equal(1, report.OccupiedEligibleRoomDays);
+            Assert.Equal(decimal.Round(8m / hours * 100, 2), report.OccupancyPercent);
+        }
+    }
+
+    [Fact]
+    public async Task TimelinePeriodAndShiftUseMatchingCapacityAndDistinctOccupiedDays()
+    {
+        await using var host = await Host.CreateAsync();
+        await host.Configure(host.RoomAId);
+        using (var scope = host.App.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+            db.Occupations.AddRange(host.Occ(host.RoomAId, 1, 8, 12), host.Occ(host.RoomAId, 1, 8, 12),
+                host.Occ(host.RoomAId, 1, 13, 16), host.Occ(host.RoomAId, 8, 8, 12),
+                host.Occ(host.RoomAId, 9, 8, 12));
+            await db.SaveChangesAsync();
+        }
+        var path = $"/api/occupancy-indicators/semesters/{host.SemesterId}?roomId={host.RoomAId}";
+        var period = await host.Client.GetFromJsonAsync<System.Text.Json.JsonElement>(
+            path + "&from=2027-03-01&to=2027-03-07");
+        Assert.Equal("2027-03-01", period.GetProperty("from").GetString());
+        Assert.Equal("2027-03-07", period.GetProperty("to").GetString());
+        Assert.Equal(7m, period.GetProperty("occupiedWithinCapacityHours").GetDecimal());
+        Assert.Equal(14m, period.GetProperty("capacityHours").GetDecimal());
+        Assert.Equal(50m, period.GetProperty("occupancyPercent").GetDecimal());
+        Assert.Equal(1, period.GetProperty("rooms")[0].GetProperty("occupiedEligibleDays").GetInt32());
+        Assert.Equal(2, period.GetProperty("rooms")[0].GetProperty("eligibleDays").GetInt32());
+        Assert.Equal(4, period.GetProperty("eligibleSlots").GetInt32());
+        Assert.Equal(2, period.GetProperty("occupiedEligibleSlots").GetInt32());
+        var shift = await host.Client.GetFromJsonAsync<System.Text.Json.JsonElement>(
+            path + $"&from=2027-03-01&to=2027-03-07&shiftId={host.AfternoonId}");
+        Assert.Equal(3m, shift.GetProperty("occupiedWithinCapacityHours").GetDecimal());
+        Assert.Equal(6m, shift.GetProperty("capacityHours").GetDecimal());
+        Assert.Equal(50m, shift.GetProperty("occupancyPercent").GetDecimal());
+        Assert.Equal(1, shift.GetProperty("rooms")[0].GetProperty("occupiedEligibleDays").GetInt32());
+        var holiday = await host.Client.GetFromJsonAsync<System.Text.Json.JsonElement>(
+            path + "&from=2027-03-08&to=2027-03-08");
+        Assert.Equal(0m, holiday.GetProperty("capacityHours").GetDecimal());
+        Assert.Equal(4m, holiday.GetProperty("outsideCapacityHours").GetDecimal());
+        Assert.Equal(System.Text.Json.JsonValueKind.Null, holiday.GetProperty("occupancyPercent").ValueKind);
+        Assert.Equal(0, holiday.GetProperty("rooms")[0].GetProperty("eligibleDays").GetInt32());
+        Assert.Equal(0, holiday.GetProperty("eligibleSlots").GetInt32());
+        Assert.Equal(0, holiday.GetProperty("occupiedEligibleSlots").GetInt32());
+        var unknown = await host.Client.GetFromJsonAsync<System.Text.Json.JsonElement>(
+            $"/api/occupancy-indicators/semesters/{host.SemesterId}?roomId={host.RoomBId}&from=2027-03-01&to=2027-03-07");
+        Assert.Equal(System.Text.Json.JsonValueKind.Null, unknown.GetProperty("capacityHours").ValueKind);
+        Assert.Equal(System.Text.Json.JsonValueKind.Null, unknown.GetProperty("eligibleSlots").ValueKind);
+        Assert.Equal(System.Text.Json.JsonValueKind.Null, unknown.GetProperty("rooms")[0].GetProperty("eligibleDays").ValueKind);
+        Assert.Equal(21m, (await host.Report(host.RoomAId)).GetProperty("capacityHours").GetDecimal());
+        Assert.Equal(HttpStatusCode.NoContent, (await host.Client.PutAsJsonAsync(
+            $"/api/semesters/{host.SemesterId}/rooms/{host.RoomAId}/operating-shifts",
+            new[] { new { shiftId = host.MorningId, weekdaysMask = 6 } })).StatusCode);
+        var unoffered = await host.Client.GetFromJsonAsync<System.Text.Json.JsonElement>(
+            path + $"&from=2027-03-01&to=2027-03-07&shiftId={host.AfternoonId}");
+        Assert.Equal(3m, unoffered.GetProperty("physicalOccupiedHours").GetDecimal());
+        Assert.Equal(System.Text.Json.JsonValueKind.Null, unoffered.GetProperty("capacityHours").ValueKind);
+        Assert.Equal(System.Text.Json.JsonValueKind.Null, unoffered.GetProperty("rooms")[0].GetProperty("eligibleDays").ValueKind);
+    }
+
+    [Theory]
+    [InlineData("from=2027-03-01")]
+    [InlineData("to=2027-03-07")]
+    [InlineData("from=2027-03-07&to=2027-03-01")]
+    [InlineData("from=2027-02-28&to=2027-03-07")]
+    [InlineData("from=2027-03-01&to=2028-04-01")]
+    [InlineData("from=invalid&to=2027-03-07")]
+    [InlineData("shiftId=99999")]
+    public async Task TimelineRejectsInvalidScopesAndPreservesAdminPermission(string query)
+    {
+        await using var host = await Host.CreateAsync();
+        var path = $"/api/occupancy-indicators/semesters/{host.SemesterId}?{query}";
+        Assert.Equal(HttpStatusCode.BadRequest, (await host.Client.GetAsync(path)).StatusCode);
+        host.AsTeacher();
+        Assert.Equal(HttpStatusCode.Forbidden, (await host.Client.GetAsync(path)).StatusCode);
+    }
+
+    [Fact]
     public async Task RoomDaysUseDistinctDatesEligibleCalendarAndInstitutionDate()
     {
         await using var host = await Host.CreateAsync();

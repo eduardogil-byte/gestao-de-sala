@@ -15,6 +15,8 @@ public record RoomOccupancyIndicator(int RoomId, string RoomName, RoomKind Kind,
     int ConflictPairs, int UnclassifiedOccupations, string Classification,
     IReadOnlyList<string> Warnings, IReadOnlyList<ShiftOccupancyIndicator> Shifts)
 {
+    public int? EligibleSlots { get; init; }
+    public int? OccupiedEligibleSlots { get; init; }
     public int? EligibleDays { get; init; }
     public int? OccupiedEligibleDays { get; init; }
     public int? UnoccupiedDays { get; init; }
@@ -34,6 +36,8 @@ public record SemesterOccupancyIndicators(int SemesterId, DateOnly From, DateOnl
     IReadOnlyList<MonthOccupancyIndicator> Months,
     IReadOnlyList<string> Warnings)
 {
+    public int? EligibleSlots { get; init; }
+    public int? OccupiedEligibleSlots { get; init; }
     public DateOnly ReferenceDate { get; init; }
     public int OccupiedRoomDays { get; init; }
     public int? EligibleRoomDays { get; init; }

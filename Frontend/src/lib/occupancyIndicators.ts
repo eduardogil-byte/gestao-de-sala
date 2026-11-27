@@ -14,6 +14,7 @@ export type RoomIndicator = {
   capacityHours: number | null; availableHours: number | null;
   occupancyPercent: number | null; outsideCapacityHours: number | null;
   conflictPairs: number; unclassifiedOccupations: number;
+  eligibleSlots?: number | null; occupiedEligibleSlots?: number | null;
   daysWithOccupations?: number; occupiedSlots?: number; unoccupiedSlots?: number | null;
   eligibleDays?: number | null; occupiedEligibleDays?: number | null; unoccupiedDays?: number | null;
   pastOccupiedDays?: number; todayOccupiedDays?: number; futureOccupiedDays?: number;
@@ -29,6 +30,7 @@ export type SemesterIndicators = {
   availableHours: number | null; occupancyPercent: number | null;
   outsideCapacityHours: number | null; roomsWithUnknownCapacity: number;
   conflictPairs: number; classification: IndicatorClassification;
+  eligibleSlots?: number | null; occupiedEligibleSlots?: number | null;
   daysWithOccupations?: number; occupiedSlots?: number; unoccupiedSlots?: number | null;
   occupiedWithinCapacityHours?: number | null;
   referenceDate?: string; occupiedRoomDays?: number; eligibleRoomDays?: number | null;

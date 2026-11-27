@@ -1,12 +1,15 @@
 import { WeeklyOccupations } from "../components/WeeklyOccupations";
+import { TimelinePeriodPicker } from "../components/TimelinePeriodPicker";
+import { TimelineOccupancySummary } from "../components/TimelineOccupancySummary";
 import { Children, isValidElement, useEffect, useMemo, useRef, useState } from "react";
 import { ChevronDown, SlidersHorizontal, X } from "lucide-react";
 import { ApiError, downloadFile, post, read } from "../lib/api";
 import { useData } from "../lib/data";
 import { agendaPath, datesBetween, indexOccupations, isAgendaOccupation, movePeriod, period, summarize, weekStart, type TimelineView } from "../lib/roomTimeline";
-import { dateBR, formatMonthWeek, localDate, nextDate, resultMessage } from "../lib/utils";
-import { Busy, Card, Field, MetricCard, Modal, Notice, SectionHeading, Title } from "../components/UI";
+import { dateBR, localDate, nextDate, resultMessage } from "../lib/utils";
+import { Busy, Card, Field, Modal, Notice, Title } from "../components/UI";
 import { AuditHistory } from "../components/AuditHistory";
+import { isSemesterIndicators, type SemesterIndicators } from "../lib/occupancyIndicators";
 import type { AgendaOccupation, OccupationBlockMovePreview, OccupationMovePreview, User } from "../types";
 
 const calendarLabels: Record<string, string> = {
@@ -22,6 +25,14 @@ const sourceLabels: Record<string, string> = {
 };
 const dayLabels: Record<string, string> = { Letivo: "Letivo", Ead: "EAD", NaoLetivo: "Não letivo" };
 type ReversalPreview = OccupationMovePreview & { expectedLastChangeId: number; referenceChangeId: number };
+export type TimelineContext = {
+  view: TimelineView; anchor: string; semesterId: string; roomId: string; roomKind: string;
+  teacherId: string; classGroupId: string; shiftId: string; kind: string; selectedDay: string; scrollY: number;
+};
+
+function countLabel(count: number, singular: string, plural: string) {
+  return `${count} ${count === 1 ? singular : plural}`;
+}
 
 function TimelineFilterField({ label, children }: { label: string; children: React.ReactElement<React.SelectHTMLAttributes<HTMLSelectElement>> }) {
   const selected = Children.toArray(children.props.children).find(child => isValidElement<{ value?: string | number }>(child) && String(child.props.value) === String(children.props.value));
@@ -33,40 +44,49 @@ function occupationLabel(item: AgendaOccupation) {
     [item.actualTeacherName, item.actualClassGroupName].filter(Boolean).join(" · ") || "Ocupação registrada";
 }
 
-function OccupationButton({ item, onSelect, onDragStart, onDragEnd, dragging, compact = false }: {
+function OccupationButton({ item, onSelect, onDragStart, onDragEnd, dragging, classLabel, continuous = false }: {
   item: AgendaOccupation; onSelect: (item: AgendaOccupation) => void;
   onDragStart?: (item: AgendaOccupation, event: React.DragEvent<HTMLButtonElement>) => void;
-  onDragEnd?: () => void; dragging?: boolean; compact?: boolean;
+  onDragEnd?: () => void; dragging?: boolean;
+  classLabel?: string; continuous?: boolean;
 }) {
+  if (continuous) return <button type="button" className="h-full min-h-11 w-full rounded-control text-ink hover:bg-skybrand-500/10 focus-visible:outline focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-skybrand-500" draggable={Boolean(onDragStart)} onDragStart={event => onDragStart?.(item, event)} onDragEnd={onDragEnd} onClick={() => onSelect(item)} aria-label={`Detalhes: ${occupationLabel(item)}, ${item.roomName}, ${dateBR(item.date)}`}>
+    <span className="sr-only">{dragging ? "Movendo esta ocupação" : "Ver detalhes"}</span>
+  </button>;
   return <button type="button" onClick={() => onSelect(item)} draggable={Boolean(onDragStart)}
     onDragStart={(event) => onDragStart?.(item, event)} onDragEnd={onDragEnd}
     aria-label={`Detalhes: ${occupationLabel(item)}, ${item.roomName}, ${dateBR(item.date)}${onDragStart ? ". Arraste para remanejar ou clique para abrir a movimentação." : ""}`}
-    className={`block w-full text-left rounded-lg border-l-4 border p-2.5 text-xs leading-5 transition-colors hover:brightness-110 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-400 ${item.conflicts.length ? "border-rose-300 bg-rose-50 text-rose-900" : item.kind === "Bloqueio" ? "border-amber-200 bg-amber-50 text-amber-800" : "border-sky-200 bg-sky-50 text-sky-900"}`}>
+    className={`block w-full min-h-11 [overflow-wrap:anywhere] text-left rounded-control border border-l-2 border-line bg-canvas p-2.5 text-sm leading-5 text-ink transition-colors hover:bg-surface focus-visible:outline focus-visible:outline-2 focus-visible:outline-skybrand-500 ${item.conflicts.length ? "border-l-rose-500" : item.kind === "Bloqueio" ? "border-l-amber-500" : "border-l-skybrand-500"}`}>
     {dragging && <span className="block font-semibold mb-1">Movendo esta ocupação</span>}
-    <span className="font-semibold">{item.conflicts.length ? "Conflito · " : item.kind === "Bloqueio" ? "Bloqueio · " : "Ocupado · "}{occupationLabel(item)}</span>
-    {(item.courseName || item.curricularUnitName) && <span className="block mt-1">{[item.courseName, item.curricularUnitName].filter(Boolean).join(" · ")}</span>}
-    {!compact && <span className="block opacity-80">{item.roomName} · {item.shiftName ?? `${item.startsAt.slice(11, 16)}–${item.endsAt.slice(11, 16)}`}</span>}
-    {item.calendarKind && item.calendarKind !== "Presential" && <span className="block mt-1 text-amber-800">Dia especial · {calendarLabels[item.calendarKind] ?? "Calendário"}</span>}
-    {item.dayStatus && item.dayStatus !== "Letivo" && <span className="block mt-1 text-amber-800">{dayLabels[item.dayStatus] ?? "Situação especial"}</span>}
+    <span className="block font-semibold">{item.kind === "Bloqueio" ? "Bloqueio" : [item.actualTeacherName ?? "Instrutor não informado", item.actualClassGroupName ?? classLabel ?? "Turma não informada"].join(" · ")}</span>
+    {(item.conflicts.length > 0 || item.isBorrowed || item.calendarKind && item.calendarKind !== "Presential" || item.dayStatus && item.dayStatus !== "Letivo") && <span className="mt-2 flex flex-wrap gap-1 text-xs">
+      {item.conflicts.length > 0 && <span className="rounded border border-rose-300 bg-rose-50 px-1.5 py-0.5 text-rose-800">Conflito</span>}
+      {item.isBorrowed && <span className="rounded border border-line bg-surface px-1.5 py-0.5">Empréstimo efetivado</span>}
+      {item.calendarKind && item.calendarKind !== "Presential" && <span className="rounded border border-amber-300 bg-amber-50 px-1.5 py-0.5 text-amber-800">{calendarLabels[item.calendarKind] ?? "Dia especial"}</span>}
+      {item.dayStatus && item.dayStatus !== "Letivo" && dayLabels[item.dayStatus] !== calendarLabels[item.calendarKind ?? ""] && <span className="rounded border border-line bg-surface px-1.5 py-0.5">{dayLabels[item.dayStatus] ?? "Situação especial"}</span>}
+    </span>}
   </button>;
 }
 
-export function RoomTimeline({ user, openBookings, initialFilter }: { user: User; openBookings: () => void; initialFilter?: { semesterId: number; roomId: number; anchor: string; shiftId?: number } | null }) {
+export function RoomTimeline({ user, openBookings, initialFilter, contextRef }: { user: User; openBookings: () => void; initialFilter?: { semesterId: number; roomId: number; anchor: string; shiftId?: number } | null; contextRef?: React.MutableRefObject<TimelineContext | null> }) {
   const { data, error: catalogError } = useData();
   const admin = user.roles.includes("Admin");
-  const [view, setView] = useState<TimelineView>(initialFilter?.shiftId ? "month" : initialFilter ? "semester" : "week");
-  const [anchor, setAnchor] = useState(initialFilter?.anchor ?? localDate(new Date()));
-  const [semesterId, setSemesterId] = useState(initialFilter ? String(initialFilter.semesterId) : "");
-  const [roomId, setRoomId] = useState(initialFilter ? String(initialFilter.roomId) : "");
-  const [roomKind, setRoomKind] = useState("");
-  const [teacherId, setTeacherId] = useState("");
-  const [classGroupId, setClassGroupId] = useState("");
-  const [shiftId, setShiftId] = useState(initialFilter?.shiftId ? String(initialFilter.shiftId) : "");
-  const [kind, setKind] = useState("");
+  const [savedContext] = useState(() => contextRef?.current);
+  const [view, setView] = useState<TimelineView>(savedContext?.view ?? (initialFilter?.shiftId ? "month" : initialFilter ? "semester" : "week"));
+  const [anchor, setAnchor] = useState(savedContext?.anchor ?? initialFilter?.anchor ?? localDate(new Date()));
+  const [semesterId, setSemesterId] = useState(savedContext?.semesterId ?? (initialFilter ? String(initialFilter.semesterId) : ""));
+  const [roomId, setRoomId] = useState(savedContext?.roomId ?? (initialFilter ? String(initialFilter.roomId) : ""));
+  const [roomKind, setRoomKind] = useState(savedContext?.roomKind ?? "");
+  const [teacherId, setTeacherId] = useState(savedContext?.teacherId ?? "");
+  const [classGroupId, setClassGroupId] = useState(savedContext?.classGroupId ?? "");
+  const [shiftId, setShiftId] = useState(savedContext?.shiftId ?? (initialFilter?.shiftId ? String(initialFilter.shiftId) : ""));
+  const [kind, setKind] = useState(savedContext?.kind ?? "");
+  const [filterNotice, setFilterNotice] = useState("");
+  const [exportOpen, setExportOpen] = useState(false);
   const [filtersExpanded, setFiltersExpanded] = useState(false);
   const filtersRef = useRef<HTMLDivElement>(null);
   const filtersButtonRef = useRef<HTMLButtonElement>(null);
-  const activeFilterCount = [semesterId, roomKind, roomId, admin ? teacherId : "", classGroupId, shiftId, kind].filter(Boolean).length;
+  const activeFilterCount = [semesterId, roomKind, admin ? teacherId : "", classGroupId, kind].filter(Boolean).length;
   useEffect(() => {
     if (!filtersExpanded) return;
     filtersRef.current?.querySelector("select")?.focus();
@@ -87,8 +107,13 @@ export function RoomTimeline({ user, openBookings, initialFilter }: { user: User
   const [exportBusy, setExportBusy] = useState(false);
   const [exportError, setExportError] = useState("");
   const [selected, setSelected] = useState<AgendaOccupation | null>(null);
-  const [selectedDay, setSelectedDay] = useState("");
+  const [selectedDay, setSelectedDay] = useState(savedContext?.selectedDay ?? "");
+  const restoredScroll = useRef(false);
+  useEffect(() => {
+    if (contextRef) contextRef.current = { view, anchor, semesterId, roomId, roomKind, teacherId, classGroupId, shiftId, kind, selectedDay, scrollY: contextRef.current?.scrollY ?? 0 };
+  }, [view, anchor, semesterId, roomId, roomKind, teacherId, classGroupId, shiftId, kind, selectedDay, contextRef]);
   const [revision, setRevision] = useState(0);
+  const [indicatorState, setIndicatorState] = useState<{ key: string; report?: SemesterIndicators; error?: string; loading?: boolean }>({ key: "" });
   const [moveItem, setMoveItem] = useState<AgendaOccupation | null>(null);
   const [moveRoomId, setMoveRoomId] = useState("");
   const [moveDate, setMoveDate] = useState("");
@@ -120,13 +145,31 @@ export function RoomTimeline({ user, openBookings, initialFilter }: { user: User
   const query = range && (view !== "semester" || datesBetween(range.from, range.to).length <= 371)
     ? agendaPath(range, { semesterId, roomId, teacherId: admin ? teacherId : "", classGroupId, shiftId, kind }) : "";
   const queryKey = `${query}|${revision}`;
+  const indicatorCandidates = range ? data.semesters.filter(s => s.startDate <= range.from && s.endDate >= nextDate(range.to, -1)) : [];
+  const indicatorSemester = semester ?? (indicatorCandidates.length === 1 ? indicatorCandidates[0] : undefined);
+  const indicatorParams = new URLSearchParams(range ? { from: range.from, to: nextDate(range.to, -1) } : {});
+  if (roomId) indicatorParams.set("roomId", roomId);
+  if (shiftId) indicatorParams.set("shiftId", shiftId);
+  const indicatorQuery = admin && range && indicatorSemester && query ? `/occupancy-indicators/semesters/${indicatorSemester.id}?${indicatorParams}` : "";
+  const indicatorKey = `${indicatorQuery}|${revision}`;
+  useEffect(() => {
+    if (!indicatorQuery) return;
+    let current = true;
+    setIndicatorState({ key: indicatorKey, loading: true });
+    read<unknown>(indicatorQuery).then(report => {
+      if (!isSemesterIndicators(report) || report.semesterId !== indicatorSemester?.id ||
+          report.from !== range?.from || report.to !== nextDate(range!.to, -1))
+        throw new Error("Não foi possível comprovar os indicadores para este período.");
+      if (current) setIndicatorState({ key: indicatorKey, report });
+    }).catch(reason => { if (current) setIndicatorState({ key: indicatorKey, error: resultMessage(reason) }); });
+    return () => { current = false; };
+  }, [indicatorQuery, revision]);
 
   useEffect(() => {
     let current = true;
     setItems(null);
     setLoadedQuery("");
     setError("");
-    setSelectedDay("");
     setSelected(null);
     if (!query) { setLoading(false); return () => { current = false; }; }
     setLoading(true);
@@ -147,6 +190,15 @@ export function RoomTimeline({ user, openBookings, initialFilter }: { user: User
     return () => { current = false; };
   }, [query, revision]);
 
+  useEffect(() => {
+    if (!items || loading || restoredScroll.current) return;
+    const frame = requestAnimationFrame(() => {
+      if (savedContext) window.scrollTo({ top: savedContext.scrollY, behavior: "instant" });
+      restoredScroll.current = true;
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [items, loading, savedContext]);
+
   const roomKinds = useMemo(() => [...new Set(data.rooms.map((room) => room.kind).filter(Boolean))].sort(), [data.rooms]);
   const rooms = useMemo(() => data.rooms.filter((room) => (!roomId || String(room.id) === roomId) && (!roomKind || room.kind === roomKind)), [data.rooms, roomId, roomKind]);
   const visibleItems = useMemo(() => {
@@ -165,47 +217,64 @@ export function RoomTimeline({ user, openBookings, initialFilter }: { user: User
   const visibleDates = view === "week" ? datesBetween(weekStart(anchor), nextDate(weekStart(anchor), 7)) :
     view === "month" ? datesBetween(`${anchor.slice(0, 7)}-01`, nextDate(`${anchor.slice(0, 7)}-01`, 32).slice(0, 7) + "-01") : [];
   const monthStart = `${anchor.slice(0, 7)}-01`;
-  const monthDates = view === "month" ? datesBetween(weekStart(monthStart), nextDate(visibleDates[visibleDates.length - 1] ?? monthStart, 1)) : [];
   const rangeValid = Boolean(query);
   const periodName = view === "semester" ? semester?.name ?? "Selecione um semestre" :
     view === "week" ? `${dateBR(visibleDates[0])} a ${dateBR(visibleDates[6])}` :
       new Date(`${monthStart}T12:00:00`).toLocaleDateString("pt-BR", { month: "long", year: "numeric" });
+  const detailDate = range && selectedDay >= range.from && selectedDay < range.to ? selectedDay :
+    range && anchor >= range.from && anchor < range.to ? anchor : range?.from ?? "";
+  const semesterIndex = data.semesters.findIndex(s => String(s.id) === semesterId);
+
+  function selectSemester(value: string) {
+    setFilterNotice("");
+    setSemesterId(value);
+    const next = data.semesters.find(s => String(s.id) === value);
+    if (next && (anchor < next.startDate || anchor > next.endDate)) setAnchor(next.startDate);
+    if (next && classGroupId && !classOptions.some(c => String(c.id) === classGroupId && c.semesterId === next.id)) {
+      setClassGroupId("");
+      setFilterNotice("O filtro de turma foi removido porque ela não pertence ao semestre selecionado.");
+    }
+  }
 
   function navigate(direction: number) {
     if (view === "semester") {
       const index = data.semesters.findIndex((s) => String(s.id) === semesterId);
       const next = data.semesters[index - direction];
-      if (next) setSemesterId(String(next.id));
-    } else setAnchor(movePeriod(view, anchor, direction));
+      if (next) selectSemester(String(next.id));
+    } else goToDate(movePeriod(view, anchor, direction));
   }
   function changeView(next: TimelineView) {
     if (next === "semester" && !semesterId) {
       const matching = data.semesters.find((s) => s.startDate <= anchor && s.endDate >= anchor);
-      setSemesterId(String((matching ?? data.semesters[0])?.id ?? ""));
+      selectSemester(String((matching ?? data.semesters[0])?.id ?? ""));
     }
     setView(next);
   }
   function clearFilters() {
+    setFilterNotice("");
     if (view !== "semester") setSemesterId("");
     setRoomId(""); setRoomKind(""); setTeacherId(""); setClassGroupId(""); setShiftId(""); setKind("");
   }
   function goToDate(date: string) {
     if (!date) return;
     setAnchor(date);
-    const matching = data.semesters.find(s => s.startDate <= date && s.endDate >= date);
-    setSemesterId(matching ? String(matching.id) : "");
-    setClassGroupId("");
-    if (view === "semester" && !matching) setView("week");
+    setSelectedDay(date);
+    setFilterNotice("");
+    if (semester && (date < semester.startDate || date > semester.endDate)) {
+      setSemesterId("");
+      if (view === "semester") setView("week");
+      setFilterNotice("O filtro de semestre foi removido para mostrar a data escolhida. Os demais filtros foram mantidos.");
+    }
   }
   const activeFilters = [
-    { label: "Semestre", value: semesterId, text: semester?.name, clear: () => { setSemesterId(""); setClassGroupId(""); }, removable: view !== "semester" },
+    { label: "Semestre", value: semesterId, text: semester?.name, clear: () => setSemesterId(""), removable: view !== "semester" },
     { label: "Tipo de ambiente", value: roomKind, text: roomKind, clear: () => setRoomKind("") },
     { label: "Ambiente", value: roomId, text: data.rooms.find(r => String(r.id) === roomId)?.name, clear: () => setRoomId("") },
     { label: "Instrutor", value: admin ? teacherId : "", text: data.teachers.find(t => t.id === teacherId)?.displayName, clear: () => setTeacherId("") },
     { label: "Turma", value: classGroupId, text: classOptions.find(c => String(c.id) === classGroupId)?.name, clear: () => setClassGroupId("") },
     { label: "Turno", value: shiftId, text: data.shifts.find(s => String(s.id) === shiftId)?.name, clear: () => setShiftId("") },
     { label: "Tipo de ocupação", value: kind, text: kind, clear: () => setKind("") },
-  ].filter(filter => filter.value);
+  ].filter(filter => filter.value && filter.label !== "Ambiente" && filter.label !== "Turno");
   function daySummary(date: string) {
     const rows = byDay.get(date) ?? [];
     const summary = summarize(rows);
@@ -214,7 +283,7 @@ export function RoomTimeline({ user, openBookings, initialFilter }: { user: User
   function dailyDetails(date: string) {
     const summary = daySummary(date);
     return <div className="space-y-3">
-      <h2 className="font-semibold text-slate-800">{dateBR(date)} · {summary.rows.length} ocupação(ões)</h2>
+      <h2 className="font-semibold text-ink">{dateBR(date)} · {countLabel(summary.rows.length, "ocupação", "ocupações")}</h2>
       {summary.rows.length ? summary.rows.map((item) => <OccupationButton key={item.id} item={item} onSelect={setSelected} />) :
         <p className="text-sm text-slate-600">Sem ocupação registrada neste filtro. Disponibilidade não confirmada.</p>}
     </div>;
@@ -381,61 +450,61 @@ export function RoomTimeline({ user, openBookings, initialFilter }: { user: User
   }
 
   return <>
-    <Title title="Cronograma"
-      action={<div className="flex flex-wrap gap-2"><button type="button" className="btn-secondary" onClick={openBookings}>Abrir reservas</button>
-        {admin && <div className="space-y-1"><button type="button" className="btn-secondary" aria-describedby="timeline-export-scope" disabled={!range || exportBusy} onClick={() => void exportCurrentPeriod()}>{exportBusy ? "Gerando Excel..." : "Exportar ocupações"}</button><p id="timeline-export-scope" className="text-xs text-muted-ink">Exporta período, ambiente e turno.</p></div>}</div>} />
+    <Title title="Cronograma de ambientes"
+      action={<div className="flex flex-wrap gap-2"><button type="button" className="btn-secondary" onClick={openBookings}>Reservas</button>
+        {admin && <button type="button" className="btn-secondary" disabled={!range || exportBusy} onClick={() => setExportOpen(true)}>{exportBusy ? "Gerando Excel..." : "Exportar"}</button>}</div>} />
     {exportError && <div className="mb-4"><Notice type="error" message={exportError} onClose={() => setExportError("")} /></div>}
-    {admin && (teacherId || classGroupId || kind || roomKind) && <p className="mb-4 text-sm text-amber-800" role="status">A exportação preserva período, ambiente e turno. Os filtros de instrutor, turma, tipo de ambiente e tipo de ocupação não são aplicados ao arquivo.</p>}
     {moveSuccess && <div className="mb-4"><Notice type="success" message={moveSuccess} onClose={() => setMoveSuccess("")} /></div>}
     {operationError && <div className="mb-4"><Notice message={operationError} onClose={() => setOperationError("")} /></div>}
-    <Card className="p-4 sm:p-5 mb-5 space-y-5">
-      <SectionHeading title="Período e visualização" />
+    <Card className="relative p-3 sm:p-4 mb-4 space-y-3">
       <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
         <div className="flex flex-wrap gap-2" role="group" aria-label="Visualização do cronograma">{(["week", "month", "semester"] as TimelineView[]).map((choice) => <button key={choice} type="button"
           aria-pressed={view === choice} onClick={() => changeView(choice)}
           className={view === choice ? "btn-primary" : "btn-secondary"}>
           {{ week: "Semana", month: "Mês", semester: "Semestre" }[choice]}
         </button>)}</div>
-        <div className="min-w-0 space-y-2 lg:grid lg:grid-cols-[minmax(0,1fr)_auto] lg:items-end lg:gap-x-3 lg:space-y-0">
-          {view === "week" && <p className="text-sm font-semibold text-ink text-center lg:col-span-2 lg:mb-2" aria-live="polite">{formatMonthWeek(anchor)}</p>}
-          <div className="flex items-center gap-2 min-w-0 rounded-xl border border-line bg-canvas/40 p-1" aria-label="Navegação entre períodos">
-          <button type="button" className="btn-secondary shrink-0" onClick={() => navigate(-1)} aria-label="Período anterior">‹</button>
-          <span className="text-sm font-semibold text-ink flex-1 min-w-0 text-center capitalize px-1" aria-live="polite">{periodName}</span>
-          <button type="button" className="btn-secondary shrink-0" onClick={() => navigate(1)} aria-label="Próximo período">›</button>
-          </div>
-          <div className="flex flex-wrap items-end gap-2">
-            <button type="button" className="btn-secondary" onClick={() => goToDate(localDate(new Date()))}>Hoje</button>
-            <Field label="Ir para data"><input type="date" className="field" value={anchor} onChange={e => goToDate(e.target.value)} /></Field>
-          </div>
+        <div className={`flex min-w-0 items-center gap-1 md:min-w-[20rem] ${view === "semester" ? "" : "rounded-control border border-line bg-surface p-1"}`} aria-label="Navegação entre períodos">
+          <button type="button" className="btn-quiet shrink-0" disabled={view === "semester" && !data.semesters[semesterIndex + 1]} onClick={() => navigate(-1)} aria-label="Período anterior">‹</button>
+          {view === "semester" ? <select className="field min-w-0 flex-1" aria-label="Selecionar semestre" value={semesterId} onChange={event => selectSemester(event.target.value)}>
+            <option value="" disabled>Selecione um semestre</option>{data.semesters.map(semester => <option key={semester.id} value={semester.id}>{semester.name}</option>)}
+          </select> : <TimelinePeriodPicker view={view} anchor={anchor} semesterId={semesterId} semesters={data.semesters} label={periodName} onDate={goToDate} onSemester={selectSemester} />}
+          <button type="button" className="btn-quiet shrink-0" disabled={view === "semester" && !data.semesters[semesterIndex - 1]} onClick={() => navigate(1)} aria-label="Próximo período">›</button>
         </div>
       </div>
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <h2 className="section-title">Filtros do cronograma</h2>
-        <div ref={filtersRef} className="relative sm:shrink-0" onBlur={(event) => { if (!event.currentTarget.contains(event.relatedTarget)) setFiltersExpanded(false); }}>
+      <div className="grid grid-cols-[minmax(0,1fr)_auto] items-start gap-3 sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto] [&>label]:min-w-0 [&>label:first-child]:col-span-2 sm:[&>label:first-child]:col-span-1">
+        <TimelineFilterField label="Ambiente"><select className="field" value={roomId} onChange={e => setRoomId(e.target.value)}>
+          <option value="">Todos</option>{data.rooms.filter(room => !roomKind || room.kind === roomKind).map(r => <option key={r.id} value={r.id}>{r.code ? `${r.code} · ` : ""}{r.name}</option>)}
+        </select></TimelineFilterField>
+        <TimelineFilterField label="Turno"><select className="field" value={shiftId} onChange={e => setShiftId(e.target.value)}>
+          <option value="">Todos</option>{data.shifts.map(s => <option key={s.id} value={s.id}>{s.name} · {s.startsAt.slice(0, 5)}–{s.endsAt.slice(0, 5)}</option>)}
+        </select></TimelineFilterField>
+        <div ref={filtersRef} className="pt-[1.625rem] sm:shrink-0" onBlur={(event) => { if (!event.currentTarget.contains(event.relatedTarget)) setFiltersExpanded(false); }}>
           <button ref={filtersButtonRef} type="button" className="btn-secondary w-full sm:w-auto" aria-expanded={filtersExpanded} aria-controls="timeline-filters" onClick={() => setFiltersExpanded((expanded) => !expanded)}>
-            <SlidersHorizontal size={17} aria-hidden="true" />Filtros
+            <SlidersHorizontal size={17} aria-hidden="true" />Mais filtros
             {activeFilterCount > 0 && <span className="rounded-full bg-canvas px-2 py-0.5 text-xs text-ink">{activeFilterCount}<span className="sr-only"> selecionados</span></span>}
             <ChevronDown size={16} aria-hidden="true" className={`transition-transform ${filtersExpanded ? "rotate-180" : ""}`} />
           </button>
-      <div id="timeline-filters" hidden={!filtersExpanded} role="region" aria-label="Opções de filtro" className="absolute right-0 top-full z-20 mt-2 w-full min-w-0 max-h-[70dvh] overflow-y-auto space-y-4 rounded-panel border border-line bg-surface p-4 shadow-soft sm:w-[32rem]">
-        <div className="grid grid-cols-2 gap-4 [&>label]:min-w-0">
-        <TimelineFilterField label="Semestre"><select className="field" value={semesterId} onChange={(e) => { setSemesterId(e.target.value); setClassGroupId(""); }}>
+      <div id="timeline-filters" hidden={!filtersExpanded} role="region" aria-label="Opções de filtro" className="absolute right-3 z-20 mt-2 max-h-[70dvh] w-[calc(100%-1.5rem)] min-w-0 space-y-3 overflow-y-auto rounded-panel border border-line bg-surface p-3 shadow-soft sm:w-[30rem] sm:max-w-[calc(100%-1.5rem)]">
+        <div className="grid gap-3 sm:grid-cols-2 [&>label]:min-w-0">
+        <TimelineFilterField label="Semestre"><select className="field" value={semesterId} onChange={e => selectSemester(e.target.value)}>
           <option value="" disabled={view === "semester"}>{view === "semester" ? "Selecione um semestre" : "Todos"}</option>{data.semesters.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
         </select></TimelineFilterField>
-        <TimelineFilterField label="Tipo de ambiente"><select className="field" value={roomKind} onChange={(e) => { setRoomKind(e.target.value); setRoomId(""); }}>
+        <TimelineFilterField label="Tipo de ambiente"><select className="field" value={roomKind} onChange={e => {
+          const value = e.target.value;
+          setRoomKind(value);
+          setFilterNotice("");
+          if (value && roomId && !data.rooms.some(room => String(room.id) === roomId && room.kind === value)) {
+            setRoomId("");
+            setFilterNotice("O filtro de ambiente foi removido porque ele não pertence ao tipo selecionado.");
+          }
+        }}>
           <option value="">Todos</option>{roomKinds.map((value) => <option key={value} value={value}>{value}</option>)}
-        </select></TimelineFilterField>
-        <TimelineFilterField label="Ambiente"><select className="field" value={roomId} onChange={(e) => setRoomId(e.target.value)}>
-          <option value="">Todos</option>{data.rooms.filter((room) => !roomKind || room.kind === roomKind).map((r) => <option key={r.id} value={r.id}>{r.code ? `${r.code} · ` : ""}{r.name}</option>)}
         </select></TimelineFilterField>
         {admin && <TimelineFilterField label="Instrutor"><select className="field" value={teacherId} onChange={(e) => setTeacherId(e.target.value)}>
           <option value="">Todos</option>{data.teachers.map((t) => <option key={t.id} value={t.id}>{t.displayName}</option>)}
         </select></TimelineFilterField>}
         <TimelineFilterField label="Turma"><select className="field" value={classGroupId} onChange={(e) => setClassGroupId(e.target.value)}>
           <option value="">Todas</option>{classOptions.filter((c) => !semesterId || String(c.semesterId) === semesterId).map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
-        </select></TimelineFilterField>
-        <TimelineFilterField label="Turno"><select className="field" value={shiftId} onChange={(e) => setShiftId(e.target.value)}>
-          <option value="">Todos</option>{data.shifts.map((s) => <option key={s.id} value={s.id}>{s.name} · {s.startsAt.slice(0, 5)}–{s.endsAt.slice(0, 5)}</option>)}
         </select></TimelineFilterField>
         <TimelineFilterField label="Tipo de ocupação"><select className="field" value={kind} onChange={(e) => setKind(e.target.value)}>
           <option value="">Todos</option><option value="Aula">Aula</option><option value="Avulsa">Avulsa</option><option value="Bloqueio">Bloqueio</option>
@@ -445,24 +514,31 @@ export function RoomTimeline({ user, openBookings, initialFilter }: { user: User
       </div>
       </div>
       </div>
-      {activeFilters.length > 0 && <div className="flex flex-wrap gap-2" aria-label="Filtros selecionados">{activeFilters.map(filter => <div key={filter.label} className="flex min-w-0 max-w-full items-center gap-1 rounded-lg border border-line bg-canvas px-3 py-1 text-sm text-ink">
+      {activeFilters.length > 0 && <div className="flex flex-wrap gap-2" aria-label="Filtros selecionados">{activeFilters.map(filter => <div key={filter.label} className={`flex min-h-[46px] min-w-0 max-w-full items-center gap-1 rounded-lg border border-line bg-canvas pl-3 text-sm text-ink ${filter.removable === false ? "pr-3" : ""}`}>
         <span className="min-w-0 [overflow-wrap:anywhere]">{filter.label}: {filter.text || "Seleção indisponível"}</span>
         {filter.removable !== false && <button type="button" className="flex min-h-11 min-w-11 shrink-0 items-center justify-center rounded hover:bg-surface focus-visible:outline focus-visible:outline-2 focus-visible:outline-skybrand-500" aria-label={`Remover filtro ${filter.label}`} onClick={filter.clear}><X size={16} aria-hidden="true" /></button>}
       </div>)}</div>}
+      {filterNotice && <p className="text-sm text-muted-ink" role="status">{filterNotice}</p>}
     </Card>
-    <Card className="mb-5 p-4 sm:p-5 space-y-2">
-      <div className="sr-only"><SectionHeading title="Resumo do período" subtitle={`${periodName}${view === "week" ? ` · ${formatMonthWeek(anchor)}` : ""}`} /></div>
-      <p className="text-sm text-ink" role="status">{items && loadedQuery === queryKey ? `${summary.count} ocupações · ${summary.conflicts} conflitos` : loading ? "Consultando ocupações…" : "Ocupações não consultadas"} · {rooms.length} ambientes</p>
-      <details><summary className="cursor-pointer py-2 text-sm font-semibold text-ink focus-visible:outline focus-visible:outline-2 focus-visible:outline-skybrand-500">Ver resumo</summary>
-      <div className="mt-3 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-        <MetricCard label="Ocupações registradas" value={items && loadedQuery === queryKey ? summary.count : "—"} detail="Registros, não horas de aula" />
-        <MetricCard label="Conflitos sinalizados" value={items && loadedQuery === queryKey ? summary.conflicts : "—"} tone="rose" detail="Conforme análise da API" />
-        <MetricCard label="Ambientes exibidos" value={rooms.length} detail="Conforme cadastro e filtros" tone="violet" />
-        <MetricCard label="Turnos exibidos" value={shifts.length} detail="Conforme cadastro e filtros" tone="emerald" />
+    {admin && <TimelineOccupancySummary
+      rooms={rooms.map(room => indicatorState.key === indicatorKey ? indicatorState.report?.rooms.find(item => item.roomId === room.id) : undefined)}
+      loading={Boolean(indicatorQuery && (indicatorState.key !== indicatorKey || indicatorState.loading))}
+      message={!indicatorQuery ? "Totais não definidos: selecione um semestre que inclua todo o período." : indicatorState.key === indicatorKey ? indicatorState.error : undefined}
+    />}
+    <div className="mb-3 space-y-2 px-1">
+      <p className="text-sm text-ink" role="status">{items && loadedQuery === queryKey ? `${countLabel(summary.count, "ocupação", "ocupações")} · ${countLabel(rooms.length, "ambiente", "ambientes")}${summary.conflicts ? ` · ${countLabel(summary.conflicts, "ocupação com conflito", "ocupações com conflito")}` : ""}` : loading ? "Consultando ocupações…" : "Ocupações não consultadas"}</p>
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-ink" aria-label="Legenda do cronograma"><span className="border-l-4 border-sky-300 pl-2">Ocupado</span><span className="border-l-4 border-rose-300 pl-2">Conflito</span><span className="border-l-4 border-amber-300 pl-2">Bloqueio / dia especial</span><span>— Sem registro; disponibilidade não confirmada.</span></div>
+      {admin && (teacherId || classGroupId || kind) && <p className="text-xs text-muted-ink">Os indicadores mostram a ocupação total dos ambientes exibidos no período e turno; os filtros de instrutor, turma e tipo de ocupação se aplicam aos registros da agenda.</p>}
+      {admin && indicatorState.key === indicatorKey && indicatorState.error && <button type="button" className="btn-quiet" onClick={() => setRevision(value => value + 1)}>Recalcular indicadores</button>}
+    </div>
+    {exportOpen && admin && <Modal title="Exportar ocupações" onClose={() => setExportOpen(false)}>
+      <div className="space-y-4 text-sm text-ink">
+        <p>O Excel inclui o período consultado, o ambiente e o turno selecionados.</p>
+        <dl className="space-y-2"><div><dt className="text-muted-ink">Período</dt><dd>{range ? `${dateBR(range.from)} a ${dateBR(nextDate(range.to, -1))}` : periodName}</dd></div><div><dt className="text-muted-ink">Ambiente</dt><dd>{data.rooms.find(r => String(r.id) === roomId)?.name ?? "Todos"}</dd></div><div><dt className="text-muted-ink">Turno</dt><dd>{data.shifts.find(s => String(s.id) === shiftId)?.name ?? "Todos"}</dd></div></dl>
+        {(teacherId || classGroupId || kind || roomKind) && <Notice type="info" message="Os filtros de instrutor, turma, tipo de ambiente e tipo de ocupação não são aplicados ao arquivo." />}
+        <div className="flex flex-wrap justify-end gap-2"><button type="button" className="btn-secondary" onClick={() => setExportOpen(false)}>Cancelar</button><button type="button" className="btn-primary" disabled={!range || exportBusy} onClick={() => { setExportOpen(false); void exportCurrentPeriod(); }}>Gerar Excel</button></div>
       </div>
-      <div className="flex flex-wrap items-center gap-2 text-xs text-muted-ink" aria-label="Legenda do cronograma"><span className="font-semibold text-ink">Legenda:</span><span className="rounded-full border-l-4 border-sky-300 bg-sky-50 px-2.5 py-1 text-sky-800">Ocupado</span><span className="rounded-full border-l-4 border-rose-300 bg-rose-50 px-2.5 py-1 text-rose-800">Conflito</span><span className="rounded-full border-l-4 border-amber-300 bg-amber-50 px-2.5 py-1 text-amber-800">Bloqueio</span><span className="rounded-full bg-amber-50 px-2.5 py-1 text-amber-800">Dia especial</span><span className="rounded-full bg-slate-100 px-2.5 py-1">Sem registro · disponibilidade desconhecida</span></div>
-      </details>
-    </Card>
+    </Modal>}
     {catalogError && <div className="mb-4"><Notice message={`Não foi possível carregar os cadastros: ${catalogError}. A grade não pode identificar períodos sem registro.`} /></div>}
     {!rangeValid && <Notice message={view === "semester" && semester && datesBetween(semester.startDate, nextDate(semester.endDate, 1)).length > 371
       ? "Este semestre excede 371 dias; consulte semanas ou meses. Nenhum resultado parcial é exibido."
@@ -471,26 +547,12 @@ export function RoomTimeline({ user, openBookings, initialFilter }: { user: User
     {loading && <Busy />}
     {!loading && !error && items && loadedQuery === queryKey && !catalogError && <>
       {visibleItems.length === 0 && <div className="mb-4"><Notice type="info" message="Nenhuma ocupação registrada no período e filtros selecionados. Isso não confirma disponibilidade para novas reservas." /></div>}
-      {view === "week" && <WeeklyOccupations adaptive occupations={visibleItems} dates={visibleDates} rooms={rooms} shifts={shifts} range={range} onOpen={setSelected} onDropSlot={admin ? (roomId, date, shiftId, event) => dropOn(roomId, date, shiftId, event) : undefined}
-        renderActivity={item => <><p className="text-xs font-semibold text-ink">{data.classes.find(group => group.id === item.actualClassGroupId)?.code}{item.isBorrowed ? " - Empréstimo efetivado" : ""}</p><OccupationButton compact item={item} onSelect={setSelected} onDragStart={admin && item.kind !== "Bloqueio" ? startDrag : undefined} onDragEnd={() => { setDraggingId(null); setDragTarget(""); }} dragging={draggingId === item.id} /></>} />}
+      {(view === "week" || view === "month") && <WeeklyOccupations key={view} monthly={view === "month"} onSelectDate={setSelectedDay} selectedDate={detailDate} adaptive occupations={visibleItems} dates={visibleDates} rooms={rooms} shifts={shifts} range={range} onOpen={setSelected} onDropSlot={admin ? (roomId, date, shiftId, event) => dropOn(roomId, date, shiftId, event) : undefined}
+        renderActivity={(item, continuous) => <OccupationButton continuous={continuous} classLabel={data.classes.find(group => group.id === item.actualClassGroupId)?.code ?? undefined} item={item} onSelect={setSelected} onDragStart={admin && item.kind !== "Bloqueio" ? startDrag : undefined} onDragEnd={() => { setDraggingId(null); setDragTarget(""); }} dragging={draggingId === item.id} />} />}
       {view === "week" && visibleItems.some((item) => !rooms.some((room) => room.id === item.roomId)) && <Card className="p-4 mb-5 space-y-2"><h2 className="font-semibold">Ocupações fora da grade visível</h2>
         {visibleItems.filter((item) => !rooms.some((room) => room.id === item.roomId)).map((item) => <div key={item.id}><span className="text-xs text-slate-500">{dateBR(item.date)} · {item.roomName || "Ambiente não identificado"} · {item.startsAt.slice(11, 16)}–{item.endsAt.slice(11, 16)}</span><OccupationButton item={item} onSelect={setSelected} /></div>)}
       </Card>}
-      {view === "month" && <Card className="p-3 mb-5"><div className="grid grid-cols-7 text-xs sm:text-sm">
-        {["Dom", "Seg", "Ter", "Qua", "Qui", "Sex", "Sáb"].map((label) => <div key={label} className="p-2 font-semibold text-slate-600">{label}</div>)}
-        {monthDates.map((date) => {
-          const summary = daySummary(date);
-          const inside = range && date >= range.from && date < range.to;
-          return <button type="button" key={date} disabled={!inside} onClick={() => setSelectedDay(date)}
-            className={`min-h-24 p-2 border border-slate-100 text-left align-top focus:ring-2 focus:ring-sky-600 ${inside ? "hover:bg-sky-50" : "bg-slate-50 text-slate-400"}`}>
-            <span className="font-semibold">{date.slice(8)}</span>
-            {inside && <><span className="block mt-1">{summary.rows.length} ocupação(ões)</span>
-              {summary.conflicts > 0 && <span className="block text-rose-700 font-semibold">{summary.conflicts} conflito(s)</span>}
-              {summary.specials.map((kind) => <span key={kind} className="block text-amber-800">{calendarLabels[kind] ?? "Dia especial"}</span>)}
-              {!summary.rows.length && <span className="block text-slate-500">Sem registro</span>}</>}
-          </button>;
-        })}</div></Card>}
-      {view === "month" && selectedDay && <Card className="p-4 mb-5">{dailyDetails(selectedDay)}</Card>}
+      {view === "month" && detailDate && <Card className="p-4 mb-4"><section id="timeline-day-details" aria-label="Ocupações do dia" aria-live="polite">{dailyDetails(detailDate)}</section></Card>}
       {view === "semester" && semester && <div className="grid sm:grid-cols-2 xl:grid-cols-3 gap-3 mb-5">
         {datesBetween(semester.startDate, nextDate(semester.endDate, 1)).filter((date, index, dates) => index === 0 || date.slice(0, 7) !== dates[index - 1].slice(0, 7)).map((date) => {
           const end = nextDate(`${date.slice(0, 7)}-01`, 32).slice(0, 7) + "-01";
@@ -498,7 +560,7 @@ export function RoomTimeline({ user, openBookings, initialFilter }: { user: User
           const rows = dates.flatMap((day) => byDay.get(day) ?? []);
           const conflicts = summarize(rows).conflicts;
           return <Card key={date} className="p-4"><h2 className="capitalize font-semibold">{new Date(`${date}T12:00:00`).toLocaleDateString("pt-BR", { month: "long", year: "numeric" })}</h2>
-            <p className="text-sm mt-2">{rows.length} ocupação(ões)</p><p className="text-sm text-rose-700">{conflicts} conflito(s)</p>
+            <p className="text-sm mt-2">{countLabel(rows.length, "ocupação", "ocupações")}</p>{conflicts > 0 && <p className="text-sm text-rose-700">{countLabel(conflicts, "ocupação com conflito", "ocupações com conflito")}</p>}
             {busiestMonth === date.slice(0, 7) && <p className="text-xs font-semibold text-sky-700 mt-1">Maior número de ocupações no semestre</p>}
             <button type="button" className="btn-quiet mt-2" onClick={() => { setAnchor(date); setView("month"); }}>Ver mês</button>
           </Card>;
@@ -510,6 +572,7 @@ export function RoomTimeline({ user, openBookings, initialFilter }: { user: User
         {([
           ["Ambiente", selected.roomName], ["Data", dateBR(selected.date)],
           ["Turno", selected.shiftName ?? `${selected.startsAt.slice(11, 16)}–${selected.endsAt.slice(11, 16)} (sem turno correspondente)`],
+          ["Horário", `${selected.startsAt.slice(11, 16)}–${selected.endsAt.slice(11, 16)}`],
           ["Instrutor efetivo", selected.actualTeacherName ?? "Não informado ou não autorizado"], ["Turma", selected.actualClassGroupName ?? "Não informada ou não autorizada"],
         ] as [string, string][]).map(([label, value]) => <div key={label} className="min-w-0"><dt className="text-muted-ink">{label}</dt><dd className="font-semibold text-ink [overflow-wrap:anywhere]">{value}</dd></div>)}
       </dl>
@@ -525,8 +588,8 @@ export function RoomTimeline({ user, openBookings, initialFilter }: { user: User
       ] as [string, string][]).map(([label, value]) => <div key={label} className="min-w-0"><dt className="font-semibold text-muted-ink">{label}</dt><dd className="text-ink [overflow-wrap:anywhere]">{value}</dd></div>)}</dl></details>
       {(admin || selected.originalTeacherId === user.id) && <details className="mt-4 border-t border-line pt-2"><summary className="cursor-pointer py-3 font-semibold text-ink">Histórico de alterações</summary><AuditHistory type="Occupation" id={selected.id} onReverse={admin ? (changeId, action) => void beginReversal(selected, changeId, action) : undefined} /></details>}
       {admin && selected.kind !== "Bloqueio" && <div className="mt-5 flex flex-wrap gap-2">
-        <button type="button" className="btn-secondary" onClick={() => beginMove(selected)}>Mover ocupação</button>
-        {selected.planProposalId != null && <button type="button" className="btn-primary" onClick={() => beginBlockMove(selected)}>Mover bloco completo</button>}
+        <button type="button" className="btn-primary" onClick={() => beginMove(selected)}>Remanejar esta ocupação</button>
+        {selected.planProposalId != null && <button type="button" className="btn-secondary" onClick={() => beginBlockMove(selected)}>Remanejar bloco completo</button>}
       </div>}
     </Modal>}
     {reversal && <Modal title={reversal.action === "undo" ? "Desfazer movimentação" : "Refazer movimentação"} onClose={() => { if (!reversalBusy) setReversal(null); }}>
@@ -549,7 +612,7 @@ export function RoomTimeline({ user, openBookings, initialFilter }: { user: User
         </div>
       </div>
     </Modal>}
-    {blockItem && <Modal title="Mover bloco pedagógico" onClose={() => { if (!blockBusy) setBlockItem(null); }}>
+    {blockItem && <Modal title="Remanejar bloco completo" onClose={() => { if (!blockBusy) setBlockItem(null); }}>
       <div className="space-y-4 text-sm">
         <p><strong>{blockItem.actualTeacherName ?? "Instrutor não informado"}</strong>{blockItem.actualClassGroupName ? ` · ${blockItem.actualClassGroupName}` : ""}</p>
         <p>{blockItem.courseName ?? "Curso"} · {blockItem.curricularUnitName ?? "UC não identificada"} · {blockItem.shiftName ?? "Turno não identificado"}</p>
@@ -586,7 +649,7 @@ export function RoomTimeline({ user, openBookings, initialFilter }: { user: User
           <button type="button" className="btn-secondary" disabled={blockBusy} onClick={() => setBlockItem(null)}>Cancelar</button>
           <button type="button" className="btn-secondary" disabled={blockBusy || !blockRoomId || !blockStartDate} onClick={() => void requestBlockPreview()}>Consultar prévia</button>
           <button type="button" className="btn-primary" disabled={blockBusy || !blockPreview?.allowed || blockPreview.requestedStartDate !== blockStartDate || blockPreview.destinationRoomId !== Number(blockRoomId)} onClick={() => void confirmBlockMove()}>
-            {blockBusy ? "Processando..." : "Confirmar movimentação do bloco"}
+            {blockBusy ? "Processando..." : "Confirmar remanejamento do bloco"}
           </button>
         </div>
       </div>
@@ -619,7 +682,7 @@ export function RoomTimeline({ user, openBookings, initialFilter }: { user: User
         <div className="flex flex-wrap gap-2 justify-end">
           <button type="button" className="btn-secondary" disabled={moveBusy} onClick={() => { previewRequest.current++; setMoveItem(null); }}>Cancelar</button>
           <button type="button" className="btn-secondary" disabled={moveBusy || !moveRoomId || !moveDate || !moveShiftId} onClick={() => void requestMovePreview(moveItem, Number(moveRoomId), moveDate, Number(moveShiftId))}>Consultar prévia</button>
-          <button type="button" className="btn-primary" disabled={moveBusy || !movePreview?.allowed || !previewMatches} onClick={() => void confirmMove()}>Confirmar movimentação</button>
+          <button type="button" className="btn-primary" disabled={moveBusy || !movePreview?.allowed || !previewMatches} onClick={() => void confirmMove()}>Confirmar remanejamento</button>
         </div>
       </div>
     </Modal>}

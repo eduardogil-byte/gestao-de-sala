@@ -14,17 +14,27 @@ public static partial class ApiEndpoints
         var api = app.MapGroup("/api/occupancy-indicators").RequireAuthorization("Admin")
             .WithTags("Indicadores de ocupação");
         api.MapGet("/semesters/{semesterId:int}", async (int semesterId, int? roomId,
+            DateOnly? from, DateOnly? to, int? shiftId,
             IConfiguration configuration, AppDbContext db) =>
         {
+            if ((from is null) != (to is null) || from > to || to == DateOnly.MaxValue ||
+                (from is not null && to is not null && to.Value.DayNumber - from.Value.DayNumber > 370))
+                return Error("Informe início e fim válidos para um período de até 371 dias");
+            if (shiftId is not null && !await db.Shifts.AnyAsync(s => s.Id == shiftId))
+                return Error("Turno não encontrado");
             var thresholds = OccupancyIndicators.Thresholds(configuration);
             if (thresholds is null) return Error("Limites de classificação inválidos na configuração");
             try
             {
                 var result = await OccupancyIndicators.ForSemester(db, semesterId, roomId, thresholds,
-                    OccupancyIndicators.InstitutionDate(configuration));
+                    OccupancyIndicators.InstitutionDate(configuration), from, to, shiftId);
                 return result is null ? Results.NotFound() : Results.Ok(result);
             }
             catch (InvalidOperationException error) when (error.Message.Contains("100000 ocupações"))
+            {
+                return Error(error.Message);
+            }
+            catch (ArgumentException error)
             {
                 return Error(error.Message);
             }

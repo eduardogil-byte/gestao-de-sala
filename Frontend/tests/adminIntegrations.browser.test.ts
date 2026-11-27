@@ -384,7 +384,7 @@ test("integrações administrativas usam contratos existentes e preservam estado
     });
     await t.test("cronograma móvel mantém ocupações, filtros e detalhes sem rolagem da página", async () => {
       await command("Emulation.setDeviceMetricsOverride", { width: 390, height: 844, deviceScaleFactor: 1, mobile: true });
-      await reset("timeline"); await waitFor("document.body.innerText.includes('Filtros do cronograma')");
+      await reset("timeline"); await waitFor("!!document.querySelector('[aria-controls=timeline-filters]')");
       await evaluate("adminTest.click('Semana')");
       await waitFor("document.querySelector('button[aria-pressed=true]')?.textContent.trim() === 'Semana'");
       await waitFor("document.querySelector('table')?.innerText.includes('Turma sintética')");
@@ -409,13 +409,13 @@ test("integrações administrativas usam contratos existentes e preservam estado
       await evaluate("window.scrollTo(0, document.body.scrollHeight)");
       await capture("cronograma-desktop-grade");
       await evaluate("window.scrollTo(0, 0)");
-      assert.equal(await evaluate("document.querySelector('h1')?.textContent"), "Cronograma");
-      assert.equal(await evaluate("[...document.querySelectorAll('.card')].some(card => card.textContent.includes('Ocupações registradas') && card.textContent.includes('1'))"), true);
+      assert.equal(await evaluate("document.querySelector('h1')?.textContent"), "Cronograma de ambientes");
+      assert.equal(await evaluate("[...document.querySelectorAll('[role=status]')].some(item => item.textContent.includes('1 ocupação'))"), true);
       await evaluate("adminTest.select('Tipo de ambiente', 'Laboratorio')");
       assert.equal(await evaluate("[...document.querySelectorAll('label')].find(l => l.querySelector('span')?.textContent === 'Tipo de ambiente').querySelector('select').value"), "Laboratorio");
       assert.equal(await evaluate("adminTest.calls.filter(r => r.path.startsWith('/api/agenda?')).every(r => !r.path.includes('roomKind'))"), true);
       await evaluate("adminTest.click('Mês')");
-      await waitFor("document.body.innerText.includes('ocupação(ões)') && document.querySelector('button[aria-pressed=true]')?.textContent.trim() === 'Mês'");
+      await waitFor("!!document.querySelector('[aria-label=\"Calendário mensal\"]') && document.querySelector('button[aria-pressed=true]')?.textContent.trim() === 'Mês'");
       await capture("cronograma-desktop-mes");
       await evaluate("adminTest.click('Semestre')");
       await waitFor("document.body.innerText.includes('Maior número de ocupações no semestre')");
@@ -428,19 +428,19 @@ test("integrações administrativas usam contratos existentes e preservam estado
       await evaluate("adminTest.click('Semana')");
       await waitFor("document.body.innerText.includes('Ocupações da Semana')");
       await evaluate("document.querySelector('table button[aria-label^=\"Detalhes:\"]').click()");
-      await waitFor("document.querySelector('[role=dialog]')?.innerText.includes('Mover ocupação')");
-      await evaluate("adminTest.click('Mover ocupação')");
+      await waitFor("document.querySelector('[role=dialog]')?.innerText.includes('Remanejar esta ocupação')");
+      await evaluate("adminTest.click('Remanejar esta ocupação')");
       await waitFor("document.querySelector('[role=dialog]')?.innerText.includes('Consultar prévia')");
       await evaluate("adminTest.click('Consultar prévia')");
       await waitFor("adminTest.pending.some(r => r.path === '/api/occupations/5/move-preview')");
       await reply("/api/occupations/5/move-preview", { allowed: false, origin: { roomId: 10 }, destination: { roomId: 10, date: "2027-03-01", shiftId: 1 }, blocks: ["Conflito sintético"], warnings: [], technicalClassification: "Unknown", technicalFindings: [] });
       await waitFor("document.querySelector('[role=dialog]')?.innerText.includes('Conflito sintético')");
-      assert.equal(await evaluate("[...document.querySelectorAll('[role=dialog] button')].find(b => b.textContent.trim() === 'Confirmar movimentação').disabled"), true);
+      assert.equal(await evaluate("[...document.querySelectorAll('[role=dialog] button')].find(b => b.textContent.trim() === 'Confirmar remanejamento').disabled"), true);
       await evaluate("adminTest.click('Consultar prévia')");
       await waitFor("adminTest.pending.some(r => r.path === '/api/occupations/5/move-preview')");
       await reply("/api/occupations/5/move-preview", { allowed: true, origin: { roomId: 10, startsAt: "2027-03-01T08:00:00", endsAt: "2027-03-01T12:00:00" }, destination: { roomId: 10, roomName: "Laboratório sintético", date: "2027-03-01", shiftId: 1, shiftName: "Manhã" }, blocks: [], warnings: [], technicalClassification: "Unknown", technicalFindings: [] });
-      await waitFor("!![...document.querySelectorAll('[role=dialog] button')].find(b => b.textContent.trim() === 'Confirmar movimentação' && !b.disabled)");
-      await evaluate("adminTest.click('Confirmar movimentação')");
+      await waitFor("!![...document.querySelectorAll('[role=dialog] button')].find(b => b.textContent.trim() === 'Confirmar remanejamento' && !b.disabled)");
+      await evaluate("adminTest.click('Confirmar remanejamento')");
       await waitFor("adminTest.pending.some(r => r.path === '/api/occupations/5/move')");
       assert.equal(await evaluate("adminTest.pending.find(r => r.path === '/api/occupations/5/move').body.confirm"), true);
       await reply("/api/occupations/5/move", null, 204);
@@ -450,7 +450,7 @@ test("integrações administrativas usam contratos existentes e preservam estado
       await waitFor("document.body.innerText.includes('Ocupações da Semana')");
       await evaluate("document.querySelector('table button[aria-label^=\"Detalhes:\"]').click()");
       await waitFor("document.querySelector('[role=dialog]')?.innerText.includes('Detalhes da ocupação')");
-      assert.equal(await evaluate("document.querySelector('[role=dialog]')?.innerText.includes('Mover ocupação')"), false);
+      assert.equal(await evaluate("document.querySelector('[role=dialog]')?.innerText.includes('Remanejar esta ocupação')"), false);
       assert.equal(await evaluate("adminTest.calls.some(r => r.method !== 'GET')"), false);
     });
     await t.test("oportunidades seleciona capacidade com Enter e anuncia seleção por texto", async () => {

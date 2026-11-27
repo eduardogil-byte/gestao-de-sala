@@ -12,13 +12,13 @@ test("períodos e filtros preservam navegação, seleção e temas em desktop e 
   const screenshots = await mkdtemp(join(tmpdir(), "salagest-period-filters-"));
   try {
     await evaluate("adminTest.reset('timeline')");
-    await waitFor("document.body.innerText.includes('Filtros do cronograma')");
+    await waitFor("!!document.querySelector('[aria-controls=timeline-filters]')");
     assert.equal(await evaluate("document.querySelector('[aria-controls=timeline-filters]').getAttribute('aria-expanded')"), "false");
     assert.equal(await evaluate("document.querySelector('#timeline-filters').getClientRects().length"), 0);
     await evaluate("adminTest.click('Semana')");
     await waitFor("document.querySelector('table')?.innerText.includes('Turma sintética')");
-    assert.equal(await evaluate(`${navigation}.previousElementSibling.textContent`), weekLabel);
-    assert.equal(await evaluate("[...document.querySelectorAll('h2')].find(h => h.textContent === 'Resumo do período').nextElementSibling.textContent"), `28/02/2027 a 06/03/2027 · ${weekLabel}`);
+    assert.equal(await evaluate(`${navigation}.textContent.includes('28/02/2027 a 06/03/2027')`), true);
+    assert.equal(await evaluate("!!document.querySelector('[aria-label=\"Legenda do cronograma\"]')"), true);
     for (const text of ["Combine somente", "Ocupações não representam carga horária pedagógica", "Esta consulta não comprova turno livre"])
       assert.equal(await evaluate(`document.body.innerText.includes(${JSON.stringify(text)})`), false);
 
@@ -26,7 +26,7 @@ test("períodos e filtros preservam navegação, seleção e temas em desktop e 
     await evaluate("adminTest.select('Tipo de ambiente', 'Laboratorio'); adminTest.select('Ambiente', '10'); adminTest.select('Instrutor', 't0'); adminTest.select('Turno', '1'); adminTest.select('Tipo de ocupação', 'Aula')");
     await waitFor("document.querySelector('table')?.innerText.includes('Turma sintética')");
     const values = "[...document.querySelectorAll('#timeline-filters select')].map(s => s.value)";
-    const selected = await evaluate<string[]>(values);
+    let selected = await evaluate<string[]>(values);
     const requests = await evaluate("adminTest.calls.length");
     for (const width of [1366, 360]) {
       await command("Emulation.setDeviceMetricsOverride", { width, height: 850, deviceScaleFactor: 1, mobile: width === 360 });
@@ -55,10 +55,12 @@ test("períodos e filtros preservam navegação, seleção e temas em desktop e 
     await waitFor("document.querySelector('[aria-controls=timeline-filters]').getAttribute('aria-expanded') === 'false'");
     assert.equal(await evaluate("adminTest.calls.length"), requests);
     await evaluate("document.querySelector('[aria-label=\"Período anterior\"]').click()");
-    await waitFor(`${navigation}.previousElementSibling.textContent === 'Fevereiro · Semana 4/5'`);
+    await waitFor(`${navigation}.textContent.includes('21/02/2027 a 27/02/2027')`);
+    selected = ["", ...selected.slice(1)];
     assert.deepEqual(await evaluate(values), selected);
+    assert.equal(await evaluate("document.body.innerText.includes('Os demais filtros foram mantidos')"), true);
     await evaluate("document.querySelector('[aria-label=\"Próximo período\"]').click()");
-    await waitFor(`${navigation}.previousElementSibling.textContent === ${JSON.stringify(weekLabel)}`);
+    await waitFor(`${navigation}.textContent.includes('28/02/2027 a 06/03/2027')`);
     await evaluate("document.querySelector('[aria-controls=timeline-filters]').click()");
     await evaluate("adminTest.click('Limpar filtros')");
     await waitFor(`${values}.every(value => value === '')`);
@@ -80,25 +82,19 @@ test("cronograma simplificado preserva período, recupera falhas e oferece lista
     await evaluate("adminTest.reset('timeline')");
     await waitFor("document.body.innerText.includes('Ver mês')");
     await evaluate("document.querySelector('[aria-controls=timeline-filters]').click(); adminTest.select('Turno', '1')");
-    await waitFor(`${selected}[5] === '1'`);
+    await waitFor("[...document.querySelectorAll('label')].find(l => l.querySelector('span')?.textContent === 'Turno').querySelector('select').value === '1'");
     await evaluate("adminTest.click('Limpar filtros')");
     await waitFor(`${selected}[0] === '1' && ${selected}.slice(1).every(value => value === '')`);
     assert.equal(await evaluate("document.body.innerText.includes('Selecione um semestre cadastrado.')"), false);
     await evaluate("adminTest.select('Turno', '1')");
-    await waitFor("!!document.querySelector('[aria-label=\"Remover filtro Turno\"]')");
-    await evaluate("document.querySelector('[aria-label=\"Remover filtro Turno\"]').click()");
-    await waitFor(`${selected}[5] === ''`);
+    await evaluate("adminTest.select('Turno', '')");
+    await waitFor(`${selected}.slice(1).every(value => value === '')`);
     await evaluate("adminTest.click('Semana')");
     await waitFor("!!document.querySelector('[aria-controls=weekly-room-10]')");
     await evaluate("document.querySelector('[aria-controls=weekly-room-10]').click()");
     assert.equal(await evaluate("document.querySelector('#weekly-room-10').hidden"), true);
     await evaluate("document.querySelector('[aria-controls=weekly-room-10]').click()");
-    const summary = "[...document.querySelectorAll('summary')].find(s => s.textContent === 'Ver resumo')";
-    assert.equal(await evaluate(`${summary}.parentElement.open`), false);
-    await evaluate(`${summary}.click()`);
-    assert.equal(await evaluate(`${summary}.parentElement.open`), true);
-    await evaluate(`${summary}.click()`);
-
+    assert.equal(await evaluate("document.querySelector('[aria-label=\"Legenda do cronograma\"]').getClientRects().length > 0"), true);
     await command("Input.dispatchKeyEvent", { type: "keyDown", key: "Escape", code: "Escape", windowsVirtualKeyCode: 27 });
     await waitFor("document.querySelector('[aria-controls=timeline-filters]').getAttribute('aria-expanded') === 'false'");
 
@@ -110,7 +106,11 @@ test("cronograma simplificado preserva período, recupera falhas e oferece lista
         if (width === 360) {
           assert.equal(await evaluate("document.querySelector('[aria-label=\"Lista semanal por dia\"]').getClientRects().length > 0"), true);
           assert.equal(await evaluate("document.querySelector('[aria-label=\"Lista semanal por dia\"]').innerText.includes('Turma sintética')"), true);
-          assert.equal(await evaluate("document.querySelector('[aria-label=\"Lista semanal por dia\"]').innerText.includes('disponibilidade desconhecida')"), true);
+          assert.equal(await evaluate("document.querySelector('[aria-label=\"Legenda do cronograma\"]').innerText.includes('disponibilidade não confirmada')"), true);
+          await evaluate("document.querySelector('input[type=checkbox]').click()");
+          assert.equal(await evaluate("document.querySelector('[aria-label=\"Lista semanal por dia\"]').querySelectorAll('section').length"), 1);
+          assert.equal(await evaluate("document.querySelector('[aria-label=\"Lista semanal por dia\"]').textContent.includes('Turma sintética')"), true);
+          await evaluate("document.querySelector('input[type=checkbox]').click()");
           await evaluate("adminTest.click('Grade')");
           assert.equal(await evaluate("document.querySelector('table').getClientRects().length > 0"), true);
           await evaluate("adminTest.click('Lista por dia')");
@@ -129,19 +129,20 @@ test("cronograma simplificado preserva período, recupera falhas e oferece lista
     await waitFor("!document.querySelector('[role=dialog]')");
 
     const path = await evaluate<string>("adminTest.calls.filter(c => c.path.startsWith('/api/agenda?')).at(-1).path");
-    await evaluate(`adminTest.deferred.push(${JSON.stringify(path)}); document.querySelector('[aria-label="Período anterior"]').click()`);
+    await evaluate(`adminTest.deferred.push(${JSON.stringify(path)}); document.querySelector('[aria-label="Próximo período"]').click()`);
     await waitFor("!document.body.innerText.includes('Consultando ocupações…')");
-    await evaluate("document.querySelector('[aria-label=\"Próximo período\"]').click()");
+    await evaluate("document.querySelector('[aria-label=\"Período anterior\"]').click()");
     await waitFor(`adminTest.pending.some(p => p.path === ${JSON.stringify(path)})`);
     await evaluate(`adminTest.reply(${JSON.stringify(path)}, { title: 'Falha de teste' }, 500)`);
     await waitFor("document.body.innerText.includes('Tentar novamente')");
     await evaluate("adminTest.deferred = []; adminTest.click('Tentar novamente')");
     await waitFor("!document.body.innerText.includes('Tentar novamente') && !!document.querySelector('table')");
     assert.equal(await evaluate(`${selected}[0]`), "1");
-    await evaluate("adminTest.input('Ir para data', '2027-03-15')");
+    await evaluate("document.querySelector('[aria-label^=\"Selecionar período:\"]').click()");
+    await waitFor("document.querySelector('[role=dialog]')?.innerText.includes('Selecionar semana')");
+    await evaluate("document.querySelector('[role=dialog] button[aria-label^=\"15/03/2027,\"]').click()");
     await waitFor("document.querySelector('[aria-label=\"Navegação entre períodos\"]').textContent.includes('14/03/2027')");
-    await evaluate("adminTest.click('Hoje')");
-    await waitFor("[...document.querySelectorAll('input')].some(i => i.type === 'date' && i.value === new Date().toLocaleDateString('en-CA'))");
+    assert.equal(await evaluate("[...document.querySelectorAll('button')].some(b => b.textContent.trim() === 'Hoje')"), false);
     console.log(`Capturas do cronograma simplificado: ${screenshots}`);
   } finally { await close(); }
 });

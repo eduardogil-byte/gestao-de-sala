@@ -124,9 +124,28 @@ window.fetch = async (input, init) => {
   api.calls.push({ path, method, body });
   if (method !== "GET" || api.deferred.includes(path) || path.endsWith("/operating-shifts"))
     return new Promise<Response>((resolve) => api.pending.push({ path, method, body, resolve }));
+  if (path.startsWith("/api/occupancy-indicators/semesters/1?") && path.includes("from=")) {
+    if (Object.hasOwn(api.catalog, path)) return new Response(JSON.stringify(api.catalog[path]));
+    const filters = new URL(path, location.origin).searchParams;
+    const from = filters.get("from")!, to = filters.get("to")!;
+    const dates: string[] = [];
+    for (let date = new Date(`${from}T12:00:00`); date.toISOString().slice(0, 10) <= to; date.setDate(date.getDate() + 1))
+      if (date.getDay() > 0 && date.getDay() < 6) dates.push(date.toISOString().slice(0, 10));
+    const occupiedDates = (api.catalog["/api/agenda"] ? [...new Set((api.catalog["/api/agenda"] as typeof occupation[]).map(item => item.date))] : ["2027-03-01", "2027-03-15"]).filter(date => date >= from && date <= to);
+    const within = occupiedDates.filter(date => dates.includes(date)).length * 4;
+    const capacity = dates.length * 4;
+    const row = { ...report.rooms[0], capacityHours: capacity, occupiedWithinCapacityHours: within,
+      physicalOccupiedHours: occupiedDates.length * 4, availableHours: capacity - within,
+      occupancyPercent: capacity ? Math.round(within / capacity * 10000) / 100 : null, outsideCapacityHours: 0,
+      classification: "Intermediate", daysWithOccupations: occupiedDates.length,
+      eligibleSlots: dates.length, occupiedEligibleSlots: within / 4, eligibleDays: dates.length, occupiedEligibleDays: within / 4 };
+    return new Response(JSON.stringify({ ...report, from, to, physicalOccupiedHours: row.physicalOccupiedHours,
+      capacityHours: capacity, occupiedWithinCapacityHours: within, availableHours: capacity - within,
+      occupancyPercent: row.occupancyPercent, roomsWithUnknownCapacity: 0, rooms: [row] }));
+  }
   if (path.startsWith("/api/agenda?")) {
     const filters = new URL(path, location.origin).searchParams;
-    const rows = [occupation, { ...occupation, id: 6, date: "2027-03-15", startsAt: "2027-03-15T08:00:00", endsAt: "2027-03-15T12:00:00" }];
+    const rows = (api.catalog["/api/agenda"] ?? [occupation, { ...occupation, id: 6, date: "2027-03-15", startsAt: "2027-03-15T08:00:00", endsAt: "2027-03-15T12:00:00" }]) as typeof occupation[];
     return new Response(JSON.stringify(rows.filter((item) => item.date >= (filters.get("from")?.slice(0, 10) ?? "") &&
       item.date < (filters.get("to")?.slice(0, 10) ?? "9999-12-31") &&
       (!filters.get("roomId") || item.roomId === Number(filters.get("roomId"))))));

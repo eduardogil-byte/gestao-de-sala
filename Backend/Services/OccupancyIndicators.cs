@@ -38,11 +38,17 @@ public static class OccupancyIndicators
                     Seconds(TimeOnly.FromDateTime(o.EndsAt))))).Sum(s => (long)s.To - s.From)));
 
     public static async Task<SemesterOccupancyIndicators?> ForSemester(AppDbContext db,
-        int semesterId, int? roomId, IndicatorThresholds thresholds, DateOnly? referenceDate = null)
+        int semesterId, int? roomId, IndicatorThresholds thresholds, DateOnly? referenceDate = null,
+        DateOnly? from = null, DateOnly? to = null, int? shiftId = null)
     {
         var today = referenceDate ?? InstitutionDate();
         var semester = await db.Semesters.AsNoTracking().FirstOrDefaultAsync(s => s.Id == semesterId);
         if (semester is null) return null;
+        var firstDate = from ?? semester.StartDate;
+        var lastDate = to ?? semester.EndDate;
+        if (firstDate < semester.StartDate || lastDate > semester.EndDate || firstDate > lastDate ||
+            lastDate == DateOnly.MaxValue)
+            throw new ArgumentException("O período deve estar dentro do semestre selecionado");
         var rooms = await db.Rooms.AsNoTracking().Where(r => roomId == null || r.Id == roomId)
             .OrderBy(r => r.Name).ToListAsync();
         if (roomId is not null && rooms.Count == 0) return null;
@@ -52,8 +58,8 @@ public static class OccupancyIndicators
         var events = await db.AcademicCalendarEvents.AsNoTracking()
             .Where(e => e.SemesterId == semesterId && e.StartDate <= semester.EndDate &&
                 e.EndDate >= semester.StartDate).ToListAsync();
-        var start = semester.StartDate.ToDateTime(TimeOnly.MinValue);
-        var end = semester.EndDate.AddDays(1).ToDateTime(TimeOnly.MinValue);
+        var start = firstDate.ToDateTime(TimeOnly.MinValue);
+        var end = lastDate.AddDays(1).ToDateTime(TimeOnly.MinValue);
         var rows = await EffectiveOccupations(db)
             .Where(o => o.StartsAt >= start && o.StartsAt < end &&
                 o.EndsAt > o.StartsAt &&
@@ -71,7 +77,7 @@ public static class OccupancyIndicators
             return new Occupied(o.Id, o.RoomId, DateOnly.FromDateTime(o.StartsAt),
                 Seconds(TimeOnly.FromDateTime(o.StartsAt)), Seconds(TimeOnly.FromDateTime(o.EndsAt)),
                 matching.Length == 1 ? matching[0].Id : null);
-        }).ToList();
+        }).Where(o => shiftId is null || o.ShiftId == shiftId).ToList();
         var roomResults = new List<RoomOccupancyIndicator>();
         var monthMinutes = new Dictionary<(int Year, int Month), long>();
         var monthDays = new Dictionary<(int Year, int Month), HashSet<DateOnly>>();
@@ -107,14 +113,16 @@ public static class OccupancyIndicators
                     shifts.Any(sa => sa.Id == a.ShiftId && shifts.Any(sb => sb.Id == b.ShiftId &&
                         sa.StartsAt < sb.EndsAt && sb.StartsAt < sa.EndsAt))));
             if (invalidConfiguration) warning.Add("Turnos oferecidos com duração inválida ou sobreposição");
-            var known = room.Active && roomOfferings.Length > 0 && !invalidConfiguration;
+            var known = room.Active && roomOfferings.Length > 0 && !invalidConfiguration &&
+                (shiftId is null || roomOfferings.Any(o => o.ShiftId == shiftId));
             var capacityMinutes = 0;
             var withinMinutes = 0;
             var capacitySlots = 0;
             var occupiedCapacitySlots = 0;
             var eligibleDates = new HashSet<DateOnly>();
+            var occupiedEligibleDates = new HashSet<DateOnly>();
             var shiftResults = new List<ShiftOccupancyIndicator>();
-            foreach (var shift in shifts)
+            foreach (var shift in shifts.Where(s => shiftId is null || s.Id == shiftId))
             {
                 var shiftUses = valid.Where(o => o.ShiftId == shift.Id).ToList();
                 var shiftMinutes = shiftUses.GroupBy(o => o.Date).Sum(g =>
@@ -127,7 +135,7 @@ public static class OccupancyIndicators
                 var shiftOccupiedSlots = 0;
                 if (shiftKnown)
                 {
-                    for (var date = semester.StartDate; date <= semester.EndDate; date = date.AddDays(1))
+                    for (var date = firstDate; date <= lastDate; date = date.AddDays(1))
                     {
                         if (!Eligible(date, offering!.WeekdaysMask, events)) continue;
                         eligibleDates.Add(date);
@@ -136,7 +144,11 @@ public static class OccupancyIndicators
                         shiftSlots++;
                         var overlap = IntersectMinutes(byDate.GetValueOrDefault(date) ?? [], slot);
                         shiftWithin += overlap;
-                        if (overlap > 0) shiftOccupiedSlots++;
+                        if (overlap > 0)
+                        {
+                            shiftOccupiedSlots++;
+                            occupiedEligibleDates.Add(date);
+                        }
                     }
                     capacityMinutes += shiftCapacity;
                     withinMinutes += shiftWithin;
@@ -167,6 +179,8 @@ public static class OccupancyIndicators
             if (known && physicalMinutes > withinMinutes)
                 warning.Add("Há ocupação física fora dos dias ou turnos elegíveis; ela não entra no percentual");
             decimal? percent = known && capacityMinutes > 0 ? Percent(withinMinutes, capacityMinutes) : null;
+            var occupiedDaysInOffer = from is not null || to is not null || shiftId is not null
+                ? occupiedEligibleDates.Count : occupiedDates.Count(eligibleDates.Contains);
             roomResults.Add(new RoomOccupancyIndicator(room.Id, room.Name, room.Kind,
                 Hours(physicalMinutes), known ? Hours(capacityMinutes) : null,
                 known ? Hours(withinMinutes) : null,
@@ -177,9 +191,11 @@ public static class OccupancyIndicators
                 known ? capacitySlots - occupiedCapacitySlots : null,
                 conflictPairs, unclassified, Classification(percent, thresholds), warning, shiftResults)
             {
+                EligibleSlots = known ? capacitySlots : null,
+                OccupiedEligibleSlots = known ? occupiedCapacitySlots : null,
                 EligibleDays = known ? eligibleDates.Count : null,
-                OccupiedEligibleDays = known ? occupiedDates.Count(eligibleDates.Contains) : null,
-                UnoccupiedDays = known ? eligibleDates.Count(date => !occupiedDates.Contains(date)) : null,
+                OccupiedEligibleDays = known ? occupiedDaysInOffer : null,
+                UnoccupiedDays = known ? eligibleDates.Count - occupiedDaysInOffer : null,
                 PastOccupiedDays = occupiedDates.Count(date => date < today),
                 TodayOccupiedDays = occupiedDates.Count(date => date == today),
                 FutureOccupiedDays = occupiedDates.Count(date => date > today)
@@ -192,16 +208,17 @@ public static class OccupancyIndicators
         decimal? totalPercent = totalKnown && totalCapacity > 0 ?
             decimal.Round(totalWithin / totalCapacity * 100, 2) : null;
         var months = new List<MonthOccupancyIndicator>();
-        for (var month = new DateOnly(semester.StartDate.Year, semester.StartDate.Month, 1);
-            month <= semester.EndDate; month = month.AddMonths(1))
+        for (var month = new DateOnly(firstDate.Year, firstDate.Month, 1);
+            month <= lastDate; month = month.AddMonths(1))
         {
             var key = (month.Year, month.Month);
             months.Add(new MonthOccupancyIndicator(key.Year, key.Month,
                 Hours(monthMinutes.GetValueOrDefault(key)), monthDays.GetValueOrDefault(key)?.Count ?? 0));
+            if (month.Year == 9999 && month.Month == 12) break;
         }
         var reportWarnings = unknownRooms > 0 ? new[]
             { $"{unknownRooms} ambiente(s) sem capacidade comprovada; percentual geral indisponível" } : [];
-        return new SemesterOccupancyIndicators(semester.Id, semester.StartDate, semester.EndDate,
+        return new SemesterOccupancyIndicators(semester.Id, firstDate, lastDate,
             thresholds, roomResults.Sum(r => r.PhysicalOccupiedHours),
             totalKnown ? totalCapacity : null, totalKnown ? totalWithin : null,
             totalKnown ? totalCapacity - totalWithin : null, totalPercent,
@@ -212,6 +229,8 @@ public static class OccupancyIndicators
             unknownRooms, roomResults.Sum(r => r.ConflictPairs),
             Classification(totalPercent, thresholds), roomResults, months, reportWarnings)
         {
+            EligibleSlots = totalKnown ? roomResults.Sum(r => r.EligibleSlots ?? 0) : null,
+            OccupiedEligibleSlots = totalKnown ? roomResults.Sum(r => r.OccupiedEligibleSlots ?? 0) : null,
             ReferenceDate = today,
             OccupiedRoomDays = roomResults.Sum(r => r.DaysWithOccupations),
             EligibleRoomDays = totalKnown ? roomResults.Sum(r => r.EligibleDays ?? 0) : null,

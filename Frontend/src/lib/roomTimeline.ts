@@ -55,6 +55,29 @@ export function indexOccupations(items: AgendaOccupation[]) {
   return { slots, days };
 }
 
+// Only ordinary, unambiguous records share a visual strip; each date keeps its own action.
+export function consecutiveSlots(dates: string[], slots: Map<string, AgendaOccupation[]>, roomId: number, shiftId: number,
+  range?: { from: string; to: string } | null) {
+  const groups: { dates: string[]; items: AgendaOccupation[] }[] = [];
+  const ordinary = (item: AgendaOccupation) => item.actualTeacherId != null && item.actualClassGroupId != null &&
+    item.kind !== "Bloqueio" && item.status === "Confirmed" && !item.isBorrowed && !item.conflicts.length &&
+    (!item.bookingStatus || item.bookingStatus === "Aprovada") && (!item.dayStatus || item.dayStatus === "Letivo") &&
+    (!item.calendarKind || item.calendarKind === "Presential");
+  for (const date of dates) {
+    const items = !range || (date >= range.from && date < range.to) ? slots.get(`${roomId}|${date}|${shiftId}`) ?? [] : [];
+    const last = groups.at(-1);
+    const previous = last?.items.at(-1);
+    const current = items[0];
+    if (last && previous && items.length === 1 && last.items.length === last.dates.length &&
+      ordinary(previous) && ordinary(current) && nextDate(last.dates.at(-1)!, 1) === date &&
+      previous.actualTeacherId === current.actualTeacherId && previous.actualClassGroupId === current.actualClassGroupId &&
+      previous.kind === current.kind && previous.startsAt.slice(11) === current.startsAt.slice(11) && previous.endsAt.slice(11) === current.endsAt.slice(11)) {
+      last.dates.push(date); last.items.push(current);
+    } else groups.push({ dates: [date], items: [...items] });
+  }
+  return groups;
+}
+
 export function summarize(items: AgendaOccupation[]) {
   return {
     count: items.length,
