@@ -9,8 +9,8 @@ import type { Booking, Need, Shift, User } from "../types";
 
 type PedagogicalOption = {
   classGroupId: number; className: string; students: number;
-  curricularUnitId: number; unitName: string; weekday: number;
-  preferredShiftId: number; qualificationWarning: boolean;
+  curricularUnitId: number; unitName: string; weekday: number | null;
+  preferredShiftId: number | null; qualificationWarning: boolean;
   capabilities: { id: number; description: string }[];
 };
 
@@ -216,8 +216,10 @@ export function BookingForm({ onCreated, onSaved, editing, user }: { onCreated: 
       </Field>}
       {pedagogical && optionsBusy && <p className="text-sm text-slate-500">Carregando atribuições...</p>}
       {pedagogical && optionsError && <Notice message={optionsError} />}
-      {pedagogical && !optionsBusy && options.length === 0 && !optionsError &&
-        <Notice type="info" message="Não há turmas e UCs atribuídas ao seu perfil." />}
+      {pedagogical && (!admin || teacherId) && !optionsBusy && options.length === 0 && !optionsError &&
+        <Notice type="info" message={admin
+          ? "Não há turmas e UCs vinculadas ao instrutor selecionado. Defina o responsável pela UC na turma."
+          : "Não há turmas e UCs vinculadas ao seu perfil. Solicite o vínculo ao administrador."} />}
       <div className="grid sm:grid-cols-2 gap-3">
         <SearchableSelect label={pedagogical ? "Turma obrigatória" : "Turma (opcional)"}
           value={classGroupId} required={pedagogical}
@@ -261,7 +263,11 @@ export function BookingForm({ onCreated, onSaved, editing, user }: { onCreated: 
         {pedagogical && selectedUnit?.qualificationWarning &&
           <Notice type="info" message="Habilitação para esta UC não cadastrada no perfil. A reserva pode prosseguir." />}
         {pedagogical && selectedUnit &&
-          <p className="text-xs text-muted-ink">{selectedUnitDay == null ? "Há mais de um dia atribuído; selecione a data e o turno correspondentes." : `Dia atribuído: ${names[selectedUnitDay]}; use o turno correspondente.`}</p>}
+          <p className="text-xs text-muted-ink">{selectedUnitDay == null
+            ? unitAssignments.every((item) => item.weekday == null)
+              ? "Selecione as datas da reserva e use o turno da turma."
+              : "Há mais de um dia atribuído; selecione a data e o turno correspondentes."
+            : `Dia atribuído: ${names[selectedUnitDay]}; use o turno correspondente.`}</p>}
         <Field label="Alunos">
           <input
             className="field"

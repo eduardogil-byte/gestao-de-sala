@@ -54,7 +54,7 @@ const api = {
   generation: 0, calls: [] as { path: string; method: string; body: unknown }[],
   pending: [] as { path: string; method: string; body: unknown; resolve: (response: Response) => void }[],
   catalog: {} as Record<string, unknown>, deferred: [] as string[], report, occupation,
-  reset(mode = "dashboard", role = "Admin") {
+  reset(mode = "dashboard", role = "Admin", catalogOverrides: Record<string, unknown> = {}) {
     api.calls = []; api.pending = []; api.deferred = [];
     api.catalog = {
       "/api/rooms": mode === "opportunities" ? [{ ...room, code: "LAB-10" },
@@ -94,6 +94,7 @@ const api = {
         status: "Balanced", missingHours: 0, excessHours: 0, hoursPerShift: 4, requiredMeetings: 2 },
       [requirementPath]: { registered: false },
     };
+    Object.assign(api.catalog, catalogOverrides);
     root.render(<DataProvider key={++api.generation}><ConfirmationProvider><Content mode={mode} role={role} /></ConfirmationProvider></DataProvider>);
   },
   reply(path: string, data: unknown, status = 200) {

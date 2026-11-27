@@ -16,10 +16,10 @@ test("turno exige aviso com vínculos e confirmação envia somente o turno", { 
     await waitFor("document.body.innerText.includes('Turma teste')");
     await evaluate("[...document.querySelectorAll('button')].find(item=>item.textContent.includes('Turma teste')).click()");
     await waitFor("!!document.querySelector('[role=dialog]')");
-    await evaluate("adminTest.click('Editar')");
+    await evaluate("adminTest.click('Editar turma')");
     await evaluate("(() => { const input=document.querySelector('input[aria-label=\"Nome da turma\"]'); Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set.call(input,'Nome não salvo'); input.dispatchEvent(new Event('input',{bubbles:true})); const select=document.querySelector('select[aria-label=\"Turno da turma\"]'); Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype,'value').set.call(select,'2'); select.dispatchEvent(new Event('change',{bubbles:true})); })()");
     await evaluate("adminTest.click('Salvar')");
-    await waitFor("document.querySelectorAll('[role=dialog]').length === 2");
+    await waitFor("document.querySelectorAll('[role=dialog]').length === 3");
     assert.equal(await evaluate("[...document.querySelectorAll('[role=dialog]')].at(-1).textContent.includes('Reservas3')"), true);
     assert.equal(await evaluate("adminTest.calls.some(item => item.method === 'PUT')"), false);
     for (const theme of ['light','dark']) for (const width of [360,1366]) {
@@ -28,10 +28,10 @@ test("turno exige aviso com vínculos e confirmação envia somente o turno", { 
       assert.equal(await evaluate("document.documentElement.scrollWidth <= innerWidth + 1"), true);
     }
     await lastButton('Cancelar');
-    await waitFor("document.querySelectorAll('[role=dialog]').length === 1");
+    await waitFor("document.querySelectorAll('[role=dialog]').length === 2");
     assert.equal(await evaluate("adminTest.calls.some(item => item.method === 'PUT')"), false);
     await evaluate("adminTest.click('Salvar')");
-    await waitFor("document.querySelectorAll('[role=dialog]').length === 2");
+    await waitFor("document.querySelectorAll('[role=dialog]').length === 3");
     await lastButton('Confirmar turno');
     await waitFor("adminTest.pending.some(item=>item.path==='/api/classes/7/shift-change')");
     assert.deepEqual(await evaluate("adminTest.pending.find(item=>item.path==='/api/classes/7/shift-change').body"), {shiftId:2,confirmed:true,previewToken:'preview-v1'});

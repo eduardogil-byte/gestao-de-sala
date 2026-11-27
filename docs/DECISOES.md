@@ -58,6 +58,13 @@ Este documento separa **regras confirmadas**, **propostas do coordenador** e **d
 - A operação dedicada exige confirmação e prévia atualizada, valida o turno e registra auditoria. A edição geral continua protegida contra troca direta de turno com vínculos.
 - A confirmação de turno não salva alterações de nome ou código feitas no mesmo formulário.
 
+## DC-12 — Troca de curso e módulo da turma (2026-11-26)
+
+- Pedido explícito do responsável: permitir a troca por Admin com aviso no formulário e confirmação antes de salvar, inclusive se houver reservas ou atribuições.
+- As UCs atuais passam a ser as do módulo escolhido; as capacidades continuam vinculadas às respectivas UCs do catálogo. Novas ofertas usam o padrão presencial já existente.
+- Ofertas anteriores, seus instrutores, atribuições, reservas, ocupações e planejamentos são preservados. A alteração não remaneja nem cancela registros existentes. Novos planejamentos usam o módulo atual.
+- O backend valida curso/módulo e confirmação e registra a alteração em auditoria. Nenhuma migration é necessária.
+
 ## Como registrar novas decisões
 
 Acrescentar: data, ID, situação (`Confirmada`, `Proposta`, `Em aberto`), responsável pela decisão, regra, motivo e Issues afetadas. **Não mudar o status para Confirmada por dedução.**

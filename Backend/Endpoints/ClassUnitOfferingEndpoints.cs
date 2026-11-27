@@ -20,26 +20,37 @@ public static partial class ApiEndpoints
                 .Select(x => new
                 {
                     x.CurricularUnitId, x.CurricularUnit.Code, x.CurricularUnit.Name,
+                    x.CurricularUnit.CourseModuleId,
                     x.CurricularUnit.PlannedHours, x.DeliveryMode, x.EadScheduleMode, x.TeacherId,
                     Resources = x.CurricularUnit.ResourceRequirements.Select(r => new
                     { r.ResourceCatalogItemId, r.ResourceCatalogItem.Name,
                         Category = r.ResourceCatalogItem.Category, r.Quantity }).ToList()
                 }).ToListAsync();
+            var currentUnits = units.Where(x => x.CourseModuleId == classGroup.CourseModuleId).ToList();
+            var previousUnits = units.Where(x => x.CourseModuleId != classGroup.CourseModuleId).ToList();
             return Results.Ok(new
             {
                 classGroup.Id, classGroup.CourseId, classGroup.CourseModuleId,
                 LegacyWithoutModule = classGroup.CourseModuleId is null,
-                Units = units.Select(x => new
+                Links = current.IsInRole("Admin") ? new
+                {
+                    Assignments = await db.Assignments.CountAsync(x => x.ClassGroupId == id),
+                    Bookings = await db.Bookings.CountAsync(x => x.ClassGroupId == id),
+                    Occupations = await db.Occupations.CountAsync(x => x.ClassGroupId == id),
+                    Plans = await db.ScheduleUnitPlans.CountAsync(x => x.ClassGroupId == id)
+                } : null,
+                PreviousUnits = previousUnits.Select(x => new { x.CurricularUnitId, x.Code, x.Name }),
+                Units = currentUnits.Select(x => new
                 {
                     x.CurricularUnitId, x.Code, x.Name, x.PlannedHours, x.DeliveryMode,
                     x.EadScheduleMode, x.Resources,
                     TeacherId = current.IsInRole("Admin") || x.TeacherId == UserId(current) ? x.TeacherId : null
                 }),
-                PresentialHours = units.Where(x => x.DeliveryMode == UnitDeliveryMode.Presencial)
+                PresentialHours = currentUnits.Where(x => x.DeliveryMode == UnitDeliveryMode.Presencial)
                     .Sum(x => x.PlannedHours ?? 0),
-                EadHours = units.Where(x => x.DeliveryMode == UnitDeliveryMode.Ead)
+                EadHours = currentUnits.Where(x => x.DeliveryMode == UnitDeliveryMode.Ead)
                     .Sum(x => x.PlannedHours ?? 0),
-                UnitsWithoutHours = units.Count(x => x.PlannedHours is null)
+                UnitsWithoutHours = currentUnits.Count(x => x.PlannedHours is null)
             });
         }).RequireAuthorization();
 

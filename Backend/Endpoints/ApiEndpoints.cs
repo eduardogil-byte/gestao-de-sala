@@ -393,6 +393,30 @@ public static partial class ApiEndpoints
             var item = await db.Classes.FindAsync(id);
             if (item is null) return Results.NotFound();
             var oldShiftId = item.ShiftId;
+            var oldCourseId = item.CourseId;
+            var oldModuleId = item.CourseModuleId;
+            var curriculumChanged = (input.CourseId is not null && input.CourseId != item.CourseId) ||
+                (input.CourseModuleId is not null && input.CourseModuleId != item.CourseModuleId);
+            if (curriculumChanged)
+            {
+                if (!input.CurriculumChangeConfirmed)
+                    return Error("Confirme a alteração de curso ou módulo. Os vínculos anteriores serão preservados.");
+                if (input.ShiftId is int targetShift && targetShift != item.ShiftId)
+                    return Error("Altere o turno separadamente do curso e módulo.");
+                if (input.CourseId is not int courseId || input.CourseModuleId is not int moduleId ||
+                    !await db.CourseModules.AnyAsync(m => m.Id == moduleId && m.CourseId == courseId))
+                    return Error("Selecione um curso e um módulo pertencente a ele.");
+                var unitIds = await db.CurricularUnits.Where(u => u.CourseModuleId == moduleId)
+                    .Select(u => u.Id).ToListAsync();
+                var offeredIds = await db.ClassUnitOfferings.Where(o => o.ClassGroupId == id)
+                    .Select(o => o.CurricularUnitId).ToListAsync();
+                // Ofertas anteriores permanecem para consulta e eventual retorno ao módulo.
+                db.ClassUnitOfferings.AddRange(unitIds.Except(offeredIds).Select(unitId =>
+                    new ClassUnitOffering { ClassGroupId = id, CurricularUnitId = unitId,
+                        DeliveryMode = UnitDeliveryMode.Presencial }));
+                item.CourseId = courseId;
+                item.CourseModuleId = moduleId;
+            }
             if (string.IsNullOrWhiteSpace(input.Name) || input.Name.Trim().Length > 100 ||
                 (input.Code?.Trim().Length ?? 0) > 30)
                 return Error("Informe nome de até 100 caracteres e código de até 30 caracteres.");
@@ -412,12 +436,13 @@ public static partial class ApiEndpoints
             if (!string.IsNullOrEmpty(normalizedCode) && await db.Classes.AnyAsync(c => c.Id != id &&
                 c.SemesterId == item.SemesterId && c.NormalizedCode == normalizedCode))
                 return Results.Conflict(new ApiError("Já existe uma turma com este código no semestre."));
-            var before = new { item.Name, item.Code, ShiftId = oldShiftId };
+            var before = new { item.Name, item.Code, ShiftId = oldShiftId,
+                CourseId = oldCourseId, CourseModuleId = oldModuleId };
             item.Name = input.Name.Trim();
             item.Code = string.IsNullOrWhiteSpace(input.Code) ? null : input.Code.Trim();
             item.NormalizedCode = normalizedCode;
             AuditTrail.Add(db, "ClassGroup", id.ToString(), "Alterada", UserId(current), before,
-                new { item.Name, item.Code, item.ShiftId });
+                new { item.Name, item.Code, item.ShiftId, item.CourseId, item.CourseModuleId });
             await db.SaveChangesAsync();
             await shiftTx.CommitAsync();
             return Results.NoContent();

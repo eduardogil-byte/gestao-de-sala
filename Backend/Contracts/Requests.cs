@@ -21,7 +21,8 @@ public record ClassCreate(int SemesterId, string Name, int Students, int? Course
 public record ClassUnitOfferingInput(int CurricularUnitId, UnitDeliveryMode DeliveryMode,
     EadScheduleMode? EadScheduleMode = null);
 public record ClassUnitTeacherInput(string TeacherId);
-public record ClassUpdate(string Name, string? Code, int? ShiftId = null);
+public record ClassUpdate(string Name, string? Code, int? ShiftId = null,
+    int? CourseId = null, int? CourseModuleId = null, bool CurriculumChangeConfirmed = false);
 public record ClassCourseInput(int CourseId);
 public record AvailabilityInput(int Weekday, int ShiftId);
 public record AssignmentCreate(int ClassGroupId, string TeacherId, string? DisciplineName = null,

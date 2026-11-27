@@ -94,9 +94,7 @@ public static partial class ApiEndpoints
             if (input.CurricularCapabilityId is not null && !await db.CurricularCapabilities.AnyAsync(x => x.Id == input.CurricularCapabilityId &&
                 x.CurricularUnitId == input.CurricularUnitId))
                 return Error("A capacidade não pertence à UC informada");
-            if (!await db.Assignments.AnyAsync(x => x.TeacherId == booking.TeacherId &&
-                x.ClassGroupId == booking.ClassGroupId && x.CurricularUnitId == booking.CurricularUnitId &&
-                x.EndedAtUtc == null))
+            if (!await HasBookingTeachingLink(db, booking.TeacherId, booking.ClassGroupId, booking.CurricularUnitId))
                 return Results.Forbid();
             if (!await PedagogicalAssignmentValid(db, booking, shift.Id))
                 return Error("Datas e turno não correspondem à atribuição da UC para esta turma");
@@ -204,8 +202,7 @@ public static partial class ApiEndpoints
             if (!await db.CurricularUnits.AnyAsync(u => u.Id == input.CurricularUnitId && u.CourseModule.CourseId == group.CourseId) ||
                 (input.CurricularCapabilityId is not null && !await db.CurricularCapabilities.AnyAsync(c => c.Id == input.CurricularCapabilityId && c.CurricularUnitId == input.CurricularUnitId)))
                 return Error("UC ou capacidade não pertence à turma");
-            if (!await db.Assignments.AnyAsync(a => a.TeacherId == booking.TeacherId && a.ClassGroupId == input.ClassGroupId &&
-                a.CurricularUnitId == input.CurricularUnitId && a.EndedAtUtc == null)) return Results.Forbid();
+            if (!await HasBookingTeachingLink(db, booking.TeacherId, input.ClassGroupId, input.CurricularUnitId)) return Results.Forbid();
             var candidate = new BookingRequest { TeacherId = booking.TeacherId, ClassGroupId = input.ClassGroupId,
                 CurricularUnitId = input.CurricularUnitId, StartsAt = input.StartsAt, EndsAt = input.EndsAt,
                 Recurrence = input.Recurrence, RepeatUntil = input.RepeatUntil, WeekdaysMask = input.WeekdaysMask,

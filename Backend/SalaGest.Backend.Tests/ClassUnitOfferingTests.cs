@@ -23,6 +23,56 @@ namespace SalaGest.Backend.Tests;
 public sealed class ClassUnitOfferingTests
 {
     [Fact]
+    public async Task CurriculumChangeRequiresConfirmationAndPreservesPreviousLinks()
+    {
+        await using var host = await Host.CreateAsync();
+        host.As("Admin");
+        var created = await host.Client.PostAsJsonAsync("/api/classes", host.CreateRequest(null));
+        Assert.Equal(HttpStatusCode.Created, created.StatusCode);
+        var id = (await created.Content.ReadFromJsonAsync<System.Text.Json.JsonElement>()).GetProperty("id").GetInt32();
+        using (var scope = host.App.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+            (await db.ClassUnitOfferings.FindAsync(id, host.PresentialUnitId))!.TeacherId = host.TeacherId;
+            db.Assignments.Add(new TeachingAssignment { ClassGroupId = id, TeacherId = host.TeacherId,
+                CurricularUnitId = host.PresentialUnitId, Weekday = 1, PreferredShiftId = host.ShiftId });
+            db.Bookings.Add(new BookingRequest { ClassGroupId = id, TeacherId = host.TeacherId,
+                CurricularUnitId = host.PresentialUnitId, StartsAt = new(2027, 1, 4, 8, 0, 0),
+                EndsAt = new(2027, 1, 4, 12, 0, 0), Students = 25 });
+            await db.SaveChangesAsync();
+        }
+        var update = new ClassUpdate("Turma atualizada", null, host.ShiftId,
+            host.OtherCourseId, host.WrongModuleId);
+        Assert.Equal(HttpStatusCode.BadRequest, (await host.Client.PutAsJsonAsync($"/api/classes/{id}", update)).StatusCode);
+        Assert.Equal(HttpStatusCode.BadRequest, (await host.Client.PutAsJsonAsync($"/api/classes/{id}",
+            update with { CourseModuleId = host.ModuleId, CurriculumChangeConfirmed = true })).StatusCode);
+        Assert.Equal(HttpStatusCode.NoContent, (await host.Client.PutAsJsonAsync($"/api/classes/{id}",
+            update with { CurriculumChangeConfirmed = true })).StatusCode);
+        var details = await host.Client.GetFromJsonAsync<System.Text.Json.JsonElement>($"/api/classes/{id}/units");
+        Assert.Equal(host.ForeignUnitId, Assert.Single(details.GetProperty("units").EnumerateArray()).GetProperty("curricularUnitId").GetInt32());
+        Assert.Equal(2, details.GetProperty("previousUnits").GetArrayLength());
+        Assert.Equal(1, details.GetProperty("links").GetProperty("bookings").GetInt32());
+        using (var scope = host.App.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+            Assert.Equal(3, await db.ClassUnitOfferings.CountAsync(x => x.ClassGroupId == id));
+            Assert.Equal(host.TeacherId, (await db.ClassUnitOfferings.FindAsync(id, host.PresentialUnitId))!.TeacherId);
+            Assert.Equal(host.PresentialUnitId, (await db.Assignments.SingleAsync(x => x.ClassGroupId == id)).CurricularUnitId);
+            Assert.Equal(host.PresentialUnitId, (await db.Bookings.SingleAsync(x => x.ClassGroupId == id)).CurricularUnitId);
+        }
+        Assert.Equal(HttpStatusCode.NoContent, (await host.Client.PutAsJsonAsync($"/api/classes/{id}",
+            update with { CourseId = host.CourseId, CourseModuleId = host.ModuleId, CurriculumChangeConfirmed = true })).StatusCode);
+        details = await host.Client.GetFromJsonAsync<System.Text.Json.JsonElement>($"/api/classes/{id}/units");
+        Assert.Equal(2, details.GetProperty("units").GetArrayLength());
+        Assert.Single(details.GetProperty("previousUnits").EnumerateArray());
+        Assert.Equal(host.TeacherId, details.GetProperty("units").EnumerateArray().Single(x =>
+            x.GetProperty("curricularUnitId").GetInt32() == host.PresentialUnitId).GetProperty("teacherId").GetString());
+        host.As("Professor");
+        Assert.Equal(HttpStatusCode.Forbidden, (await host.Client.PutAsJsonAsync($"/api/classes/{id}",
+            update with { CurriculumChangeConfirmed = true })).StatusCode);
+    }
+
+    [Fact]
     public async Task FixedEadMeetingCanChangeDateWithoutCreatingRoomOccupation()
     {
         await using var host = await Host.CreateAsync();

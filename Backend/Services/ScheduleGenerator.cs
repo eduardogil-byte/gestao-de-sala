@@ -14,12 +14,14 @@ public sealed class ScheduleGenerator(AppDbContext db)
 
         var assignments = await db.Assignments.Include(a => a.ClassGroup)
             .Include(a => a.Software).Where(a => a.ClassGroup.SemesterId == semesterId &&
-                a.EndedAtUtc == null).ToListAsync();
+                a.EndedAtUtc == null && (a.CurricularUnitId == null || a.ClassGroup.CourseModuleId == null ||
+                    a.CurricularUnit!.CourseModuleId == a.ClassGroup.CourseModuleId)).ToListAsync();
         var offerings = await db.ClassUnitOfferings.Include(x => x.ClassGroup)
             .Include(x => x.CurricularUnit).ThenInclude(x => x.ResourceRequirements)
             .ThenInclude(x => x.ResourceCatalogItem)
             .Include(x => x.CurricularUnit).ThenInclude(x => x.CourseModule)
-            .Where(x => x.ClassGroup.SemesterId == semesterId).ToListAsync();
+            .Where(x => x.ClassGroup.SemesterId == semesterId &&
+                x.CurricularUnit.CourseModuleId == x.ClassGroup.CourseModuleId).ToListAsync();
         if (assignments.Count == 0 && offerings.Count == 0)
             return (null, "Cadastre pelo menos uma disciplina atribuída a uma turma");
         var availability = await db.Availabilities.ToListAsync();

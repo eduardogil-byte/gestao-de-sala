@@ -203,18 +203,18 @@ test("integrações administrativas usam contratos existentes e preservam estado
         adminTest.click('Atualizar dados')`);
       await waitFor("document.body.innerText.includes('Turma EAD')");
       await evaluate("[...document.querySelectorAll('button')].find(item => item.textContent.includes('Turma EAD')).click()");
-      await waitFor("document.body.innerText.includes('UC · UC sintética · EAD')");
+      await waitFor("document.body.innerText.includes('UC sintética') && document.body.innerText.includes('EAD (sem horário fixo)')");
       await evaluate("adminTest.click('Definir instrutor')");
-      await waitFor("[...document.querySelectorAll('label')].find(item => item.textContent.includes('Instrutor habilitado'))?.querySelectorAll('option').length > 1");
-      await evaluate("adminTest.select('Instrutor habilitado', 't0'); adminTest.click('Salvar instrutor responsável')");
+      await waitFor("[...document.querySelectorAll('label')].find(item => item.textContent.includes('Instrutor responsável'))?.querySelectorAll('option').length > 1");
+      await evaluate("adminTest.select('Instrutor responsável', 't0'); adminTest.click('Salvar')");
       const path = '/api/classes/7/units/3/teacher';
       await waitFor(`adminTest.pending.some(r => r.path === ${JSON.stringify(path)})`);
       assert.deepEqual(await evaluate<any>(`adminTest.pending.find(r => r.path === ${JSON.stringify(path)}).body`),
         { teacherId: 't0' });
       await reply(path, null, 204);
-      await waitFor("document.body.innerText.includes('Instrutor responsável registrado')");
+      await waitFor("document.body.innerText.includes('Docente 0 definido como responsável.')");
       await reset("academic", "Professor");
-      assert.equal(await evaluate("document.body.innerText.includes('Salvar instrutor responsável')"), false);
+      assert.equal(await evaluate("document.body.innerText.includes('Salvar')"), false);
     });
     await t.test("grade semestral mostra CH, EAD sem sala e pendências sem liberar publicação", async () => {
       await reset("schedules", "Admin");
